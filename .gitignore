@@ -26,3 +26,10 @@
 *.exe
 *.out
 *.app
+/Debug/
+/Release/
+
+# Other junk
+core
+*.pyc
+.DS_Store

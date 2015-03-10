@@ -1,0 +1,482 @@
+<!doctype html>
+<html>
+<!--
+Copyright (c) 2014 - 2015 by Thiemar Pty Ltd
+
+This file is part of vectorcontrol.
+
+vectorcontrol is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+-->
+<head>
+    <meta charset="utf-8">
+    <style>
+        /*! normalize.css v3.0.2 | MIT License | git.io/normalize */
+        html{font-family:sans-serif;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%}
+        body{margin:0}article,aside,details,figcaption,figure,footer,header,hgroup,main,menu,
+        nav,section,summary{display:block}audio,canvas,progress,video{display:inline-block;
+        vertical-align:baseline}audio:not([controls]){display:none;height:0}[hidden],template{
+        display:none}a{background-color:transparent}a:active,a:hover{outline:0}abbr[title]{
+        border-bottom:1px dotted}b,strong{font-weight:700}dfn{font-style:italic}h1{
+        font-size:2em;margin:.67em 0}mark{background:#ff0;color:#000}small{font-size:80%}sub,
+        sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sup{top:-.5em}
+        sub{bottom:-.25em}img{border:0}svg:not(:root){overflow:hidden}figure{margin:1em 40px}
+        hr{-moz-box-sizing:content-box;box-sizing:content-box;height:0}pre{overflow:auto}code,
+        kbd,pre,samp{font-family:monospace,monospace;font-size:1em}button,input,optgroup,
+        select,textarea{color:inherit;font:inherit;margin:0}button{overflow:visible}button,
+        select{text-transform:none}button,html input[type=button],input[type=reset],
+        input[type=submit]{-webkit-appearance:button;cursor:pointer}button[disabled],
+        html input[disabled]{cursor:default}button::-moz-focus-inner,input::-moz-focus-inner{
+        border:0;padding:0}input{line-height:normal}input[type=checkbox],input[type=radio]{
+        box-sizing:border-box;padding:0}input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button{height:auto}input[type=search]{
+        -webkit-appearance:textfield;-moz-box-sizing:content-box;-webkit-box-sizing:content-box;
+        box-sizing:content-box}input[type=search]::-webkit-search-cancel-button,
+        input[type=search]::-webkit-search-decoration{-webkit-appearance:none}fieldset{
+        border:1px solid silver;margin:0 2px;padding:.35em .625em .75em}legend{border:0;
+        padding:0}textarea{overflow:auto}optgroup{font-weight:700}table{border-collapse:
+        collapse;border-spacing:0}td,th{padding:0}
+    </style>
+    <style>
+        body {
+            font: 12px Robota, "Proxima Nova", sans-serif;
+        }
+
+        #content {
+            width: 100%;
+            margin: 0 0;
+            padding-top: 30px;
+            padding-bottom: 0;
+        }
+
+        h2 {
+            margin-top: 60px;
+        }
+
+        h3 {
+            margin-top: 20px;
+        }
+
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: lightgrey;
+            shape-rendering: crispEdges;
+        }
+
+        .current-setpoint {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: red;
+            shape-rendering: smoothEdges;
+        }
+
+        .current-id {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: blue;
+            shape-rendering: smoothEdges;
+        }
+
+        .current-iq {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
+        .speed-setpoint {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: red;
+            shape-rendering: smoothEdges;
+        }
+
+        .speed-actual {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
+        .vbus {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
+        .temperature {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: blue;
+            shape-rendering: smoothEdges;
+        }
+
+        .grid .tick {
+            stroke: black;
+            stroke-width: 0.5px;
+        }
+        .grid path {
+            stroke-width: 0;
+        }
+
+        .tick text {
+            font-size: 10px;
+        }
+
+        .x.axis>text {
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        .y.axis>text {
+            font-weight: bold;
+            fill: black;
+            font-size: 11px;
+        }
+
+        .y0.axis>text {
+            font-weight: bold;
+            fill: black;
+            font-size: 11px;
+        }
+
+        .y1.axis>text {
+            font-weight: bold;
+            fill: blue;
+            font-size: 11px;
+        }
+
+        svg {
+            display: block;
+        }
+
+        div.device {
+            width: 100%;
+        }
+
+        div.device-detail {
+            width: 100%;
+            display: table;
+        }
+
+        div.device-info {
+            width: 100%;
+            display: table;
+            padding: 0 30px;
+            box-sizing: border-box;
+        }
+
+        div.device-configuration {
+            display: table-cell;
+            width: 240px;
+            padding: 0 10px;
+        }
+
+        div.device-configuration:first-child {
+            padding-left: 30px;
+        }
+
+        div.device-control {
+            display: table-cell;
+            width: 210px;
+            padding: 0 10px;
+        }
+
+        div.device-measurements {
+            display: table-cell;
+            padding: 0 30px 0 10px;
+        }
+
+        div.device-detail label {
+            display: table;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        div.device-detail label>span {
+            display: table-cell;
+            width: 180px;
+            text-align: left;
+            margin: 0;
+            padding: 0;
+        }
+
+        div.device-detail label>input[type=number],
+        div.device-detail label>input[type=text],
+        div.device-detail label>select {
+            display: table-cell;
+            width: 80px;
+            text-align: right;
+            margin: 2px 0;
+        }
+
+        div.device-detail input[type=submit] {
+            margin-top: 20px;
+        }
+
+        div.device-detail fieldset {
+            border: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+        div.device-info h3 {
+            display: table-cell;
+        }
+
+        div.device-info label {
+            display: table-cell;
+            width: 300px;
+            text-align: right;
+        }
+
+        div.device-info input {
+            width: 175px;
+        }
+
+        div.device-control input[type=radio] {
+            margin: 3px 2px 3px 0;
+        }
+
+        #device-template {
+            display: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+    <title>S2740VC Management</title>
+</head>
+<body>
+<div id="content">
+    <div class="device" id="device-template">
+        <div class="device-header">
+            <div class="device-info">
+                <h3>Node <span class="node-id">unknown</span> (up <span class="node-uptime"></span> seconds)</h3>
+
+                <!--
+                Not critical to implement in first revision.
+
+                <label>
+                    <span>Load configuration:</span>
+                    <input name="load-configuration" class="load-configuration" type="file">
+                </label>
+
+                <label>
+                    <span>Load firmware:</span>
+                    <input name="load-firmware" class="load-firmware" type="file">
+                </label>
+                -->
+            </div>
+        </div>
+
+        <div class="device-detail">
+            <div class="device-configuration">
+                <form class="configuration" action="" method="post">
+                    <h3>Motor parameters</h3>
+                    <label>
+                        <span>Number of poles</span>
+                        <input name="motor_num_poles" class="configuration" type="number" min="4" max="40" step="2">
+                    </label>
+                    <label>
+                        <span>Current limit (A)</span>
+                        <input name="motor_current_limit" class="configuration" type="number" min="1" max="40" step="1">
+                    </label>
+                    <label>
+                        <span>Voltage limit (V)</span>
+                        <input name="motor_voltage_limit" class="configuration" type="number" min="0.74" max="25.9" step="0.37">
+                    </label>
+                    <label>
+                        <span>Start-up current (A)</span>
+                        <input name="motor_startup_current" class="configuration" type="number" min="0.5" max="10.0" step="0.5">
+                    </label>
+                    <label>
+                        <span>Minimum speed (rpm)</span>
+                        <input name="motor_rpm_min" class="configuration" type="number" min="60" max="1200" step="60">
+                    </label>
+                    <label>
+                        <span>Maximum speed (rpm)</span>
+                        <input name="motor_rpm_max" class="configuration" type="number" min="1000" max="40000" step="1000">
+                    </label>
+                    <label>
+                        <span>Resistance (Ω)</span>
+                        <input name="motor_rs" class="configuration" type="text" readonly="readonly">
+                    </label>
+                    <label>
+                        <span>Inductance (H)</span>
+                        <input name="motor_ls" class="configuration" type="text" readonly="readonly">
+                    </label>
+                    <label>
+                        <span>Kv (rpm / V)</span>
+                        <input name="motor_kv" class="configuration" type="number" min="200" max="4000" step="1">
+                    </label>
+                </form>
+            </div>
+
+            <div class="device-configuration">
+                <form class="configuration" action="" method="post">
+                    <h3>Control parameters</h3>
+                    <label>
+                        <span>Speed gain (As / rad)</span>
+                        <input name="rpmctl_gain" class="configuration" type="number" min="0.001" max="0.1" step="0.001">
+                    </label>
+                    <label>
+                        <span>Speed bandwidth (Hz)</span>
+                        <input name="rpmctl_bandwidth" class="configuration" type="number" min="10.0" max="400.0" step="10.0">
+                    </label>
+                    <label>
+                        <span>Acceleration limit (rpm / s)</span>
+                        <input name="rpmctl_accel_max" class="configuration" type="number" min="100.0" max="100000.0" step="100.0">
+                    </label>
+                    <label>
+                        <span>PWM control mode</span>
+                        <select name="pwm_ctl_mode" class="configuration">
+                            <option>speed</option>
+                            <option>torque</option>
+                        </select>
+                    </label>
+
+                    <h3>UAVCAN parameters</h3>
+                    <label>
+                        <span>ESC status interval (s)</span>
+                        <input name="uavcan_escstatus_interval" class="configuration" type="number" min="0.01" max="0.1" step="0.01">
+                    </label>
+                    <label>
+                        <span>Node ID</span>
+                        <input name="uavcan_node_id" class="configuration" type="number" min="1" max="125" step="1">
+                    </label>
+                    <label>
+                        <span>ESC index</span>
+                        <input name="uavcan_esc_index" class="configuration" type="number" min="0" max="15" step="1">
+                    </label>
+
+                    <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
+                </form>
+            </div>
+
+            <div class="device-control">
+                <form class="control" action="" method="post">
+                    <h3>Setpoint</h3>
+                    <label>
+                        <span>Control mode</span>
+                        <select name="mode">
+                            <option>torque</option>
+                            <option>rpm</option>
+                        </select>
+                    </label>
+
+                    <label>
+                        <span>Command type</span>
+                        <select name="command">
+                            <option>constant</option>
+                            <option>step</option>
+                            <option>sine</option>
+                            <option>sweep</option>
+                        </select>
+                    </label>
+
+                    <fieldset class="command-constant">
+                        <label>
+                            <span>Setpoint</span>
+                            <input name="constant_setpoint" class="setpoint" type="number">
+                        <label>
+                    </fieldset>
+
+                    <fieldset class="command-step hidden">
+                        <label>
+                            <span>From setpoint</span>
+                            <input name="step_setpoint_start" class="setpoint" type="number">
+                        </label>
+                        <label>
+                            <span>To setpoint</span>
+                            <input name="step_setpoint_end" class="setpoint" type="number">
+                        </label>
+                        <label>
+                            <span>Low time (s)</span>
+                            <input name="step_low_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
+                        </label>
+                        <label>
+                            <span>Rise time (s)</span>
+                            <input name="step_rise_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
+                        </label>
+                        <label>
+                            <span>High time (s)</span>
+                            <input name="step_high_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
+                        </label>
+                        <label>
+                            <span>Fall time (s)</span>
+                            <input name="step_fall_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
+                        </label>
+                    </fieldset>
+
+                    <fieldset class="command-sine hidden">
+                        <label>
+                            <span>From setpoint</span>
+                            <input name="sine_setpoint_start" class="setpoint" type="number">
+                        </label>
+                        <label>
+                            <span>To setpoint</span>
+                            <input name="sine_setpoint_end" class="setpoint" type="number">
+                        </label>
+                        <label>
+                            <span>Frequency (Hz)</span>
+                            <input name="sine_frequency" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
+                        </label>
+                    </fieldset>
+
+                    <fieldset class="command-sweep hidden">
+                        <label>
+                            <span>From setpoint</span>
+                            <input name="sweep_setpoint_start" class="setpoint" type="number">
+                        </label>
+                        <label>
+                            <span>To setpoint</span>
+                            <input name="sweep_setpoint_end" class="setpoint" type="number">
+                        </label>
+                        <label>
+                            <span>From frequency (Hz)</span>
+                            <input name="sweep_frequency_start" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
+                        </label>
+                        <label>
+                            <span>To frequency (Hz)</span>
+                            <input name="sweep_frequency_end" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
+                        </label>
+                        <label>
+                            <span>Sweep rise time (s)</span>
+                            <input name="sweep_rise_time" class="setpoint" type="number" min="1.0" max="60.0" step="1.0">
+                        </label>
+                    </fieldset>
+
+                    <input type="button" class="motor-start" name="start" value="Start motor">
+                    <input type="button" class="motor-stop" name="stop" value="Stop motor" disabled="disabled">
+                </form>
+            </div>
+
+            <div class="device-measurements">
+                <h3>Measurements</h3>
+
+                <svg class="speed-chart"></svg>
+                <svg class="current-chart"></svg>
+                <svg class="voltagetemp-chart"></svg>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/d3.min.js"></script>
+<script src="/static/ui.js"></script>
+</body>
+</html>
