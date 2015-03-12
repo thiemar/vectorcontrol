@@ -56,27 +56,6 @@ struct param_t flash_params[NUM_PARAMS] = {
         11.1f, 7.4f, 0.5f, 27.0f},
 
     /*
-    Motor start-up current in amps. This limits the current setpoint until
-    the motor reaches its minimum controllable RPM. Higher values may speed up
-    initial alignment, but may also result in oscillation. Very high values
-    may result in damage to the prop, motor or ESC.
-    */
-
-    {PARAM_MOTOR_STARTUP_CURRENT, "motor_startup_current",
-        5.0f, 5.0f, 0.5f, 10.0f},
-
-    /*
-    Motor minimum controllable RPM. This is used to force the motor to rotate
-    before the state estimation filter has locked, and also determines how
-    long the motor_startup_current is used for. The value depends on the
-    motor's KV as well as the number of poles; it should be low enough that
-    the motor can lock onto the rotation rate immediately, but high enough
-    that the back EMF is measurable.
-    */
-    {PARAM_MOTOR_RPM_MIN, "motor_rpm_min",
-        200.0f, 130.0f, 10.0f, 1000.0f},
-
-    /*
     Motor maximum rated RPM. This limits the upper end of the PWM setpoint
     range if it's lower than KV multiplied by Vbus.
     */
@@ -165,10 +144,6 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
     params.max_voltage_v = params_[PARAM_MOTOR_VOLTAGE_LIMIT].value;
     params.max_speed_rad_per_s =
         _rad_per_s_from_rpm(params_[PARAM_MOTOR_RPM_MAX].value,
-                            params.num_poles);
-    params.startup_current_a = params_[PARAM_MOTOR_STARTUP_CURRENT].value;
-    params.startup_speed_rad_per_s =
-        _rad_per_s_from_rpm(params_[PARAM_MOTOR_RPM_MIN].value,
                             params.num_poles);
 
     params.rs_r = params_[PARAM_MOTOR_RS].value;

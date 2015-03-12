@@ -235,7 +235,7 @@ function setupCurrentChart(device) {
 
     result.y = d3.scale.linear()
         .range([height, 0.0])
-        .domain([0.0, 40.0]);
+        .domain([-40.0, 40.0]);
 
     result.xAxis = d3.svg.axis()
         .scale(result.x)
@@ -381,19 +381,20 @@ function updateVoltageTempChart(device, data) {
 }
 
 function updateCurrentChart(device, data) {
-    var current, deviceId, chart;
+    var current, deviceId, chart, maxCurrent;
 
     deviceId = parseInt(device.id.split("-")[1], 10);
     chart = deviceCurrentCharts[deviceId];
+    maxCurrent = parseFloat(device.querySelector("input[name=motor_current_limit]").value);
 
-    chart.y.domain([0.0, parseFloat(device.querySelector("input[name=motor_current_limit]").value) + 1.0]);
+    chart.y.domain([-maxCurrent, maxCurrent]);
     chart.yAxis.scale(chart.y);
     chart.chart.select(".y.axis").call(chart.yAxis);
 
     /* Setpoint line */
     current = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(Math.abs(d.i_setpoint)); });
+        .y(function(d) { return chart.y(d.i_setpoint); });
 
     chart.chart.select(".current-setpoint")
         .datum(data)
@@ -402,7 +403,7 @@ function updateCurrentChart(device, data) {
     /* Id line */
     current = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(Math.abs(d.i_d)); });
+        .y(function(d) { return chart.y(d.i_d); });
 
     chart.chart.select(".current-id")
         .datum(data)
@@ -411,7 +412,7 @@ function updateCurrentChart(device, data) {
     /* Iq line */
     current = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(Math.abs(d.i_q)); });
+        .y(function(d) { return chart.y(d.i_q); });
 
     chart.chart.select(".current-iq")
         .datum(data)
@@ -419,19 +420,20 @@ function updateCurrentChart(device, data) {
 }
 
 function updateSpeedChart(device, data) {
-    var speed, deviceId, chart;
+    var speed, deviceId, chart, maxSpeed;
 
     deviceId = parseInt(device.id.split("-")[1], 10);
     chart = deviceSpeedCharts[deviceId];
+    maxSpeed = parseFloat(device.querySelector("input[name=motor_rpm_max]").value);
 
-    chart.y.domain([0.0, parseFloat(device.querySelector("input[name=motor_rpm_max]").value) + 500.0]);
+    chart.y.domain([-maxSpeed * 1.1, maxSpeed * 1.1]);
     chart.yAxis.scale(chart.y);
     chart.chart.select(".y.axis").call(chart.yAxis);
 
     /* Setpoint line */
     speed = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(Math.abs(d.rpm_setpoint)); });
+        .y(function(d) { return chart.y(d.rpm_setpoint); });
 
     chart.chart.select(".speed-setpoint")
         .datum(data)
@@ -440,7 +442,7 @@ function updateSpeedChart(device, data) {
     /* Id line */
     speed = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(Math.abs(d.rpm)); });
+        .y(function(d) { return chart.y(d.rpm); });
 
     chart.chart.select(".speed-actual")
         .datum(data)

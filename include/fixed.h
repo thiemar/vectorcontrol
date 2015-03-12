@@ -30,6 +30,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 
 struct motor_state_t {
+    int64_t revolution_count;
     float angular_velocity_rad_per_s;
     float angle_rad; /* 0 .. 2 * pi */
     float i_dq_a[2];
@@ -45,8 +46,6 @@ struct motor_params_t {
     float max_voltage_v; /* RMS voltage limit in volts */
     float max_current_a; /* RMS current limit in amps */
     float max_speed_rad_per_s; /* Electrical angular velocity limit in rad/s */
-    float startup_current_a; /* RMS current limit during start-up */
-    float startup_speed_rad_per_s; /* Open-loop angular velocity in rad/s */
 
     uint32_t num_poles; /* number of poles */
 };

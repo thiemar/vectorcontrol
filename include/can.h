@@ -125,6 +125,15 @@ enum uavcan_saveerase_opcode_t {
 #define UAVCAN_TRANSFER_TIMEOUT_INTERVAL_MS 100u
 
 
+struct uavcan_esc_state_t {
+    float vbus_v;
+    float ibus_a;
+    float temperature_degc;
+    float speed_rpm;
+    float power_pct;
+};
+
+
 #define CAN_STANDARD_ID_MASK 0x7FFu
 #define CAN_EXTENDED_ID_MASK 0x1FFFFFFFu
 
@@ -302,7 +311,8 @@ class UAVCANServer {
     volatile bool tx_transfer_done_;
     volatile bool rx_transfer_reset_;
 
-    volatile uint32_t config_esc_status_interval_;
+    volatile uint16_t config_esc_status_interval_;
+    volatile uint16_t config_esc_index_;
 
     /*
     May only be accessed from process_rx (receive interrupt context)
@@ -374,12 +384,25 @@ class UAVCANServer {
 
     float get_esccommand_value();
 
+    void reload_uavcan_config() {
+        config_local_node_id_ = (uint8_t)
+            configuration_->get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
+        config_esc_status_interval_ = (uint16_t)
+            (configuration_->get_param_value_by_index(PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 1000.0f);
+        config_esc_index_ = (uint16_t)
+            configuration_->get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
+    }
+
     /* May only be called from tick/process_tx (timer interrupt context) */
     void serialize_node_status(
         UAVCANMessage& out_message,
         uint8_t transfer_id,
         uint32_t uptime_s,
         enum uavcan_nodestatus_t status
+    );
+
+    void serialize_esc_status(
+        const struct uavcan_esc_state_t& state
     );
 
 public:
@@ -389,6 +412,7 @@ public:
         tx_transfer_done_(false),
         rx_transfer_reset_(false),
         config_esc_status_interval_(0),
+        config_esc_index_(0),
         rx_transfer_(),
         rx_transfer_length_(0),
         rx_transfer_frame_index_(0),
@@ -412,13 +436,10 @@ public:
         restart_request_cb_(NULL),
         esc_command_cb_(NULL)
     {
-        config_local_node_id_ = (uint8_t)
-            configuration_->get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
-        config_esc_status_interval_ = (uint32_t)
-            (configuration_->get_param_value_by_index(PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 1000.0f);
+        reload_uavcan_config();
     }
 
-    void tick(const struct motor_state_t& state);
+    void tick(const struct uavcan_esc_state_t& state);
 
     void process_rx(const UAVCANMessage& in_message);
     bool process_tx(UAVCANMessage& out_message);

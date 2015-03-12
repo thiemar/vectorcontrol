@@ -26,10 +26,12 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 class StateEstimator {
     struct motor_state_t state_estimate_;
 
+    /* HFI state */
+    float i_dq_m_a_[2];
+    float i_hfi_dq_[2];
+
     /* Calculated from start-up parameters */
-    float open_loop_target_rad_per_s_;
-    float open_loop_speed_rad_per_s_;
-    float open_loop_accel_rad_per_s2_;
+    float carrier_v_;
 
     /* Intermediate values */
     float a_; /* 1.0 - R / L * T */
@@ -51,12 +53,15 @@ class StateEstimator {
     /* Low-passed angular velocity estimate */
     float filtered_velocity_rad_per_s_;
 
+    uint32_t is_converged_;
+    uint32_t dummy_;
+
 public:
     StateEstimator():
-        state_estimate_ {0.0f, 0.0f, 0.0f, 0.0f},
-        open_loop_target_rad_per_s_(0.0f),
-        open_loop_speed_rad_per_s_(0.0f),
-        open_loop_accel_rad_per_s2_(0.0f),
+        state_estimate_ {0, 0.0f, 0.0f, 0.0f, 0.0f},
+        i_dq_m_a_ {0.0f, 0.0f},
+        i_hfi_dq_ {0.0f, 0.0f},
+        carrier_v_(0.0f),
         a_(0.0f),
         b_(0.0f),
         c_(0.0f),
@@ -67,19 +72,24 @@ public:
         last_i_ab_a_ {0.0f, 0.0f},
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f),
-        filtered_velocity_rad_per_s_(0.0f)
+        filtered_velocity_rad_per_s_(0.0f),
+        is_converged_(false),
+        dummy_(0)
     {}
 
     void reset_state() {
         state_estimate_.angular_velocity_rad_per_s =
             state_estimate_.angle_rad = 0.0f;
+        state_estimate_.revolution_count = 0;
         next_sin_theta_ = 0;
         next_cos_theta_ = 1.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
         state_covariance_[0] = state_covariance_[2] = 1.0f;
         state_covariance_[1] = state_covariance_[3] = 0.0f;
         filtered_velocity_rad_per_s_ = 0.0f;
-        open_loop_speed_rad_per_s_ = 0.0f * open_loop_target_rad_per_s_;
+        i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
+        i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
+        is_converged_ = false;
     }
 
     void update_state_estimate(
@@ -101,11 +111,49 @@ public:
                                next_cos_theta_);
     }
 
+    float get_hfi_weight(void) const {
+        const float hfi_cutoff = (float)M_PI * 2.0f * 20.0f;
+        const float hfi_cutoff_inv = 1.0f / hfi_cutoff;
+        float weight;
+
+        weight = std::min(std::abs(filtered_velocity_rad_per_s_),
+                          hfi_cutoff) * hfi_cutoff_inv;
+        weight *= weight;
+
+        return 1.0f - weight;
+    }
+
+    void get_hfi_carrier_dq_v(float v_dq[2]) {
+        float weight;
+        weight = get_hfi_weight();
+        carrier_v_ = -carrier_v_;
+        if (weight > 1e-2f) {
+            v_dq[0] = v_dq[1] = carrier_v_;
+        } else if (weight > 1e-6f) {
+            v_dq[0] = v_dq[1] = carrier_v_ *
+                                std::min(1.0f, weight * 1e2f);
+        } else {
+            v_dq[0] = v_dq[1] = 0.0f;
+        }
+    }
+
+    void get_hfi_readings(float readings[3]) const {
+        readings[0] = i_hfi_dq_[0];
+        readings[1] = i_hfi_dq_[1];
+        readings[2] = 0.0f;
+    }
+
+    bool is_converged(void) const {
+        return is_converged_;
+    }
+
     void set_params(
         const struct motor_params_t& params,
         const struct control_params_t& control_params,
         float t_s
     ) {
+        float wc, zwc;
+
         a_ = 1.0f - params.rs_r / params.ls_h * t_s;
         b_ = params.phi_v_s_per_rad / params.ls_h * t_s;
         c_ = t_s / params.ls_h;
@@ -117,14 +165,25 @@ public:
         higher than speed control bandwidth.
         */
         i_dq_lpf_coeff_ =
-            1.0f - fast_expf(-2.0f * (float)M_PI * control_params.bandwidth_hz * t_s * 150.0f);
+            1.0f - fast_expf(-2.0f * (float)M_PI * control_params.bandwidth_hz * t_s * 100.0f);
         angular_velocity_lpf_coeff_ =
             1.0f - fast_expf(-2.0f * (float)M_PI * control_params.bandwidth_hz * t_s * 10.0f);
 
-        /* Start-up parameters */
-        open_loop_accel_rad_per_s2_ = 0.1f * params.startup_speed_rad_per_s *
-                                      control_params.bandwidth_hz;
-        open_loop_target_rad_per_s_ = params.startup_speed_rad_per_s;
+        /*
+        High-frequency injection parameters:
+        wc is the carrier angular frequency, which is the Nyquist frequency of
+        the sample loop expressed in rad/s
+        zwc is the motor's impedance at that frequency
+        */
+        wc = (float)M_PI / t_s;
+        zwc = __VSQRTF(params.rs_r * params.rs_r +
+                       wc * wc * params.ls_h * params.ls_h);
+
+        /*
+        Set carrier voltage to whatever will give us an 0.25 A injected
+        current
+        */
+        carrier_v_ = 0.5f * zwc;
     }
 };
 
@@ -174,7 +233,7 @@ public:
     static void calculate_r_l_from_samples(
         float& r_r,
         float& l_h,
-        const float v[4],
-        const float i[4]
+        const float v_sq[4],
+        const float i_sq[4]
     );
 };

@@ -52,8 +52,6 @@ CAN_CONFIG_INDEXES = {
         "num_poles": 0,
         "current_limit": 1,
         "voltage_limit": 2,
-        "startup_current": 3,
-        "rpm_min": 4,
         "rpm_max": 5,
         "rs": 6,
         "ls": 7,

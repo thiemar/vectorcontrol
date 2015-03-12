@@ -257,6 +257,7 @@ void UAVCANServer::serialize_saveerase_reply(bool ok) {
     tx_transfer_bytes_[0] = (uint8_t)(ok ? 0x80u : 0);
     tx_transfer_length_ = 1u;
     tx_transfer_index_ = 0;
+    status_transfer_frame_index_ = 0;
 }
 
 
@@ -402,12 +403,14 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
     bit_index += name_bits;
 
     /* Length is rounded up to the next byte */
+    value_type = 0;
     length = (bit_index + 7u) >> 3u;
     pad_bits = (length << 3u) - bit_index;
     _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, pad_bits);
 
     tx_transfer_length_ = length;
     tx_transfer_index_ = 0;
+    status_transfer_frame_index_ = 0;
 }
 
 
@@ -421,7 +424,7 @@ float UAVCANServer::get_esccommand_value() {
 
     int18[<=20] rpm
     */
-    uint8_t field_width, esc_index;
+    uint8_t field_width;
     uint32_t value, bit_index;
     float result;
 
@@ -435,11 +438,9 @@ float UAVCANServer::get_esccommand_value() {
         return result;
     }
 
-    esc_index = (uint8_t)
-        configuration_->get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
     value = 0;
 
-    bit_index = esc_index * field_width;
+    bit_index = config_esc_index_ * field_width;
 
     if (bit_index + field_width <= rx_transfer_length_ * 8u) {
         _bitarray_copy(&value, 0, rx_transfer_bytes_, bit_index, field_width);
@@ -458,7 +459,67 @@ float UAVCANServer::get_esccommand_value() {
 }
 
 
-void UAVCANServer::tick(const struct motor_state_t __attribute__((unused))  & state) {
+void UAVCANServer::serialize_esc_status(
+    const struct uavcan_esc_state_t& state
+) {
+    /*
+    601.Status
+
+    uint32 error_count
+    float16 voltage
+    float16 current
+    float16 temperature
+    int18 rpm
+    uint7 power_rating_pct
+    uint5 esc_index
+    */
+
+    size_t bit_index, pad_bits, length;
+    float16_t temp;
+    int32_t itemp;
+    uint8_t utemp;
+
+    memset(status_transfer_bytes_, 0, sizeof(status_transfer_bytes_));
+
+    bit_index = 32u;
+
+    temp = float16(state.vbus_v);
+    _bitarray_copy(status_transfer_bytes_, bit_index, &temp, 0, 16u);
+    bit_index += 16u;
+
+    temp = float16(state.ibus_a);
+    _bitarray_copy(status_transfer_bytes_, bit_index, &temp, 0, 16u);
+    bit_index += 16u;
+
+    temp = float16(state.temperature_degc + 273.15f);
+    _bitarray_copy(status_transfer_bytes_, bit_index, &temp, 0, 16u);
+    bit_index += 16u;
+
+    itemp = (int32_t)state.speed_rpm;
+    _bitarray_copy(status_transfer_bytes_, bit_index, &itemp, 0, 18u);
+    bit_index += 18u;
+
+    utemp = (uint8_t)state.power_pct;
+    _bitarray_copy(status_transfer_bytes_, bit_index, &utemp, 0, 7u);
+    bit_index += 7u;
+
+    utemp = (uint8_t)config_esc_index_;
+    _bitarray_copy(status_transfer_bytes_, bit_index, &utemp, 0, 5u);
+    bit_index += 5u;
+
+    /* Add padding if required and set the lengths */
+    utemp = 0;
+    length = (bit_index + 7u) >> 3u;
+    pad_bits = (length << 3u) - bit_index;
+    _bitarray_copy(status_transfer_bytes_, bit_index, &utemp, 0, pad_bits);
+
+    status_transfer_length_ = length;
+    status_transfer_index_ = 0;
+    status_transfer_frame_index_ = 0;
+}
+
+
+void UAVCANServer::tick(const struct uavcan_esc_state_t& state) {
     if (config_esc_status_interval_ > 0 &&
             status_transfer_length_ == status_transfer_index_ &&
             uptime_ms_ - last_esc_status_sent_time_ms_ >
@@ -467,19 +528,7 @@ void UAVCANServer::tick(const struct motor_state_t __attribute__((unused))  & st
         status_transfer_length_ = status_transfer_index_ =
             status_transfer_frame_index_ = 0;
 
-        /*
-        Serialize the ESC status:
-        601.Status
-
-        uint32 error_count
-        float16 voltage
-        float16 current
-        float16 temperature
-        int18 rpm
-        uint7 power_rating_pct
-        uint5 esc_index
-        */
-
+        serialize_esc_status(state);
     }
 
     if (received_partial_frame_) {
@@ -748,6 +797,8 @@ void UAVCANServer::process_transfer() {
                     configuration_->set_param_value_by_index(index, result);
                     valid = configuration_->get_param_by_index(param, index);
                 }
+
+                reload_uavcan_config();
             }
 
             if (!valid) {

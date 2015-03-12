@@ -40,6 +40,7 @@ static StateEstimator g_estimator;
 static ParameterEstimator g_parameter_estimator;
 static DQCurrentController g_current_controller;
 static SpeedController g_speed_controller;
+static AlignmentController g_alignment_controller;
 
 
 /* "Owned" by systick_cb */
@@ -59,6 +60,8 @@ volatile static enum {
 } g_input_source;
 volatile static float g_current_controller_setpoint;
 volatile static float g_speed_controller_setpoint;
+volatile static bool g_estimator_converged;
+volatile static float g_estimator_hfi[3];
 
 
 volatile static uint32_t g_time;
@@ -183,7 +186,7 @@ void control_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float v_dq_v[2], current_setpoint, speed_setpoint, startup_w, startup_i;
+    float v_dq_v[2], current_setpoint, speed_setpoint, readings[3], hfi_v[2];
     struct motor_state_t motor_state;
 
     /* Update the state estimate with those values */
@@ -208,34 +211,24 @@ void control_cb(
         g_estimator.reset_state();
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
-        g_speed_controller.set_current_limit(0.5f * g_motor_params.startup_current_a);
-    } else {
-        startup_w = g_motor_params.startup_speed_rad_per_s;
-        startup_i = std::max(0.5f, motor_state.angular_velocity_rad_per_s / startup_w) *
-                    g_motor_params.startup_current_a;
-
+        g_alignment_controller.reset_state();
+        g_estimator_converged = false;
+        readings[0] = readings[1] = readings[2] = 0.0f;
+    } else if (g_estimator.is_converged()) {
+        g_estimator_converged = true;
         /* Update the speed controller setpoint */
         if (g_controller_mode == CONTROLLER_TORQUE) {
-            g_speed_controller_setpoint = speed_setpoint =
-                std::max(startup_w, motor_state.angular_velocity_rad_per_s);
+            speed_setpoint = motor_state.angular_velocity_rad_per_s;
+            if (std::abs(speed_setpoint) < 50.0f) {
+                speed_setpoint = g_current_controller_setpoint > 0.0f ?
+                                 50.0f : -50.0f;
+            }
+
+            g_speed_controller_setpoint = speed_setpoint;
         } else {
             speed_setpoint = g_speed_controller_setpoint;
         }
         g_speed_controller.set_setpoint(speed_setpoint);
-
-        /* Update the speed controller current limit */
-        if (motor_state.angular_velocity_rad_per_s < startup_w) {
-            g_speed_controller.set_current_limit(startup_i);
-
-            /* Limit the current controller setpoint as well */
-            if (g_current_controller_setpoint > 0.0f) {
-                g_current_controller_setpoint = startup_i;
-            } else if (g_current_controller_setpoint < 0.0f) {
-                g_current_controller_setpoint = -startup_i;
-            }
-        } else {
-            g_speed_controller.set_current_limit(g_motor_params.max_current_a);
-        }
 
         /*
         Update the current controller with the output of the speed controller,
@@ -244,6 +237,8 @@ void control_cb(
         current_setpoint = g_speed_controller.update(motor_state);
         if (g_controller_mode == CONTROLLER_TORQUE) {
             current_setpoint = g_current_controller_setpoint;
+        } else {
+            g_current_controller_setpoint = current_setpoint;
         }
 
         /* Update the stator current controller setpoint, */
@@ -254,6 +249,21 @@ void control_cb(
                                     motor_state.i_dq_a,
                                     motor_state.angular_velocity_rad_per_s,
                                     vbus_v);
+
+        /* Add high-frequency injection voltage */
+        g_estimator.get_hfi_carrier_dq_v(hfi_v);
+        g_estimator.get_hfi_readings(readings);
+        v_dq_v[0] += hfi_v[0];
+        v_dq_v[1] += hfi_v[1];
+    } else {
+        g_estimator_converged = false;
+        /* Estimator is still aligning/converging */
+        g_alignment_controller.update(v_dq_v, motor_state.i_dq_a,
+                                      motor_state.angle_rad, vbus_v);
+        g_estimator.get_hfi_carrier_dq_v(hfi_v);
+        g_estimator.get_hfi_readings(readings);
+        v_dq_v[0] += hfi_v[0];
+        v_dq_v[1] += hfi_v[1];
     }
 
     /*
@@ -267,11 +277,12 @@ void control_cb(
     g_motor_state.angle_rad = motor_state.angle_rad;
     g_motor_state.i_dq_a[0] = motor_state.i_dq_a[0];
     g_motor_state.i_dq_a[1] = motor_state.i_dq_a[1];
-    g_current_controller_setpoint = current_setpoint;
-    g_speed_controller_setpoint = speed_setpoint;
     g_v_dq_v[0] = v_dq_v[0];
     g_v_dq_v[1] = v_dq_v[1];
     g_vbus_v = vbus_v;
+    g_estimator_hfi[0] = readings[0];
+    g_estimator_hfi[1] = readings[1];
+    g_estimator_hfi[2] = readings[2];
 }
 
 
@@ -285,10 +296,29 @@ void systick_cb(void) {
     UAVCANMessage out_message;
     CANMessage out_debug_message;
     enum hal_status_t status;
-    float temp;
+    struct uavcan_esc_state_t uavcan_state;
+    float temp, v_dq_v[2], is_a, vs_v;
 
     motor_state = const_cast<struct motor_state_t&>(g_motor_state);
-    g_uavcan_server.tick(motor_state);
+    v_dq_v[0] = g_v_dq_v[0];
+    v_dq_v[1] = g_v_dq_v[1];
+
+    uavcan_state.vbus_v = g_vbus_v;
+    /*
+    Try to work out how much current we're actually drawing from the supply,
+    assuming 100% conversion efficiency.
+    */
+    is_a = __VSQRTF(motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
+                    motor_state.i_dq_a[1] * motor_state.i_dq_a[1]);
+    vs_v = __VSQRTF(v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1]);
+    uavcan_state.ibus_a = is_a * vs_v / g_vbus_v;
+    uavcan_state.temperature_degc = hal_get_temperature_degc();
+    uavcan_state.speed_rpm = motor_state.angular_velocity_rad_per_s *
+        (60.0f / (float)M_PI) / (float)g_motor_params.num_poles;
+    uavcan_state.power_pct = 100.0f * (is_a * vs_v) /
+        (g_motor_params.max_current_a * g_motor_params.max_voltage_v);
+
+    g_uavcan_server.tick(uavcan_state);
 
     /* Process UAVCAN transmissions */
     if (g_valid_can) {
@@ -324,10 +354,16 @@ void systick_cb(void) {
         } else if ((g_time % 20) == 10) {
             /* Send controller status */
             message.controller.node_id = g_can_node_id;
+            /*
             message.controller.id = float16(motor_state.i_dq_a[0]);
             message.controller.iq = float16(motor_state.i_dq_a[1]);
             message.controller.iq_setpoint =
                 float16(g_current_controller_setpoint);
+            */
+            message.controller.id = float16(g_estimator_hfi[0]);
+            message.controller.iq = float16(g_estimator_hfi[1]);
+            message.controller.iq_setpoint = float16(motor_state.angle_rad *
+                                                     (0.5f / (float)M_PI));
             out_debug_message.set_id(CAN_STATUS_CONTROLLER);
             out_debug_message.set_data(sizeof(struct can_status_controller_t),
                                        message.bytes);
@@ -338,8 +374,9 @@ void systick_cb(void) {
     g_time++;
     esc_assert(!g_fault);
 
-    /* Motor shutdown logic */
-    if (std::abs(g_speed_controller_setpoint) < g_motor_params.startup_speed_rad_per_s &&
+    /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
+    if (std::abs(g_speed_controller_setpoint) <
+            0.1f / g_motor_params.phi_v_s_per_rad &&
             g_controller_mode == CONTROLLER_STOPPING) {
         g_controller_mode = CONTROLLER_STOPPED;
         g_speed_controller_setpoint = 0.0f;
@@ -413,7 +450,7 @@ void can_rx_cb(const CANMessage& message) {
     } debug_message;
     UAVCANMessage m(message);
     CANMessage reply;
-    float temp, min_speed;
+    float temp;
     uint8_t param_index, temp_node_id;
 
     /* Enable transmission */
@@ -436,7 +473,7 @@ void can_rx_cb(const CANMessage& message) {
                     switch (debug_message.setpoint.controller_mode) {
                         case CONTROLLER_TORQUE:
                             temp = (float)debug_message.setpoint.torque_setpoint;
-                            if (temp > 0.0f) {
+                            if (temp > 1.0f) {
                                 g_controller_mode = CONTROLLER_TORQUE;
                                 g_current_controller_setpoint =
                                     g_motor_params.max_current_a * temp *
@@ -447,22 +484,21 @@ void can_rx_cb(const CANMessage& message) {
                             break;
                         case CONTROLLER_SPEED:
                             temp = (float)debug_message.setpoint.rpm_setpoint;
-                            if (temp > 0.0f) {
+                            if (temp < 0.0f || temp > 0.0f) {
                                 g_controller_mode = CONTROLLER_SPEED;
                                 temp *= (1.0f / 60.0f) *
                                         (float)g_motor_params.num_poles *
                                         (float)M_PI;
-                                min_speed =
-                                    g_motor_params.startup_speed_rad_per_s * 2.0f;
-                                g_speed_controller_setpoint =
-                                    temp > 0.0f ? std::max(temp, min_speed) :
-                                                  std::min(temp, -min_speed);
+                                g_speed_controller_setpoint = temp;
                                 g_input_source = INPUT_CAN;
                                 g_last_can = g_time;
                             }
                             break;
                         default:
-                            g_controller_mode = CONTROLLER_STOPPING;
+                            if (g_controller_mode == CONTROLLER_TORQUE ||
+                                    g_controller_mode == CONTROLLER_SPEED) {
+                                g_controller_mode = CONTROLLER_STOPPING;
+                            }
                             break;
                     }
                     break;
@@ -510,7 +546,7 @@ void can_rx_cb(const CANMessage& message) {
 
 
 void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
-    float setpoint, min_speed;
+    float setpoint;
 
     /* PWM arm/disarm logic */
     if (width_us > RC_PWM_MIN_WIDTH_US && width_us < RC_PWM_MAX_WIDTH_US &&
@@ -548,10 +584,8 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
             PWM duty cycle controls thrust (proportional to square of RPM);
             maximum RPM is determined by configuration.
             */
-            min_speed = g_motor_params.startup_speed_rad_per_s;
             g_speed_controller_setpoint =
-                min_speed + (g_motor_params.max_speed_rad_per_s - min_speed) *
-                            __VSQRTF(setpoint);
+                g_motor_params.max_speed_rad_per_s * __VSQRTF(setpoint);
         } else if (g_controller_mode == CONTROLLER_TORQUE) {
             /*
             PWM duty cycle controls torque (approximately proportional to
@@ -630,6 +664,8 @@ int __attribute__ ((externally_visible)) main(void) {
                                     hal_control_t_s);
     g_speed_controller.set_params(motor_params, control_params,
                                   hal_control_t_s);
+    g_alignment_controller.set_params(motor_params, control_params,
+                                      hal_control_t_s);
 
     /*
     Calculate the motor's maximum (electrical) speed based on Vbus at startup
@@ -647,8 +683,6 @@ int __attribute__ ((externally_visible)) main(void) {
     g_motor_params.max_voltage_v = motor_params.max_voltage_v;
     g_motor_params.max_current_a = motor_params.max_current_a;
     g_motor_params.max_speed_rad_per_s = motor_params.max_speed_rad_per_s;
-    g_motor_params.startup_current_a = motor_params.startup_current_a;
-    g_motor_params.startup_speed_rad_per_s = motor_params.startup_speed_rad_per_s;
     g_motor_params.num_poles = motor_params.num_poles;
 
     /* Start PWM */

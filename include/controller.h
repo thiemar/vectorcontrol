@@ -21,6 +21,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include "fixed.h"
 #include "esc_assert.h"
 
+
 class DQCurrentController {
     /* Integral D and Q current errors */
     float integral_vd_v_;
@@ -43,7 +44,7 @@ class DQCurrentController {
     float v_limit_;
 
 public:
-    DQCurrentController():
+    DQCurrentController(void):
         integral_vd_v_(0.0f),
         integral_vq_v_(0.0f),
         i_setpoint_a_(0.0f),
@@ -53,7 +54,7 @@ public:
         v_limit_(0.1f)
     {}
 
-    void reset_state() {
+    void reset_state(void) {
         i_setpoint_a_ = 0.0f;
         integral_vd_v_ = 0.0f;
         integral_vq_v_ = 0.0f;
@@ -101,12 +102,13 @@ public:
     }
 
     void update(
-        float out_v_dq_frac[2],
-        const float i_dq_frac[2],
+        float out_v_dq_v[2],
+        const float i_dq_a[2],
         float angular_velocity_frac_per_timestep,
-        float vbus_frac
+        float vbus_v
     );
 };
+
 
 class SpeedController {
 protected:
@@ -124,9 +126,6 @@ protected:
     float setpoint_slew_rate_;
     float setpoint_slew_mul_;
 
-    /* Maximum current limit slew rate */
-    float current_limit_slew_rate_;
-
 public:
     SpeedController():
         integral_error_a_(0.0f),
@@ -137,8 +136,7 @@ public:
         current_limit_a_(0.0f),
         speed_limit_rad_per_s_(0.0f),
         setpoint_slew_rate_(0.0f),
-        setpoint_slew_mul_(0.0f),
-        current_limit_slew_rate_(0.0f)
+        setpoint_slew_mul_(0.0f)
     {}
 
     void reset_state() {
@@ -161,17 +159,6 @@ public:
         }
     }
 
-    void set_current_limit(float limit) {
-        /* Output current limit */
-        if (limit > current_limit_a_ + current_limit_slew_rate_) {
-            current_limit_a_ += current_limit_slew_rate_;
-        } else if (limit < current_limit_a_ - current_limit_slew_rate_) {
-            current_limit_a_ -= current_limit_slew_rate_;
-        } else {
-            current_limit_a_ = limit;
-        }
-    }
-
     void set_params(
         const struct motor_params_t& motor_params,
         const struct control_params_t& control_params,
@@ -188,10 +175,8 @@ public:
         needing to multiply later.
         */
         setpoint_slew_rate_ = control_params.max_accel_rad_per_s2 * t_s;
-        current_limit_slew_rate_ = 0.05f * motor_params.max_current_a *
-                                   control_params.bandwidth_hz * t_s;
-
         speed_limit_rad_per_s_ = motor_params.max_speed_rad_per_s;
+        current_limit_a_ = motor_params.max_current_a;
     }
 
     #pragma GCC optimize("O3")
@@ -232,5 +217,115 @@ public:
         setpoint_slew_mul_ = std::min(1.0f, 0.02f + setpoint_slew_mul_);
 
         return result_a;
+    }
+};
+
+
+class AlignmentController {
+    /* Id PI coefficients and state */
+    float integral_vd_v_;
+    float v_kp_;
+    float v_ki_;
+
+    /* Position controller coefficients and state */
+    float integral_id_a_;
+    float i_kp_;
+    float i_ki_;
+
+    /* Position controller output (current setpoint) */
+    float i_setpoint_a_;
+
+    /* Physical parameters */
+    float v_limit_;
+    float i_limit_;
+
+public:
+    AlignmentController(void):
+        integral_vd_v_(0.0f),
+        v_kp_(0.0f),
+        v_ki_(0.0f),
+        integral_id_a_(0.0f),
+        i_kp_(0.0f),
+        i_ki_(0.0f),
+        i_setpoint_a_(0.0f),
+        v_limit_(0.0f),
+        i_limit_(0.0f)
+    {}
+
+    void reset_state(void) {
+        integral_vd_v_ = 0.0f;
+        integral_id_a_ = 0.0f;
+        i_setpoint_a_ = 0.0f;
+    }
+
+    void set_params(
+        const struct motor_params_t& params,
+        const struct control_params_t& control_params,
+        float t_s
+    ) {
+        float bandwidth_rad_per_s;
+
+        /*
+        Current controller bandwidth is the same as for the main current
+        controller
+        */
+        bandwidth_rad_per_s = 2.0f * (float)M_PI *
+                              control_params.bandwidth_hz * 10.0f;
+        v_kp_ = params.ls_h * bandwidth_rad_per_s;
+        v_ki_ = t_s * params.rs_r / params.ls_h;
+
+        /*
+        Gain is 10% of max current per radian position error.
+        Integral time is 0.1 s.
+        */
+        i_kp_ = params.max_current_a * 0.1f;
+        i_ki_ = t_s * 10.0f;
+
+        /* Set modulation and current limit */
+        v_limit_ = params.max_voltage_v;
+        i_limit_ = params.max_current_a;
+    }
+
+    #pragma GCC optimize("03")
+    void update(
+        float out_v_dq_v[2],
+        const float i_dq_a[2],
+        float angle_rad,
+        float vbus_v
+    ) {
+        float v_max, etheta_rad, ed_a, vd_v;
+
+        /*
+        Determine how much current the D axis needs to align properly. We take
+        absolute error as the input because we don't care about the direction
+        of the error -- as long as enough current is flowing through D the
+        rotor will converge on the initial position.
+        */
+        etheta_rad = std::abs(angle_rad);
+        i_setpoint_a_ = i_kp_ * etheta_rad + integral_id_a_;
+
+        if (i_setpoint_a_ > i_limit_) {
+            i_setpoint_a_ = i_limit_;
+        }
+
+        integral_id_a_ += i_ki_ * (i_setpoint_a_ - integral_id_a_);
+
+        /*
+        Single-component current controller to run enough current in the D
+        direction to achieve rotor alignment.
+        */
+        v_max = std::min(v_limit_, vbus_v * 0.95f);
+
+        ed_a = i_setpoint_a_ - i_dq_a[0];
+        vd_v = v_kp_ * ed_a + integral_vd_v_;
+
+        if (vd_v > v_max) {
+            vd_v = v_max;
+        }
+
+        integral_vd_v_ += v_ki_ * (vd_v - integral_vd_v_);
+
+        out_v_dq_v[0] = vd_v;
+        out_v_dq_v[1] = 0.0f;
     }
 };

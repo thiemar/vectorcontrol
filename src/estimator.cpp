@@ -38,7 +38,7 @@ const float g_measurement_noise[2] = { 0.005f, 0.005f };
 void StateEstimator::update_state_estimate(
     const float i_ab_a[2],
     const float v_ab_v[2],
-    float velocity_setpoint
+    float __attribute__((unused)) velocity_setpoint
 ) {
     /*
     EKF observer largely derived from:
@@ -58,18 +58,7 @@ void StateEstimator::update_state_estimate(
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
           b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d, next_theta,
-          open_loop_velocity, update_velocity, i_dq_a[2];
-
-    open_loop_velocity = velocity_setpoint > 0.0f ?
-        open_loop_speed_rad_per_s_ : -open_loop_speed_rad_per_s_;
-
-    if (open_loop_speed_rad_per_s_ < open_loop_target_rad_per_s_) {
-        update_velocity = open_loop_velocity;
-    } else {
-        update_velocity = velocity_setpoint > 0.0f ?
-            std::max(open_loop_velocity, state_estimate_.angular_velocity_rad_per_s) :
-            std::min(open_loop_velocity, state_estimate_.angular_velocity_rad_per_s);
-    }
+          i_dq_a[2], angle_diff, interp, angle_orig;
 
     /*
     Update the t-1 angle with the t-1 angular velocity estimate; this brings
@@ -77,13 +66,19 @@ void StateEstimator::update_state_estimate(
     the point at which the current reading was taken. This matches up with
     the Vab output from t-2 controller iteration.
     */
-    state_estimate_.angle_rad += update_velocity * t_;
+    state_estimate_.angle_rad +=
+        state_estimate_.angular_velocity_rad_per_s * t_;
 
-    /* Constrain angle to 0 .. 2 * pi */
+    /*
+    Constrain angle to 0 .. 2 * pi; increment or decrement the revolution
+    count whenever the angle exceeds that range.
+    */
     if (state_estimate_.angle_rad > 2.0f * (float)M_PI) {
         state_estimate_.angle_rad -= 2.0f * (float)M_PI;
+        state_estimate_.revolution_count++;
     } else if (state_estimate_.angle_rad < 0.0f) {
         state_estimate_.angle_rad += 2.0f * (float)M_PI;
+        state_estimate_.revolution_count--;
     }
 
     /* Update the Idq estimate based on the theta estimate for time t */
@@ -94,6 +89,21 @@ void StateEstimator::update_state_estimate(
                                  i_dq_lpf_coeff_;
     state_estimate_.i_dq_a[1] += (i_dq_a[1] - state_estimate_.i_dq_a[1]) *
                                  i_dq_lpf_coeff_;
+
+    /*
+    Highpass the current readings at the Nyquist frequency in order to extract
+    the HFI signal.
+    */
+    i_dq_m_a_[0] = i_dq_a[0] -
+                   0.8819113782981762f * (i_dq_a[0] + i_dq_m_a_[0]);
+    i_dq_m_a_[1] = i_dq_a[1] * 0.11808862170182377f -
+                   i_dq_m_a_[1] * 0.8819113782981762f;
+
+    /* Find the magnitude of the HFI signals, and lowpass that. */
+    i_hfi_dq_[0] += (i_dq_m_a_[0] * i_dq_m_a_[0] - i_hfi_dq_[0]) *
+                    angular_velocity_lpf_coeff_;
+    i_hfi_dq_[1] += (i_dq_m_a_[1] * i_dq_m_a_[1] - i_hfi_dq_[1]) *
+                    angular_velocity_lpf_coeff_;
 
 #define Pm(i,j) covariance_temp[i * STATE_DIM + j]
 #define P(i,j) state_covariance_[i * STATE_DIM + j]
@@ -227,31 +237,46 @@ void StateEstimator::update_state_estimate(
     update[0] = K(0,0) * innovation[0] + K(1,0) * innovation[1];
     update[1] = K(0,1) * innovation[0] + K(1,1) * innovation[1];
 
-    /* Get the corrected state estimate for the last PWM cycle (time t) */
-    state_estimate_.angular_velocity_rad_per_s += update[0];
-    state_estimate_.angle_rad += update[1];
+    /* Merge the EKF and HFI estimates */
+    interp = std::max(0.0f, get_hfi_weight() - 1e-2f);
 
-    if (open_loop_speed_rad_per_s_ < open_loop_target_rad_per_s_) {
-        open_loop_speed_rad_per_s_ =
-            open_loop_speed_rad_per_s_ + open_loop_accel_rad_per_s2_ * t_ *
-            (0.2f + (open_loop_speed_rad_per_s_ / open_loop_target_rad_per_s_));
-        update_velocity = open_loop_velocity;
-    } else {
-        update_velocity = velocity_setpoint > 0.0f ?
-            std::max(open_loop_velocity, state_estimate_.angular_velocity_rad_per_s) :
-            std::min(open_loop_velocity, state_estimate_.angular_velocity_rad_per_s);
-    }
+    angle_orig = state_estimate_.angle_rad;
 
+    angle_diff = i_hfi_dq_[1] - i_hfi_dq_[0];
+    state_estimate_.angle_rad += angle_diff * interp;
+
+    /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
+    state_estimate_.angle_rad += update[1] * (1.0f - interp);
+    state_estimate_.angular_velocity_rad_per_s += update[0] * (1.0f - interp);
+
+    angle_diff = state_estimate_.angle_rad - angle_orig;
+    state_estimate_.angular_velocity_rad_per_s +=
+        ((angle_diff / t_) - state_estimate_.angular_velocity_rad_per_s) *
+        angular_velocity_lpf_coeff_ * interp;
+
+    /* Apply an LPF to the angular velocity estimate for output */
     filtered_velocity_rad_per_s_ +=
-        (update_velocity - filtered_velocity_rad_per_s_) *
+        (state_estimate_.angular_velocity_rad_per_s - filtered_velocity_rad_per_s_) *
         angular_velocity_lpf_coeff_;
+
+    if (!is_converged()) {
+        state_estimate_.angular_velocity_rad_per_s = 0.0f;
+        if (std::abs(state_estimate_.angle_rad) < 0.01f &&
+                std::abs(angle_diff) < 1e-4f) {
+            is_converged_ = true;
+        }
+    }
 
     /*
     Calculate sin and cos of the extrapolated angle so we can transform the
     controller Vab into the dq frame for t+2, which is when the voltage output
     will happen.
     */
-    next_theta = state_estimate_.angle_rad + update_velocity * t_ * 2.0f;
+    next_theta = state_estimate_.angle_rad +
+                 state_estimate_.angular_velocity_rad_per_s * t_ * 2.0f;
+
+    next_theta += (velocity_setpoint > 0.0f ? (float)M_PI * 2.0f * t_ :
+                                             -(float)M_PI * 2.0f * t_) * interp;
 
     /* Constrain angle to 0 .. 2 * pi */
     if (next_theta > 2.0f * (float)M_PI) {
@@ -406,8 +431,8 @@ void ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
 void ParameterEstimator::calculate_r_l_from_samples(
     float& r_r,
     float& l_h,
-    const float v[4],
-    const float i[4]
+    const float v_sq[4],
+    const float i_sq[4]
 ) {
     size_t idx;
     float z_sq, w_sq, sum_xy, sum_x, sum_y, sum_x_sq, a, b;
@@ -423,7 +448,7 @@ void ParameterEstimator::calculate_r_l_from_samples(
     L is then sqrt(b) and R is sqrt(a).
     */
     for (idx = 0; idx < 4; idx++) {
-        z_sq = v[idx] / i[idx];
+        z_sq = v_sq[idx] / i_sq[idx];
         w_sq = PE_START_ANGULAR_VELOCITY / (float)(1 << idx);
         w_sq *= w_sq;
 
