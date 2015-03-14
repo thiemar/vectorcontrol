@@ -42,7 +42,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_CURRENT_LIMIT, "motor_current_limit",
-        20.0f, 10.0f, 1.0f, 40.0f},
+        1.0f, 10.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -53,7 +53,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     power by the motor current limit.
     */
     {PARAM_MOTOR_VOLTAGE_LIMIT, "motor_voltage_limit",
-        11.1f, 7.4f, 0.5f, 27.0f},
+        2.0f, 7.4f, 0.5f, 27.0f},
 
     /*
     Motor maximum rated RPM. This limits the upper end of the PWM setpoint

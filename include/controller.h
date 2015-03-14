@@ -124,7 +124,6 @@ protected:
 
     /* Maximum setpoint slew rate */
     float setpoint_slew_rate_;
-    float setpoint_slew_mul_;
 
 public:
     SpeedController():
@@ -135,25 +134,20 @@ public:
         kp_inv_(0.0f),
         current_limit_a_(0.0f),
         speed_limit_rad_per_s_(0.0f),
-        setpoint_slew_rate_(0.0f),
-        setpoint_slew_mul_(0.0f)
+        setpoint_slew_rate_(0.0f)
     {}
 
     void reset_state() {
         integral_error_a_ = 0.0f;
         setpoint_rad_per_s_ = 0.0f;
-        setpoint_slew_mul_ = 0.0f;
     }
 
     #pragma GCC optimize("03")
     void set_setpoint(float setpoint) {
-        float slew_rate;
-        slew_rate = setpoint_slew_rate_ * setpoint_slew_mul_;
-
-        if (setpoint > setpoint_rad_per_s_ + slew_rate) {
-            setpoint_rad_per_s_ += slew_rate;
-        } else if (setpoint < setpoint_rad_per_s_ - slew_rate) {
-            setpoint_rad_per_s_ -= slew_rate;
+        if (setpoint > setpoint_rad_per_s_ + setpoint_slew_rate_) {
+            setpoint_rad_per_s_ += setpoint_slew_rate_;
+        } else if (setpoint < setpoint_rad_per_s_ - setpoint_slew_rate_) {
+            setpoint_rad_per_s_ -= setpoint_slew_rate_;
         } else {
             setpoint_rad_per_s_ = setpoint;
         }
@@ -165,9 +159,7 @@ public:
         float t_s
     ) {
         kp_ = control_params.gain_a_s_per_rad;
-        kp_inv_ = 1.0f / kp_;
-        ki_ = control_params.gain_a_s_per_rad *
-              2.0f * (float)M_PI * control_params.bandwidth_hz * t_s;
+        ki_ = 2.0f * (float)M_PI * control_params.bandwidth_hz * t_s;
 
         /*
         Maximum setpoint slew rate is from zero to max speed over a period
@@ -181,7 +173,7 @@ public:
 
     #pragma GCC optimize("O3")
     float update(const struct motor_state_t& state) {
-        float error_rad_per_s, result_a, out_a, windup_correction;
+        float error_rad_per_s, result_a, out_a;
 
         error_rad_per_s = setpoint_rad_per_s_ -
                           state.angular_velocity_rad_per_s;
@@ -189,32 +181,19 @@ public:
         out_a = kp_ * error_rad_per_s + integral_error_a_;
 
         /* Limit output to maximum current */
-        if (std::abs(out_a) < current_limit_a_) {
-            result_a = out_a;
-        } else if (out_a >= 0.0f) {
+        if (out_a > current_limit_a_) {
             result_a = current_limit_a_;
-        } else if (out_a < 0.0f) {
+        } else if (out_a < -current_limit_a_) {
             result_a = -current_limit_a_;
         } else {
-            result_a = 0.0f;
+            result_a = out_a;
         }
 
         /*
         Limit integral term accumulation when the output current is saturated
         (or when it's lagging behind the setpoint).
         */
-        windup_correction = result_a - out_a;
-        if (error_rad_per_s > 0.0f) {
-            windup_correction = std::min(windup_correction, 0.0f);
-        } else if (error_rad_per_s < 0.0f) {
-            windup_correction = std::max(windup_correction, 0.0f);
-        }
-        integral_error_a_ +=
-            ki_ * (error_rad_per_s + windup_correction * kp_inv_);
-
-        setpoint_slew_mul_ = state.angular_velocity_rad_per_s /
-                             (speed_limit_rad_per_s_ * 0.25f);
-        setpoint_slew_mul_ = std::min(1.0f, 0.02f + setpoint_slew_mul_);
+        integral_error_a_ += ki_ * (result_a - integral_error_a_);
 
         return result_a;
     }
@@ -222,13 +201,13 @@ public:
 
 
 class AlignmentController {
-    /* Id PI coefficients and state */
-    float integral_vd_v_;
+    /* Ia PI coefficients and state */
+    float integral_va_v_;
     float v_kp_;
     float v_ki_;
 
     /* Position controller coefficients and state */
-    float integral_id_a_;
+    float integral_ia_a_;
     float i_kp_;
     float i_ki_;
 
@@ -241,10 +220,10 @@ class AlignmentController {
 
 public:
     AlignmentController(void):
-        integral_vd_v_(0.0f),
+        integral_va_v_(0.0f),
         v_kp_(0.0f),
         v_ki_(0.0f),
-        integral_id_a_(0.0f),
+        integral_ia_a_(0.0f),
         i_kp_(0.0f),
         i_ki_(0.0f),
         i_setpoint_a_(0.0f),
@@ -253,8 +232,8 @@ public:
     {}
 
     void reset_state(void) {
-        integral_vd_v_ = 0.0f;
-        integral_id_a_ = 0.0f;
+        integral_va_v_ = 0.0f;
+        integral_ia_a_ = 0.0f;
         i_setpoint_a_ = 0.0f;
     }
 
@@ -276,9 +255,9 @@ public:
 
         /*
         Gain is 10% of max current per radian position error.
-        Integral time is 0.1 s.
+        Integral time is 0.02 s.
         */
-        i_kp_ = params.max_current_a * 0.1f;
+        i_kp_ = params.max_current_a * 0.02f;
         i_ki_ = t_s * 10.0f;
 
         /* Set modulation and current limit */
@@ -288,12 +267,12 @@ public:
 
     #pragma GCC optimize("03")
     void update(
-        float out_v_dq_v[2],
-        const float i_dq_a[2],
+        float out_v_ab_v[2],
+        const float i_ab_a[2],
         float angle_rad,
         float vbus_v
     ) {
-        float v_max, etheta_rad, ed_a, vd_v;
+        float v_max, etheta_rad, ea_a, va_v;
 
         /*
         Determine how much current the D axis needs to align properly. We take
@@ -301,14 +280,15 @@ public:
         of the error -- as long as enough current is flowing through D the
         rotor will converge on the initial position.
         */
-        etheta_rad = std::abs(angle_rad);
-        i_setpoint_a_ = i_kp_ * etheta_rad + integral_id_a_;
+        etheta_rad = std::abs(angle_rad > (float)M_PI ?
+                              angle_rad - (float)M_PI * 2.0f : angle_rad);
+        i_setpoint_a_ = i_kp_ * etheta_rad + integral_ia_a_;
 
         if (i_setpoint_a_ > i_limit_) {
             i_setpoint_a_ = i_limit_;
         }
 
-        integral_id_a_ += i_ki_ * (i_setpoint_a_ - integral_id_a_);
+        integral_ia_a_ += i_ki_ * (i_setpoint_a_ - integral_ia_a_);
 
         /*
         Single-component current controller to run enough current in the D
@@ -316,16 +296,16 @@ public:
         */
         v_max = std::min(v_limit_, vbus_v * 0.95f);
 
-        ed_a = i_setpoint_a_ - i_dq_a[0];
-        vd_v = v_kp_ * ed_a + integral_vd_v_;
+        ea_a = i_setpoint_a_ - i_ab_a[0];
+        va_v = v_kp_ * ea_a + integral_va_v_;
 
-        if (vd_v > v_max) {
-            vd_v = v_max;
+        if (va_v > v_max) {
+            va_v = v_max;
         }
 
-        integral_vd_v_ += v_ki_ * (vd_v - integral_vd_v_);
+        integral_va_v_ += v_ki_ * (va_v - integral_va_v_);
 
-        out_v_dq_v[0] = vd_v;
-        out_v_dq_v[1] = 0.0f;
+        out_v_ab_v[0] = va_v;
+        out_v_ab_v[1] = 0.0f;
     }
 };

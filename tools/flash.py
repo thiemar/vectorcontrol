@@ -52,23 +52,23 @@ CAN_CONFIG_INDEXES = {
         "num_poles": 0,
         "current_limit": 1,
         "voltage_limit": 2,
-        "rpm_max": 5,
-        "rs": 6,
-        "ls": 7,
-        "kv": 8
+        "rpm_max": 3,
+        "rs": 4,
+        "ls": 5,
+        "kv": 6
     },
     "rpmctl": {
-        "gain": 9,
-        "bandwidth": 10,
-        "accel_max": 11
+        "gain": 7,
+        "bandwidth": 8,
+        "accel_max": 9
     },
     "uavcan": {
-        "escstatus_interval": 12,
-        "node_id": 13,
-        "esc_index": 14
+        "escstatus_interval": 10,
+        "node_id": 11,
+        "esc_index": 12
     },
     "pwm": {
-        "ctl_mode": 15
+        "ctl_mode": 13
     }
 }
 

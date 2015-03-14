@@ -29,6 +29,8 @@ class StateEstimator {
     /* HFI state */
     float i_dq_m_a_[2];
     float i_hfi_dq_[2];
+    float hfi_cutoff_rad_per_s_;
+    float hfi_cutoff_inv_;
 
     /* Calculated from start-up parameters */
     float carrier_v_;
@@ -38,10 +40,12 @@ class StateEstimator {
     float b_; /* phi / L * T */
     float c_; /* T / L */
     float t_;
+    float t_inv_;
 
     /* Current and speed lowpass filter parameters */
     float i_dq_lpf_coeff_;
     float angular_velocity_lpf_coeff_;
+    float hfi_lpf_coeff_;
 
     /* Column-major */
     float state_covariance_[4];
@@ -54,32 +58,36 @@ class StateEstimator {
     float filtered_velocity_rad_per_s_;
 
     uint32_t is_converged_;
-    uint32_t dummy_;
+    uint32_t is_hfi_active_;
 
 public:
     StateEstimator():
         state_estimate_ {0, 0.0f, 0.0f, 0.0f, 0.0f},
         i_dq_m_a_ {0.0f, 0.0f},
         i_hfi_dq_ {0.0f, 0.0f},
+        hfi_cutoff_rad_per_s_(0.0f),
+        hfi_cutoff_inv_(0.0f),
         carrier_v_(0.0f),
         a_(0.0f),
         b_(0.0f),
         c_(0.0f),
         t_(0.0f),
+        t_inv_(0.0f),
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
+        hfi_lpf_coeff_(0.0f),
         state_covariance_ {1.0f, 0.0f, 0.0f, 1.0f},
         last_i_ab_a_ {0.0f, 0.0f},
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f),
         filtered_velocity_rad_per_s_(0.0f),
-        is_converged_(false),
-        dummy_(0)
+        is_converged_(0),
+        is_hfi_active_(0)
     {}
 
     void reset_state() {
-        state_estimate_.angular_velocity_rad_per_s =
-            state_estimate_.angle_rad = 0.0f;
+        state_estimate_.angular_velocity_rad_per_s = 0.0f;
+        state_estimate_.angle_rad = 0.0f;
         state_estimate_.revolution_count = 0;
         next_sin_theta_ = 0;
         next_cos_theta_ = 1.0f;
@@ -89,13 +97,13 @@ public:
         filtered_velocity_rad_per_s_ = 0.0f;
         i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
         i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
-        is_converged_ = false;
+        is_converged_ = 0;
+        is_hfi_active_ = 0;
     }
 
     void update_state_estimate(
         const float i_ab_a[2],
-        const float v_ab_v[2],
-        float velocity_setpoint
+        const float v_ab_v[2]
     );
 
     void get_state_estimate(struct motor_state_t& out_estimate) const {
@@ -112,29 +120,25 @@ public:
     }
 
     float get_hfi_weight(void) const {
-        const float hfi_cutoff = (float)M_PI * 2.0f * 20.0f;
-        const float hfi_cutoff_inv = 1.0f / hfi_cutoff;
         float weight;
-
         weight = std::min(std::abs(filtered_velocity_rad_per_s_),
-                          hfi_cutoff) * hfi_cutoff_inv;
-        weight *= weight;
-
+                          hfi_cutoff_rad_per_s_) * hfi_cutoff_inv_;
         return 1.0f - weight;
     }
 
     void get_hfi_carrier_dq_v(float v_dq[2]) {
         float weight;
         weight = get_hfi_weight();
-        carrier_v_ = -carrier_v_;
-        if (weight > 1e-2f) {
-            v_dq[0] = v_dq[1] = carrier_v_;
-        } else if (weight > 1e-6f) {
-            v_dq[0] = v_dq[1] = carrier_v_ *
-                                std::min(1.0f, weight * 1e2f);
-        } else {
-            v_dq[0] = v_dq[1] = 0.0f;
+
+        if (weight > 1e-6f || is_hfi_active_ > 500u) {
+            is_hfi_active_ = 500u;
+        } else if (is_hfi_active_ > 0) {
+            is_hfi_active_--;
         }
+
+        carrier_v_ = -carrier_v_;
+        v_dq[0] = carrier_v_ * ((float)is_hfi_active_ * (1.0f / 500.0f));
+        v_dq[1] = v_dq[0];
     }
 
     void get_hfi_readings(float readings[3]) const {
@@ -144,7 +148,7 @@ public:
     }
 
     bool is_converged(void) const {
-        return is_converged_;
+        return is_converged_ == 5000u;
     }
 
     void set_params(
@@ -152,22 +156,22 @@ public:
         const struct control_params_t& control_params,
         float t_s
     ) {
-        float wc, zwc;
+        float wc, zwc, wb;
 
         a_ = 1.0f - params.rs_r / params.ls_h * t_s;
         b_ = params.phi_v_s_per_rad / params.ls_h * t_s;
         c_ = t_s / params.ls_h;
         t_ = t_s;
+        t_inv_ = 1.0f / t_s;
 
         /*
         Control parameters -- LPF corner frequency is one decade higher than
         the controller bandwidth; current control bandwidth is one decade
         higher than speed control bandwidth.
         */
-        i_dq_lpf_coeff_ =
-            1.0f - fast_expf(-2.0f * (float)M_PI * control_params.bandwidth_hz * t_s * 100.0f);
-        angular_velocity_lpf_coeff_ =
-            1.0f - fast_expf(-2.0f * (float)M_PI * control_params.bandwidth_hz * t_s * 10.0f);
+        wb = 2.0f * (float)M_PI * control_params.bandwidth_hz;
+        i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 50.0f);
+        angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s);
 
         /*
         High-frequency injection parameters:
@@ -183,7 +187,15 @@ public:
         Set carrier voltage to whatever will give us an 0.25 A injected
         current
         */
-        carrier_v_ = 0.5f * zwc;
+        carrier_v_ = std::min(2.0f, 0.25f * zwc);
+
+        /*
+        HFI parameters. Cut-off speed and angular velocity filter frequency
+        are both set to 20 Hz electrical.
+        */
+        hfi_cutoff_rad_per_s_ = 0.5f / params.phi_v_s_per_rad;
+        hfi_cutoff_inv_ = 1.0f / hfi_cutoff_rad_per_s_;
+        hfi_lpf_coeff_ = 1.0f - fast_expf(-hfi_cutoff_rad_per_s_);
     }
 };
 

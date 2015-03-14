@@ -186,12 +186,12 @@ void control_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float v_dq_v[2], current_setpoint, speed_setpoint, readings[3], hfi_v[2];
+    float v_dq_v[2], current_setpoint, speed_setpoint, readings[3], hfi_v[2],
+          v_ab_v[2];
     struct motor_state_t motor_state;
 
     /* Update the state estimate with those values */
-    g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
-                                      g_speed_controller_setpoint);
+    g_estimator.update_state_estimate(i_ab_a, last_v_ab_v);
     g_estimator.get_state_estimate(motor_state);
 
     /*
@@ -205,7 +205,7 @@ void control_cb(
     }
 
     if (g_controller_mode == CONTROLLER_STOPPED) {
-        v_dq_v[0] = v_dq_v[1] = 0.0f;
+        out_v_ab_v[0] = out_v_ab_v[1] = v_dq_v[0] = v_dq_v[1] = 0.0f;
         current_setpoint = 0.0f;
         speed_setpoint = 0.0f;
         g_estimator.reset_state();
@@ -217,13 +217,9 @@ void control_cb(
     } else if (g_estimator.is_converged()) {
         g_estimator_converged = true;
         /* Update the speed controller setpoint */
-        if (g_controller_mode == CONTROLLER_TORQUE) {
+        if (g_controller_mode == CONTROLLER_TORQUE ||
+                g_controller_mode == CONTROLLER_STOPPING) {
             speed_setpoint = motor_state.angular_velocity_rad_per_s;
-            if (std::abs(speed_setpoint) < 50.0f) {
-                speed_setpoint = g_current_controller_setpoint > 0.0f ?
-                                 50.0f : -50.0f;
-            }
-
             g_speed_controller_setpoint = speed_setpoint;
         } else {
             speed_setpoint = g_speed_controller_setpoint;
@@ -235,7 +231,8 @@ void control_cb(
         except when
         */
         current_setpoint = g_speed_controller.update(motor_state);
-        if (g_controller_mode == CONTROLLER_TORQUE) {
+        if (g_controller_mode == CONTROLLER_TORQUE ||
+                g_controller_mode == CONTROLLER_STOPPING) {
             current_setpoint = g_current_controller_setpoint;
         } else {
             g_current_controller_setpoint = current_setpoint;
@@ -255,22 +252,28 @@ void control_cb(
         g_estimator.get_hfi_readings(readings);
         v_dq_v[0] += hfi_v[0];
         v_dq_v[1] += hfi_v[1];
+
+        /*
+        Transform Vd and Vq into the alpha-beta frame, and set the PWM output
+        accordingly.
+        */
+        g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
     } else {
         g_estimator_converged = false;
         /* Estimator is still aligning/converging */
-        g_alignment_controller.update(v_dq_v, motor_state.i_dq_a,
-                                      motor_state.angle_rad, vbus_v);
+        g_alignment_controller.update(v_ab_v, i_ab_a, motor_state.angle_rad,
+                                      vbus_v);
         g_estimator.get_hfi_carrier_dq_v(hfi_v);
         g_estimator.get_hfi_readings(readings);
-        v_dq_v[0] += hfi_v[0];
-        v_dq_v[1] += hfi_v[1];
-    }
 
-    /*
-    Transform Vd and Vq into the alpha-beta frame, and set the PWM output
-    accordingly.
-    */
-    g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
+        /*
+        Transform Vd and Vq into the alpha-beta frame, and set the PWM output
+        accordingly.
+        */
+        g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, hfi_v);
+        out_v_ab_v[0] += v_ab_v[0];
+        out_v_ab_v[1] += v_ab_v[1];
+    }
 
     g_motor_state.angular_velocity_rad_per_s =
         motor_state.angular_velocity_rad_per_s;
@@ -354,16 +357,19 @@ void systick_cb(void) {
         } else if ((g_time % 20) == 10) {
             /* Send controller status */
             message.controller.node_id = g_can_node_id;
-            /*
+/*
             message.controller.id = float16(motor_state.i_dq_a[0]);
             message.controller.iq = float16(motor_state.i_dq_a[1]);
             message.controller.iq_setpoint =
                 float16(g_current_controller_setpoint);
-            */
+*/
+
             message.controller.id = float16(g_estimator_hfi[0]);
             message.controller.iq = float16(g_estimator_hfi[1]);
             message.controller.iq_setpoint = float16(motor_state.angle_rad *
                                                      (0.5f / (float)M_PI));
+
+
             out_debug_message.set_id(CAN_STATUS_CONTROLLER);
             out_debug_message.set_data(sizeof(struct can_status_controller_t),
                                        message.bytes);
@@ -375,13 +381,14 @@ void systick_cb(void) {
     esc_assert(!g_fault);
 
     /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
-    if (std::abs(g_speed_controller_setpoint) <
-            0.1f / g_motor_params.phi_v_s_per_rad &&
+    if (std::abs(motor_state.angular_velocity_rad_per_s) <
+            0.2f / g_motor_params.phi_v_s_per_rad &&
             g_controller_mode == CONTROLLER_STOPPING) {
         g_controller_mode = CONTROLLER_STOPPED;
         g_speed_controller_setpoint = 0.0f;
+        g_current_controller_setpoint = 0.0f;
     } else if (g_controller_mode == CONTROLLER_STOPPING) {
-        g_speed_controller_setpoint -= g_speed_controller_setpoint * 0.001f;
+        g_current_controller_setpoint = 0.0f;
     } else if (g_controller_mode == CONTROLLER_SPEED ||
                 g_controller_mode == CONTROLLER_TORQUE) {
         /*

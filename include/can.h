@@ -182,12 +182,15 @@ public:
     }
 
     const uint8_t& operator[](int i) const {
-        esc_assert(0 <= i && (size_t)i < data_length_);
+        esc_assert(0 <= i && (size_t)i < sizeof(data_));
         return data_[i];
     }
 
     uint8_t& operator[](int i) {
-        esc_assert(0 <= i && (size_t)i < data_length_);
+        esc_assert(0 <= i && (size_t)i < sizeof(data_));
+        if ((size_t)i >= data_length_) {
+            data_length_ = i + 1;
+        }
         return data_[i];
     }
 };

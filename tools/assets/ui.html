@@ -246,7 +246,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
             width: 175px;
         }
 
-        div.device-control input[type=radio] {
+        form.control input[type=radio] {
             margin: 3px 2px 3px 0;
         }
 
@@ -285,81 +285,6 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
         <div class="device-detail">
             <div class="device-configuration">
-                <form class="configuration" action="" method="post">
-                    <h3>Motor parameters</h3>
-                    <label>
-                        <span>Number of poles</span>
-                        <input name="motor_num_poles" class="configuration" type="number" min="4" max="40" step="2">
-                    </label>
-                    <label>
-                        <span>Current limit (A)</span>
-                        <input name="motor_current_limit" class="configuration" type="number" min="1" max="40" step="1">
-                    </label>
-                    <label>
-                        <span>Voltage limit (V)</span>
-                        <input name="motor_voltage_limit" class="configuration" type="number" min="0.74" max="25.9" step="0.37">
-                    </label>
-                    <label>
-                        <span>Maximum speed (rpm)</span>
-                        <input name="motor_rpm_max" class="configuration" type="number" min="1000" max="40000" step="1000">
-                    </label>
-                    <label>
-                        <span>Resistance (Ω)</span>
-                        <input name="motor_rs" class="configuration" type="text" readonly="readonly">
-                    </label>
-                    <label>
-                        <span>Inductance (H)</span>
-                        <input name="motor_ls" class="configuration" type="text" readonly="readonly">
-                    </label>
-                    <label>
-                        <span>Kv (rpm / V)</span>
-                        <input name="motor_kv" class="configuration" type="number" min="200" max="4000" step="1">
-                    </label>
-                </form>
-            </div>
-
-            <div class="device-configuration">
-                <form class="configuration" action="" method="post">
-                    <h3>Control parameters</h3>
-                    <label>
-                        <span>Speed gain (As / rad)</span>
-                        <input name="rpmctl_gain" class="configuration" type="number" min="0.001" max="0.1" step="0.001">
-                    </label>
-                    <label>
-                        <span>Speed bandwidth (Hz)</span>
-                        <input name="rpmctl_bandwidth" class="configuration" type="number" min="10.0" max="400.0" step="10.0">
-                    </label>
-                    <label>
-                        <span>Acceleration limit (rpm / s)</span>
-                        <input name="rpmctl_accel_max" class="configuration" type="number" min="100.0" max="100000.0" step="100.0">
-                    </label>
-                    <label>
-                        <span>PWM control mode</span>
-                        <select name="pwm_ctl_mode" class="configuration">
-                            <option>speed</option>
-                            <option>torque</option>
-                        </select>
-                    </label>
-
-                    <h3>UAVCAN parameters</h3>
-                    <label>
-                        <span>ESC status interval (s)</span>
-                        <input name="uavcan_escstatus_interval" class="configuration" type="number" min="0.01" max="0.1" step="0.01">
-                    </label>
-                    <label>
-                        <span>Node ID</span>
-                        <input name="uavcan_node_id" class="configuration" type="number" min="1" max="125" step="1">
-                    </label>
-                    <label>
-                        <span>ESC index</span>
-                        <input name="uavcan_esc_index" class="configuration" type="number" min="0" max="15" step="1">
-                    </label>
-
-                    <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
-                </form>
-            </div>
-
-            <div class="device-control">
                 <form class="control" action="" method="post">
                     <h3>Setpoint</h3>
                     <label>
@@ -454,6 +379,75 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
                     <input type="button" class="motor-start" name="start" value="Start motor">
                     <input type="button" class="motor-stop" name="stop" value="Stop motor" disabled="disabled">
+                </form>
+
+                <form class="configuration" action="" method="post">
+                    <h3>Motor parameters</h3>
+                    <label>
+                        <span>Number of poles</span>
+                        <input name="motor_num_poles" class="configuration" type="number" min="4" max="40" step="2">
+                    </label>
+                    <label>
+                        <span>Current limit (A)</span>
+                        <input name="motor_current_limit" class="configuration" type="number" min="1" max="40" step="1">
+                    </label>
+                    <label>
+                        <span>Voltage limit (V)</span>
+                        <input name="motor_voltage_limit" class="configuration" type="number" min="0.74" max="25.9" step="0.37">
+                    </label>
+                    <label>
+                        <span>Maximum speed (rpm)</span>
+                        <input name="motor_rpm_max" class="configuration" type="number" min="1000" max="40000" step="1000">
+                    </label>
+                    <label>
+                        <span>Resistance (Ω)</span>
+                        <input name="motor_rs" class="configuration" type="text" readonly="readonly">
+                    </label>
+                    <label>
+                        <span>Inductance (H)</span>
+                        <input name="motor_ls" class="configuration" type="text" readonly="readonly">
+                    </label>
+                    <label>
+                        <span>Kv (rpm / V)</span>
+                        <input name="motor_kv" class="configuration" type="number" min="200" max="4000" step="1">
+                    </label>
+
+                    <h3>Control parameters</h3>
+                    <label>
+                        <span>Speed gain (As / rad)</span>
+                        <input name="rpmctl_gain" class="configuration" type="number" min="0.001" max="0.1" step="0.001">
+                    </label>
+                    <label>
+                        <span>Speed bandwidth (Hz)</span>
+                        <input name="rpmctl_bandwidth" class="configuration" type="number" min="10.0" max="400.0" step="10.0">
+                    </label>
+                    <label>
+                        <span>Acceleration limit (rpm / s)</span>
+                        <input name="rpmctl_accel_max" class="configuration" type="number" min="100.0" max="100000.0" step="100.0">
+                    </label>
+                    <label>
+                        <span>PWM control mode</span>
+                        <select name="pwm_ctl_mode" class="configuration">
+                            <option>speed</option>
+                            <option>torque</option>
+                        </select>
+                    </label>
+
+                    <h3>UAVCAN parameters</h3>
+                    <label>
+                        <span>ESC status interval (s)</span>
+                        <input name="uavcan_escstatus_interval" class="configuration" type="number" min="0.01" max="0.1" step="0.01">
+                    </label>
+                    <label>
+                        <span>Node ID</span>
+                        <input name="uavcan_node_id" class="configuration" type="number" min="1" max="125" step="1">
+                    </label>
+                    <label>
+                        <span>ESC index</span>
+                        <input name="uavcan_esc_index" class="configuration" type="number" min="0" max="15" step="1">
+                    </label>
+
+                    <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
                 </form>
             </div>
 
