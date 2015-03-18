@@ -122,6 +122,27 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
             shape-rendering: smoothEdges;
         }
 
+        .hfi-angle {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: red;
+            shape-rendering: smoothEdges;
+        }
+
+        .hfi-d {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: blue;
+            shape-rendering: smoothEdges;
+        }
+
+        .hfi-q {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
         .grid .tick {
             stroke: black;
             stroke-width: 0.5px;
@@ -155,6 +176,10 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
             font-weight: bold;
             fill: blue;
             font-size: 11px;
+        }
+
+        .y1.axis.angle>text {
+            fill: red;
         }
 
         svg {
@@ -456,6 +481,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
                 <svg class="speed-chart"></svg>
                 <svg class="current-chart"></svg>
+                <svg class="hfi-chart"></svg>
                 <svg class="voltagetemp-chart"></svg>
             </div>
         </div>

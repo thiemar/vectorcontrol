@@ -21,7 +21,8 @@ NodeList.prototype.forEach = Array.prototype.forEach;
 HTMLCollection.prototype.forEach = Array.prototype.forEach;
 
 var ws, deviceCurrentData = {}, deviceSpeedData = {}, deviceCurrentCharts = {},
-    deviceSpeedCharts = {}, deviceVoltageTempCharts = {}, lastUpdate = null;
+    deviceSpeedCharts = {}, deviceVoltageTempCharts = {}, deviceHFIData = {},
+    deviceHFICharts = {}, lastUpdate = null;
 
 function connect() {
     ws = new WebSocket("ws://" + window.location.host + "/can");
@@ -55,6 +56,7 @@ function connect() {
             setupSpeedChart(nodeUi);
             setupCurrentChart(nodeUi);
             setupVoltageTempChart(nodeUi);
+            setupHFIChart(nodeUi);
         }
 
         /* Process message data */
@@ -107,6 +109,19 @@ function connect() {
             }
             updateSpeedChart(nodeUi, deviceSpeedData[message.node_id]);
             updateVoltageTempChart(nodeUi, deviceSpeedData[message.node_id]);
+        } else if (message.hfi) {
+            /* HFI measurement data */
+            if (!deviceHFIData[message.node_id]) {
+                deviceHFIData[message.node_id] = [];
+            }
+            Array.prototype.push.apply(deviceHFIData[message.node_id],
+                                       message.hfi);
+            if (deviceHFIData[message.node_id].length > 1500) {
+                deviceHFIData[message.node_id] =
+                    deviceHFIData[message.node_id].slice(
+                        deviceHFIData[message.node_id].length - 1500);
+            }
+            updateHFIChart(nodeUi, deviceHFIData[message.node_id]);
         }
     }
 
@@ -290,6 +305,94 @@ function setupCurrentChart(device) {
     deviceCurrentCharts[parseInt(device.id.split("-")[1], 10)] = result;
 }
 
+
+function setupHFIChart(device) {
+    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
+        svg = device.querySelector("svg.hfi-chart"),
+        container = device.querySelector("div.device-measurements"),
+        width = container.clientWidth - 150,
+        height = 200,
+        margin = {top: 10, right: 50, left: 50, bottom: 10};
+
+    result.x = d3.scale.linear()
+        .range([0, width])
+        .domain([0.0, 30.0]);
+
+    result.y0 = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([-1.0, 1.0]);
+
+    result.y1 = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([0, 360.0]);
+
+    result.xAxis = d3.svg.axis()
+        .scale(result.x)
+        .orient("bottom")
+        .ticks(30)
+        .tickFormat("")
+        .tickSize(-height, 0, 0);
+    result.yAxis0 = d3.svg.axis()
+        .scale(result.y0)
+        .orient("left");
+    result.yAxis1 = d3.svg.axis()
+        .scale(result.y1)
+        .orient("right");
+
+    result.chart = d3.select(svg)
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    result.chart.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(result.xAxis);
+
+    result.chart.append("g")
+        .attr("class", "y0 axis")
+        .call(result.yAxis0)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("HFI signal (A)");
+
+    result.chart.append("g")
+        .attr("class", "y1 axis angle")
+        .attr("transform", "translate(" + width + ", 0)")
+        .call(result.yAxis1)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", 40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Angle (°)");
+
+    result.chart.append("clipPath")
+        .attr("id", "clip")
+    .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+
+    result.chart.append("path")
+        .attr("class", "hfi-angle")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "hfi-d")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "hfi-q")
+        .attr('clip-path', 'url(#clip)');
+
+    deviceHFICharts[parseInt(device.id.split("-")[1], 10)] = result;
+}
+
+
 function setupSpeedChart(device) {
     var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
         svg = device.querySelector("svg.speed-chart"),
@@ -447,6 +550,40 @@ function updateSpeedChart(device, data) {
     chart.chart.select(".speed-actual")
         .datum(data)
         .attr("d", speed);
+}
+
+function updateHFIChart(device, data) {
+    var seriesData, deviceId, chart;
+
+    deviceId = parseInt(device.id.split("-")[1], 10);
+    chart = deviceHFICharts[deviceId];
+
+    /* D current line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 50.0); })
+        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_d)); });
+
+    chart.chart.select(".hfi-d")
+        .datum(data)
+        .attr("d", seriesData);
+
+    /* Q current line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 50.0); })
+        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_q)); });
+
+    chart.chart.select(".hfi-q")
+        .datum(data)
+        .attr("d", seriesData);
+
+    /* Angle line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 50.0); })
+        .y(function(d) { return chart.y1(d.angle * 360.0); });
+
+    chart.chart.select(".hfi-angle")
+        .datum(data)
+        .attr("d", seriesData);
 }
 
 function updateSetpointSchedule(device) {

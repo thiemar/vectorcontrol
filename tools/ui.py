@@ -48,6 +48,8 @@ UAVCAN_NODESTATUS_ID = 550
 CAN_COMMAND_SETPOINT_ID = 0x740
 CAN_STATUS_CONTROLLER_ID = 0x730
 CAN_STATUS_MEASUREMENT_ID = 0x731
+CAN_STATUS_ESTIMATOR_ID = 0x733
+CAN_STATUS_HFI_ID = 0x734
 
 
 NOTIFY_SOCKETS = set()
@@ -60,6 +62,7 @@ UAVCAN_NODE_CONTROL_MODE = collections.defaultdict(int)
 UAVCAN_NODE_MOTOR_RUNNING = collections.defaultdict(bool)
 UAVCAN_NODE_MEASUREMENT_QUEUE = collections.defaultdict(collections.deque)
 UAVCAN_NODE_CONTROLLER_QUEUE = collections.defaultdict(collections.deque)
+UAVCAN_NODE_HFI_QUEUE = collections.defaultdict(collections.deque)
 
 
 SETPOINT_SCHEDULE_TIMER = 0
@@ -104,7 +107,8 @@ def send_all(message):
 def handle_can_message(conn, message):
     """Process an incoming CAN message."""
     global UAVCAN_NODES, UAVCAN_NODE_MEASUREMENT_QUEUE, \
-           UAVCAN_NODE_CONTROLLER_QUEUE, UAVCAN_NODE_UPTIME
+           UAVCAN_NODE_CONTROLLER_QUEUE, UAVCAN_NODE_UPTIME, \
+           UAVCAN_NODE_HFI_QUEUE
 
     message_id = message[0]
     message_data = message[1]
@@ -175,6 +179,22 @@ def handle_can_message(conn, message):
                 "speed": list(UAVCAN_NODE_MEASUREMENT_QUEUE[node_id])
             })
             UAVCAN_NODE_MEASUREMENT_QUEUE[node_id].clear()
+    elif message_id == CAN_STATUS_HFI_ID:
+        node_id, hfi_d, hfi_q, angle_rad = struct.unpack("<BHHH", message_data)
+        hfi_d = can.f32_from_f16(hfi_d)
+        hfi_q = can.f32_from_f16(hfi_q)
+        angle_rad = can.f32_from_f16(angle_rad)
+        UAVCAN_NODE_HFI_QUEUE[node_id].append({
+            "hfi_d": hfi_d,
+            "hfi_q": hfi_q,
+            "angle": angle_rad
+        })
+        if len(UAVCAN_NODE_HFI_QUEUE[node_id]) == 10:
+            send_all({
+                "node_id": node_id,
+                "hfi": list(UAVCAN_NODE_HFI_QUEUE[node_id])
+            })
+            UAVCAN_NODE_HFI_QUEUE[node_id].clear()
 
 
 def send_node_status(conn):
