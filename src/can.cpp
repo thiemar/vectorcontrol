@@ -153,17 +153,8 @@ static uint64_t _get_data_type_signature(uint16_t data_type_id) {
         case UAVCAN_ESCSTATUS:
             signature = UAVCAN_ESCSTATUS_SIGNATURE;
             break;
-        case UAVCAN_NODESTATUS:
-            signature = UAVCAN_NODESTATUS_SIGNATURE;
-            break;
         case UAVCAN_GETNODEINFO:
             signature = UAVCAN_GETNODEINFO_SIGNATURE;
-            break;
-        case UAVCAN_RESTARTNODE:
-            signature = UAVCAN_RESTARTNODE_SIGNATURE;
-            break;
-        case UAVCAN_SAVEERASE:
-            signature = UAVCAN_SAVEERASE_SIGNATURE;
             break;
         case UAVCAN_GETSET:
             signature = UAVCAN_GETSET_SIGNATURE;
@@ -224,10 +215,16 @@ bool UAVCANServer::parse_restartnode_request() {
 
 
 void UAVCANServer::serialize_restartnode_reply(bool ok) {
+    tx_transfer_transfer_type_transfer_id_ = (uint8_t)
+        ((UAVCAN_TRANSFER_SERVICE_RESPONSE << 4u) |
+         rx_transfer_.get_transfer_id());
+    tx_transfer_dest_node_id_ = rx_transfer_.get_source_node_id();
+    tx_transfer_data_type_id_ = UAVCAN_RESTARTNODE;
     tx_transfer_bytes_[0] = (uint8_t)(ok ? 0x80u : 0);
     tx_transfer_length_ = 1;
     tx_transfer_index_ = 0;
     tx_transfer_frame_index_ = 0;
+    tx_transfer_done_ = false;
 }
 
 
@@ -254,10 +251,16 @@ void UAVCANServer::serialize_saveerase_reply(bool ok) {
     ---
     bool ok
     */
+    tx_transfer_transfer_type_transfer_id_ = (uint8_t)
+        ((UAVCAN_TRANSFER_SERVICE_RESPONSE << 4u) |
+         rx_transfer_.get_transfer_id());
+    tx_transfer_dest_node_id_ = rx_transfer_.get_source_node_id();
+    tx_transfer_data_type_id_ = UAVCAN_SAVEERASE;
     tx_transfer_bytes_[0] = (uint8_t)(ok ? 0x80u : 0);
     tx_transfer_length_ = 1u;
     tx_transfer_index_ = 0;
-    status_transfer_frame_index_ = 0;
+    tx_transfer_frame_index_ = 0;
+    tx_transfer_done_ = false;
 }
 
 
@@ -295,28 +298,28 @@ bool UAVCANServer::parse_getset_request(
     /* Extract the value */
     bits = 0;
     _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+    bit_index++;
     if (bits) {
         /* Boolean value */
-        bit_index++;
         bits = 0;
         _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
         bit_index++;
 
-        if (!std::isnan(out_value)) {
+        if (std::isnan(out_value)) {
             out_value = bits ? 1.0f : 0.0f;
         }
     }
 
     bits = 0;
     _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+    bit_index++;
     if (bits) {
         /* Int64 value -- only support writing the low word */
-        bit_index++;
         bits = 0;
         _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 64u);
         bit_index += 64u;
 
-        if (!std::isnan(out_value)) {
+        if (std::isnan(out_value)) {
             temp = (uint32_t)bits;
             out_value = (float)temp;
         }
@@ -324,13 +327,13 @@ bool UAVCANServer::parse_getset_request(
 
     bits = 0;
     _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+    bit_index++;
     if (bits) {
-        bit_index++;
         bits = 0;
         _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 32u);
         bit_index += 32u;
 
-        if (!std::isnan(out_value)) {
+        if (std::isnan(out_value)) {
             memcpy(&out_value, &bits, sizeof(float));
         }
     }
@@ -342,7 +345,7 @@ bool UAVCANServer::parse_getset_request(
     /* Extract the name -- uses tail array optimization */
     name_bytes = (transfer_bits - bit_index) >> 3u;
     if (name_bytes < 27u) {
-        _bitarray_copy(&out_param_name, 0, rx_transfer_bytes_, bit_index,
+        _bitarray_copy(out_param_name, 0, rx_transfer_bytes_, bit_index,
                        transfer_bits - bit_index);
         out_param_name[name_bytes] = 0;
         return true;
@@ -378,11 +381,11 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
 
 #define SERIALIZE_FLOAT_VALUE(x) {                                           \
         if (!std::isnan(x)) {                                                \
-            value_type = 1u;                                                 \
+            value_type = 0x20u;                                              \
             _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, 3u);\
             bit_index += 3u;                                                 \
             _bitarray_copy(tx_transfer_bytes_, bit_index, &x, 0, 32u);       \
-            bit_index += 3u;                                                 \
+            bit_index += 32u;                                                 \
         } else {                                                             \
             value_type = 0;                                                  \
             _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, 3u);\
@@ -397,7 +400,7 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
 
 #undef SERIALIZE_FLOAT_VALUE
 
-    name_bits = strnlen(in_param.name, 27u) << 3u;
+    name_bits = (strnlen(in_param.name, 27u) << 3u);
     _bitarray_copy(tx_transfer_bytes_, bit_index, in_param.name, 0,
                    name_bits);
     bit_index += name_bits;
@@ -408,9 +411,15 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
     pad_bits = (length << 3u) - bit_index;
     _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, pad_bits);
 
+    tx_transfer_transfer_type_transfer_id_ = (uint8_t)
+        ((UAVCAN_TRANSFER_SERVICE_RESPONSE << 4u) |
+         rx_transfer_.get_transfer_id());
+    tx_transfer_dest_node_id_ = rx_transfer_.get_source_node_id();
+    tx_transfer_data_type_id_ = UAVCAN_GETSET;
     tx_transfer_length_ = length;
     tx_transfer_index_ = 0;
-    status_transfer_frame_index_ = 0;
+    tx_transfer_frame_index_ = 0;
+    tx_transfer_done_ = false;
 }
 
 
@@ -584,10 +593,11 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
         }
 
         out_message.set_length(i);
-        if (tx_transfer_index_ == tx_transfer_index_) {
-            out_message.set_last_frame(true);
-        }
         out_message.set_frame_index((uint8_t)(tx_transfer_frame_index_++));
+        if (tx_transfer_index_ == tx_transfer_length_) {
+            out_message.set_last_frame(true);
+            tx_transfer_done_ = true;
+        }
 
         return true;
     } else if (status_transfer_index_ < status_transfer_length_) {
@@ -637,7 +647,7 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
 void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
     uint64_t signature;
     size_t i;
-    uint16_t data_type_id, message_crc;
+    uint16_t data_type_id;
     uint8_t dest_node_id;
 
     data_type_id = in_message.get_data_type_id();
@@ -657,9 +667,11 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
                 in_message.get_frame_index() == rx_transfer_frame_index_ + 1) {
             received_partial_frame_ = true;
 
-            /* Add the message payload */
+            /* Skip the destination node ID */
             i = in_message.get_transfer_type() ==
                     UAVCAN_TRANSFER_MESSAGE_BROADCAST ? 0 : 1;
+
+            /* Add the message payload */
             for (; i < in_message.get_length(); i++) {
                 rx_transfer_bytes_[rx_transfer_length_++] = in_message[i];
             }
@@ -672,10 +684,9 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
             */
             if (in_message.get_last_frame()) {
                 signature = _get_data_type_signature(data_type_id);
-                message_crc = (uint16_t)
-                    ((rx_transfer_[1] << 8u) + rx_transfer_[0]);
-                if (compute_crc(signature, rx_transfer_bytes_,
-                                rx_transfer_length_) == message_crc) {
+                if (rx_transfer_frame_index_ == 1 ||
+                        compute_crc(signature, rx_transfer_bytes_,
+                                    rx_transfer_length_) == rx_transfer_crc_) {
                     process_transfer();
                 }
                 rx_transfer_length_ = 0;
@@ -713,8 +724,13 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
         CRC bytes for the first frame of a multi-frame transfer
         */
         i = (in_message.get_transfer_type() ==
-                UAVCAN_TRANSFER_MESSAGE_BROADCAST ? 0u : 1u) +
-            (in_message.get_last_frame() ? 0 : 2);
+                UAVCAN_TRANSFER_MESSAGE_BROADCAST ? 0u : 1u);
+
+        if (!in_message.get_last_frame()) {
+            rx_transfer_crc_ = in_message[i++];
+            rx_transfer_crc_ += in_message[i++] << 8u;
+        }
+
         for (; i < in_message.get_length(); i++) {
             rx_transfer_bytes_[rx_transfer_length_++] = in_message[i];
         }
@@ -786,6 +802,7 @@ void UAVCANServer::process_transfer() {
                     valid = flash_save_request_cb_();
                 }
             }
+            serialize_saveerase_reply(valid);
             break;
         case UAVCAN_GETSET:
             valid = parse_getset_request(result, index, name);
@@ -797,8 +814,6 @@ void UAVCANServer::process_transfer() {
                     configuration_->set_param_value_by_index(index, result);
                     valid = configuration_->get_param_by_index(param, index);
                 }
-
-                reload_uavcan_config();
             }
 
             if (!valid) {
@@ -818,6 +833,7 @@ void UAVCANServer::process_transfer() {
 }
 
 
+#pragma GCC optimize("O0")
 uint16_t UAVCANServer::compute_crc(
     uint64_t data_type_signature,
     const volatile uint8_t* payload,

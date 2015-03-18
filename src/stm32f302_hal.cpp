@@ -85,7 +85,7 @@ const uint32_t hal_pwm_control_rate_div =
 
 
 /* Work out the ADC sampling time in nanoseconds */
-const float hal_adc_sample_periods = 1.5f;
+const float hal_adc_sample_periods = 7.5f;
 const float hal_adc_sample_time_ns =
     1e3f * (3.0f * hal_adc_sample_periods + 2.0f * 13.5f) /
     hal_adc_frequency_hz;
@@ -809,7 +809,7 @@ static void hal_init_can_() {
                                 retransmission mode. */
         .CAN_RFLM = DISABLE,  /* Enable or disable the Receive FIFO Locked
                                  mode. */
-        .CAN_TXFP = DISABLE  /* Enable or disable the transmit FIFO
+        .CAN_TXFP = ENABLE    /* Enable or disable the transmit FIFO
                                 priority. */
     };
     CAN_FilterInitTypeDef filter_config = {
@@ -908,11 +908,11 @@ static void hal_run_calibration_() {
     ADC_InjectedInit(ADC1, &injected_config);
 
     ADC_InjectedChannelSampleTimeConfig(
-        ADC1, HAL_ADC_PHASE_A_CHANNEL, ADC_SampleTime_1Cycles5);
+        ADC1, HAL_ADC_PHASE_A_CHANNEL, ADC_SampleTime_7Cycles5);
     ADC_InjectedChannelSampleTimeConfig(
-        ADC1, HAL_ADC_PHASE_B_CHANNEL, ADC_SampleTime_1Cycles5);
+        ADC1, HAL_ADC_PHASE_B_CHANNEL, ADC_SampleTime_7Cycles5);
     ADC_InjectedChannelSampleTimeConfig(
-        ADC1, HAL_ADC_PHASE_C_CHANNEL, ADC_SampleTime_1Cycles5);
+        ADC1, HAL_ADC_PHASE_C_CHANNEL, ADC_SampleTime_7Cycles5);
 
     /* Sample the three shunts 16384 times each (takes ~6 ms) */
     for (i = 0; i < 16384u; i++) {

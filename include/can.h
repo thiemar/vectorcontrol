@@ -29,6 +29,8 @@ enum can_nonstandard_message_id_t {
     CAN_STATUS_CONTROLLER = 0x730,
     CAN_STATUS_MEASUREMENT = 0x731,
     CAN_STATUS_CONFIG = 0x732,
+    CAN_STATUS_ESTIMATOR = 0x733,
+    CAN_STATUS_HFI = 0x734,
     CAN_COMMAND_SETPOINT = 0x740,
     CAN_COMMAND_CONFIG = 0x741,
     CAN_COMMAND_RESTART = 0x742
@@ -38,6 +40,18 @@ struct can_status_controller_t {
     uint8_t node_id;
     float16_t id, iq;
     float16_t iq_setpoint;
+} __attribute__ ((packed));
+
+struct can_status_hfi_t {
+    uint8_t node_id;
+    float16_t hfi_d, hfi_q;
+    float16_t angle_rad;
+} __attribute__ ((packed));
+
+struct can_status_estimator_t {
+    uint8_t node_id;
+    float16_t angle_covariance, velocity_covariance;
+    float16_t innovation;
 } __attribute__ ((packed));
 
 struct can_status_measurement_t {
@@ -111,14 +125,12 @@ enum uavcan_saveerase_opcode_t {
 };
 
 
-#define UAVCAN_RAWCOMMAND_SIGNATURE 0x217F5C87D7EC951Dull
+/* Only need these for message types that can be multi-frame transfers */
+#define UAVCAN_RAWCOMMAND_SIGNATURE 0x217F5C87D7EC951ull
 #define UAVCAN_RPMCOMMAND_SIGNATURE 0xCE0F9F621CF7E70Bull
 #define UAVCAN_ESCSTATUS_SIGNATURE 0xA9AF28AEA2FBB254ull
-#define UAVCAN_NODESTATUS_SIGNATURE 0x72CF41D281C6F8D9ull
-#define UAVCAN_GETNODEINFO_SIGNATURE 0x255D867097723D74ull
-#define UAVCAN_RESTARTNODE_SIGNATURE 0xBCF56CB8AF9E1B10ull
-#define UAVCAN_SAVEERASE_SIGNATURE 0x3EF0C62570A5811Eull
-#define UAVCAN_GETSET_SIGNATURE 0xD316D89B5B15F483ull
+#define UAVCAN_GETNODEINFO_SIGNATURE 0xE73283A5632ECF99ull
+#define UAVCAN_GETSET_SIGNATURE 0xA9314B70D8AA0726ull
 
 
 #define UAVCAN_NODESTATUS_INTERVAL_MS 750u
@@ -322,6 +334,7 @@ class UAVCANServer {
     */
     UAVCANMessage rx_transfer_;
     uint8_t rx_transfer_bytes_[64];
+    size_t rx_transfer_crc_;
     size_t rx_transfer_length_;
     size_t rx_transfer_frame_index_;
     Configuration *configuration_;
@@ -412,11 +425,12 @@ public:
     UAVCANServer(Configuration& configuration):
         config_local_node_id_(0),
         received_partial_frame_(false),
-        tx_transfer_done_(false),
+        tx_transfer_done_(true),
         rx_transfer_reset_(false),
         config_esc_status_interval_(0),
         config_esc_index_(0),
         rx_transfer_(),
+        rx_transfer_crc_(0),
         rx_transfer_length_(0),
         rx_transfer_frame_index_(0),
         configuration_(&configuration),

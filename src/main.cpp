@@ -191,7 +191,9 @@ void control_cb(
     struct motor_state_t motor_state;
 
     /* Update the state estimate with those values */
-    g_estimator.update_state_estimate(i_ab_a, last_v_ab_v);
+    g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
+                                      g_current_controller_setpoint > 0.0f ?
+                                      0.1f : -0.1f);
     g_estimator.get_state_estimate(motor_state);
 
     /*
@@ -238,7 +240,7 @@ void control_cb(
             g_current_controller_setpoint = current_setpoint;
         }
 
-        /* Update the stator current controller setpoint, */
+        /* Update the stator current controller setpoint. */
         g_current_controller.set_setpoint(current_setpoint);
 
         /* Update the current controller and obtain new Vd and Vq */
@@ -295,10 +297,11 @@ void systick_cb(void) {
         uint8_t bytes[8];
         struct can_status_controller_t controller;
         struct can_status_measurement_t measurement;
+        struct can_status_hfi_t hfi;
+        struct can_status_estimator_t estimator;
     } message;
     UAVCANMessage out_message;
     CANMessage out_debug_message;
-    enum hal_status_t status;
     struct uavcan_esc_state_t uavcan_state;
     float temp, v_dq_v[2], is_a, vs_v;
 
@@ -325,11 +328,8 @@ void systick_cb(void) {
 
     /* Process UAVCAN transmissions */
     if (g_valid_can) {
-        status = HAL_STATUS_OK;
-        while (g_uavcan_server.process_tx(out_message) &&
-               status == HAL_STATUS_OK) {
-            status = hal_transmit_can_message(out_message);
-        }
+        g_uavcan_server.process_tx(out_message);
+        (void)hal_transmit_can_message(out_message);
     }
 
     /*
@@ -354,24 +354,43 @@ void systick_cb(void) {
             out_debug_message.set_data(sizeof(struct can_status_measurement_t),
                                        message.bytes);
             hal_transmit_can_message(out_debug_message);
+        } else if ((g_time % 20) == 5) {
+            /* Send HFI status */
+            message.hfi.node_id = g_can_node_id;
+
+            message.hfi.hfi_d = float16(g_estimator_hfi[0]);
+            message.hfi.hfi_q = float16(g_estimator_hfi[1]);
+            message.hfi.angle_rad = float16(motor_state.angle_rad *
+                                            (0.5f / (float)M_PI));
+
+            out_debug_message.set_id(CAN_STATUS_HFI);
+            out_debug_message.set_data(sizeof(struct can_status_hfi_t),
+                                       message.bytes);
+            hal_transmit_can_message(out_debug_message);
         } else if ((g_time % 20) == 10) {
             /* Send controller status */
             message.controller.node_id = g_can_node_id;
-/*
+
             message.controller.id = float16(motor_state.i_dq_a[0]);
             message.controller.iq = float16(motor_state.i_dq_a[1]);
             message.controller.iq_setpoint =
                 float16(g_current_controller_setpoint);
-*/
-
-            message.controller.id = float16(g_estimator_hfi[0]);
-            message.controller.iq = float16(g_estimator_hfi[1]);
-            message.controller.iq_setpoint = float16(motor_state.angle_rad *
-                                                     (0.5f / (float)M_PI));
-
 
             out_debug_message.set_id(CAN_STATUS_CONTROLLER);
             out_debug_message.set_data(sizeof(struct can_status_controller_t),
+                                       message.bytes);
+            hal_transmit_can_message(out_debug_message);
+        } else if ((g_time % 20) == 15) {
+            /* Send controller status */
+            message.estimator.node_id = g_can_node_id;
+
+            //message.estimator.id = float16(motor_state.i_dq_a[0]);
+            //message.estimator.iq = float16(motor_state.i_dq_a[1]);
+            //message.estimator.iq_setpoint =
+            //    float16(g_current_controller_setpoint);
+
+            out_debug_message.set_id(CAN_STATUS_ESTIMATOR);
+            out_debug_message.set_data(sizeof(struct can_status_estimator_t),
                                        message.bytes);
             hal_transmit_can_message(out_debug_message);
         }
@@ -382,7 +401,7 @@ void systick_cb(void) {
 
     /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
     if (std::abs(motor_state.angular_velocity_rad_per_s) <
-            0.2f / g_motor_params.phi_v_s_per_rad &&
+            0.01f / g_motor_params.phi_v_s_per_rad &&
             g_controller_mode == CONTROLLER_STOPPING) {
         g_controller_mode = CONTROLLER_STOPPED;
         g_speed_controller_setpoint = 0.0f;
@@ -458,14 +477,11 @@ void can_rx_cb(const CANMessage& message) {
     UAVCANMessage m(message);
     CANMessage reply;
     float temp;
-    uint8_t param_index, temp_node_id;
+    uint8_t param_index;
 
     /* Enable transmission */
     g_valid_can = true;
     g_valid_pwm = 0;
-
-    g_can_node_id = (uint8_t)
-        g_configuration.get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
 
     if (message.has_extended_id()) {
         /* UAVCAN message */
@@ -480,7 +496,7 @@ void can_rx_cb(const CANMessage& message) {
                     switch (debug_message.setpoint.controller_mode) {
                         case CONTROLLER_TORQUE:
                             temp = (float)debug_message.setpoint.torque_setpoint;
-                            if (temp > 1.0f) {
+                            if (temp < 0.0f || temp > 0.0f) {
                                 g_controller_mode = CONTROLLER_TORQUE;
                                 g_current_controller_setpoint =
                                     g_motor_params.max_current_a * temp *
@@ -515,7 +531,6 @@ void can_rx_cb(const CANMessage& message) {
                     send the reply with that ID even if the node ID changes
                     (e.g. due to changing the uavcan_node_id parameter).
                     */
-                    temp_node_id = debug_message.bytes[0];
                     param_index = debug_message.config.param_index;
                     if (debug_message.config.set) {
                         g_configuration.set_param_value_by_index(
@@ -527,7 +542,7 @@ void can_rx_cb(const CANMessage& message) {
                     /* Reply with current parameter value */
                     temp = g_configuration.get_param_value_by_index(
                         param_index);
-                    debug_message.config_reply.node_id = temp_node_id;
+                    debug_message.config_reply.node_id = g_can_node_id;
                     debug_message.config_reply.param_index = param_index;
                     debug_message.config_reply.param_value = temp;
                     reply.set_data(sizeof(struct can_status_config_t),
@@ -591,15 +606,15 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
             PWM duty cycle controls thrust (proportional to square of RPM);
             maximum RPM is determined by configuration.
             */
-            g_speed_controller_setpoint =
-                g_motor_params.max_speed_rad_per_s * __VSQRTF(setpoint);
+            g_speed_controller_setpoint = g_motor_params.max_speed_rad_per_s *
+                                          std::max(0.1f, __VSQRTF(setpoint));
         } else if (g_controller_mode == CONTROLLER_TORQUE) {
             /*
             PWM duty cycle controls torque (approximately proportional to
             thrust). Minimum throttle is
             */
             g_current_controller_setpoint =
-                g_motor_params.max_current_a * std::max(0.01f, setpoint);
+                g_motor_params.max_current_a * std::max(0.1f, setpoint);
         }
     }
 }
@@ -663,6 +678,10 @@ int __attribute__ ((externally_visible)) main(void) {
     */
     g_configuration.set_param_value_by_index(PARAM_MOTOR_RS, rs_r);
     g_configuration.set_param_value_by_index(PARAM_MOTOR_LS, ls_h);
+
+    /* Get the node ID */
+    g_can_node_id = (uint8_t)
+        g_configuration.get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
 
     /* Initialize the system with the motor parameters */
     g_estimator.set_params(motor_params, control_params,
