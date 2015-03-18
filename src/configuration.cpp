@@ -105,11 +105,11 @@ struct param_t flash_params[NUM_PARAMS] = {
     be sent.
     */
     {PARAM_UAVCAN_ESCSTATUS_INTERVAL, "uavcan_escstatus_interval",
-        10e-3f, 10e-3f, 1e-3f, 1000e-3f},
+        100e-3f, 100e-3f, 1e-3f, 1000e-3f},
 
     /* Node ID of this ESC in the UAVCAN network. */
     {PARAM_UAVCAN_NODE_ID, "uavcan_node_id",
-        0.0f, 0.0f, 0.0f, 125.0f},
+        1.0f, 0.0f, 0.0f, 125.0f},
 
     /* Index of this ESC in throttle command messages. */
     {PARAM_UAVCAN_ESC_INDEX, "uavcan_esc_index",
