@@ -54,11 +54,8 @@ class StateEstimator {
     float next_sin_theta_;
     float next_cos_theta_;
 
-    /* Low-passed angular velocity estimate */
-    float filtered_velocity_rad_per_s_;
-
-    uint32_t is_converged_;
-    uint32_t is_hfi_active_;
+    uint16_t is_converged_;
+    uint16_t is_hfi_active_;
 
 public:
     StateEstimator():
@@ -80,7 +77,6 @@ public:
         last_i_ab_a_ {0.0f, 0.0f},
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f),
-        filtered_velocity_rad_per_s_(0.0f),
         is_converged_(0),
         is_hfi_active_(0)
     {}
@@ -94,7 +90,6 @@ public:
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
         state_covariance_[0] = state_covariance_[2] = 1.0f;
         state_covariance_[1] = state_covariance_[3] = 0.0f;
-        filtered_velocity_rad_per_s_ = 0.0f;
         i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
         i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
         is_converged_ = 0;
@@ -103,12 +98,12 @@ public:
 
     void update_state_estimate(
         const float i_ab_a[2],
-        const float v_ab_v[2]
+        const float v_ab_v[2],
+        float accel_direction
     );
 
     void get_state_estimate(struct motor_state_t& out_estimate) const {
         out_estimate = state_estimate_;
-        out_estimate.angular_velocity_rad_per_s = filtered_velocity_rad_per_s_;
     }
 
     void get_est_v_alpha_beta_from_v_dq(
@@ -121,7 +116,7 @@ public:
 
     float get_hfi_weight(void) const {
         float weight;
-        weight = std::min(std::abs(filtered_velocity_rad_per_s_),
+        weight = std::min(std::abs(state_estimate_.angular_velocity_rad_per_s),
                           hfi_cutoff_rad_per_s_) * hfi_cutoff_inv_;
         return 1.0f - weight;
     }
@@ -185,17 +180,18 @@ public:
 
         /*
         Set carrier voltage to whatever will give us an 0.25 A injected
-        current
+        current, up to a maximum of 2 V.
         */
-        carrier_v_ = std::min(2.0f, 0.25f * zwc);
+        carrier_v_ = std::min(1.0f, 0.1f * zwc);
 
         /*
         HFI parameters. Cut-off speed and angular velocity filter frequency
-        are both set to 20 Hz electrical.
+        are both set to the speed at which the motor generates 0.5 V in back
+        EMF.
         */
         hfi_cutoff_rad_per_s_ = 0.5f / params.phi_v_s_per_rad;
         hfi_cutoff_inv_ = 1.0f / hfi_cutoff_rad_per_s_;
-        hfi_lpf_coeff_ = 1.0f - fast_expf(-hfi_cutoff_rad_per_s_);
+        hfi_lpf_coeff_ = 1.0f - fast_expf(-hfi_cutoff_rad_per_s_ * t_s * 10.0f);
     }
 };
 

@@ -193,7 +193,7 @@ void control_cb(
     /* Update the state estimate with those values */
     g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
                                       g_current_controller_setpoint > 0.0f ?
-                                      0.1f : -0.1f);
+                                      1e-2f : -1e-2f);
     g_estimator.get_state_estimate(motor_state);
 
     /*
@@ -229,8 +229,8 @@ void control_cb(
         g_speed_controller.set_setpoint(speed_setpoint);
 
         /*
-        Update the current controller with the output of the speed controller,
-        except when
+        Update the current controller with the output of the speed controller
+        when in speed control mode.
         */
         current_setpoint = g_speed_controller.update(motor_state);
         if (g_controller_mode == CONTROLLER_TORQUE ||
@@ -243,13 +243,13 @@ void control_cb(
         /* Update the stator current controller setpoint. */
         g_current_controller.set_setpoint(current_setpoint);
 
-        /* Update the current controller and obtain new Vd and Vq */
+        /* Run the current controller and obtain new Vd and Vq outputs. */
         g_current_controller.update(v_dq_v,
                                     motor_state.i_dq_a,
                                     motor_state.angular_velocity_rad_per_s,
                                     vbus_v);
 
-        /* Add high-frequency injection voltage */
+        /* Add high-frequency injection voltage when required. */
         g_estimator.get_hfi_carrier_dq_v(hfi_v);
         g_estimator.get_hfi_readings(readings);
         v_dq_v[0] += hfi_v[0];
@@ -262,7 +262,10 @@ void control_cb(
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
     } else {
         g_estimator_converged = false;
-        /* Estimator is still aligning/converging */
+        /*
+        Estimator is still aligning/converging; run the alignment controller
+        and add the HFI voltages on top.
+        */
         g_alignment_controller.update(v_ab_v, i_ab_a, motor_state.angle_rad,
                                       vbus_v);
         g_estimator.get_hfi_carrier_dq_v(hfi_v);
@@ -312,7 +315,7 @@ void systick_cb(void) {
     uavcan_state.vbus_v = g_vbus_v;
     /*
     Try to work out how much current we're actually drawing from the supply,
-    assuming 100% conversion efficiency.
+    assuming 100% conversion efficiency. TODO: check math on this.
     */
     is_a = __VSQRTF(motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
                     motor_state.i_dq_a[1] * motor_state.i_dq_a[1]);
@@ -381,7 +384,7 @@ void systick_cb(void) {
                                        message.bytes);
             hal_transmit_can_message(out_debug_message);
         } else if ((g_time % 20) == 15) {
-            /* Send controller status */
+            /* TODO: Send estimator status */
             message.estimator.node_id = g_can_node_id;
 
             //message.estimator.id = float16(motor_state.i_dq_a[0]);
@@ -399,7 +402,7 @@ void systick_cb(void) {
     g_time++;
     esc_assert(!g_fault);
 
-    /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
+    /* Motor shutdown logic -- stop when back EMF drops below 0.01 V */
     if (std::abs(motor_state.angular_velocity_rad_per_s) <
             0.01f / g_motor_params.phi_v_s_per_rad &&
             g_controller_mode == CONTROLLER_STOPPING) {
@@ -411,8 +414,8 @@ void systick_cb(void) {
     } else if (g_controller_mode == CONTROLLER_SPEED ||
                 g_controller_mode == CONTROLLER_TORQUE) {
         /*
-        Stop gracefully if the current command mode doesn't provide an
-        update in the required period
+        Stop gracefully if the present command mode doesn't provide an
+        updated setpoint in the required period.
         */
         if ((g_input_source == INPUT_PWM && g_time - g_last_pwm > THROTTLE_TIMEOUT_MS) ||
                 (g_input_source == INPUT_CAN && g_time - g_last_can > THROTTLE_TIMEOUT_MS) ||
@@ -604,14 +607,14 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
         if (g_controller_mode == CONTROLLER_SPEED) {
             /*
             PWM duty cycle controls thrust (proportional to square of RPM);
-            maximum RPM is determined by configuration.
+            maximum RPM is determined by configuration. Minimum speed is 10%.
             */
             g_speed_controller_setpoint = g_motor_params.max_speed_rad_per_s *
                                           std::max(0.1f, __VSQRTF(setpoint));
         } else if (g_controller_mode == CONTROLLER_TORQUE) {
             /*
             PWM duty cycle controls torque (approximately proportional to
-            thrust). Minimum throttle is
+            thrust). Minimum throttle is 10%.
             */
             g_current_controller_setpoint =
                 g_motor_params.max_current_a * std::max(0.1f, setpoint);

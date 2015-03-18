@@ -37,7 +37,8 @@ const float g_measurement_noise[2] = { 0.005f, 0.005f };
 #pragma GCC optimize("O3")
 void StateEstimator::update_state_estimate(
     const float i_ab_a[2],
-    const float v_ab_v[2]
+    const float v_ab_v[2],
+    float accel_direction
 ) {
     /*
     EKF observer largely derived from:
@@ -57,7 +58,8 @@ void StateEstimator::update_state_estimate(
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
           b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d,
-          i_dq_a[2], angle_diff, hfi_weight, last_angle, next_angle;
+          i_dq_a[2], angle_diff, hfi_scale, hfi_weight, last_angle,
+          next_angle;
 
     /* Update the Idq estimate based on the theta estimate for time t */
     sin_cos(sin_theta, cos_theta, state_estimate_.angle_rad);
@@ -82,6 +84,29 @@ void StateEstimator::update_state_estimate(
                     hfi_lpf_coeff_;
     i_hfi_dq_[1] += (i_dq_m_a_[1] * i_dq_m_a_[1] - i_hfi_dq_[1]) *
                     hfi_lpf_coeff_;
+
+    /* Store the original angle */
+    last_angle = state_estimate_.angle_rad;
+
+    /* Merge the EKF and HFI angle estimates */
+    hfi_weight = get_hfi_weight();
+    if (is_hfi_active_) {
+        hfi_scale = __VSQRTF(i_hfi_dq_[0] * i_hfi_dq_[0] +
+                             i_hfi_dq_[1] * i_hfi_dq_[1]);
+        hfi_scale = std::max(1.0f, hfi_scale);
+
+        angle_diff = 0.2f * (i_hfi_dq_[1] - i_hfi_dq_[0]) / hfi_scale;
+
+        state_estimate_.angle_rad += angle_diff * hfi_weight;
+    }
+
+    /*
+    Update the t-1 angle with the t-1 angular velocity estimate; this brings
+    the angle estimate to the middle of the last PWM cycle (t), so it matches
+    the point at which the current reading was taken. This matches up with
+    the Vab output from t-2 controller iteration.
+    */
+    state_estimate_.angle_rad += state_estimate_.angular_velocity_rad_per_s * t_;
 
 #define Pm(i,j) covariance_temp[i * STATE_DIM + j]
 #define P(i,j) state_covariance_[i * STATE_DIM + j]
@@ -215,46 +240,19 @@ void StateEstimator::update_state_estimate(
     update[0] = K(0,0) * innovation[0] + K(1,0) * innovation[1];
     update[1] = K(0,1) * innovation[0] + K(1,1) * innovation[1];
 
-    /* Store the original angle */
-    last_angle = state_estimate_.angle_rad;
-
-    /* Merge the EKF and HFI estimates */
-    hfi_weight = get_hfi_weight();
-    if ((std::abs(i_hfi_dq_[0]) > 1e-6f || std::abs(i_hfi_dq_[1]) > 1e-6f) &&
-            is_hfi_active_) {
-        angle_diff = (i_hfi_dq_[1] - i_hfi_dq_[0]) /
-                     __VSQRTF(i_hfi_dq_[0] * i_hfi_dq_[0] +
-                              i_hfi_dq_[1] * i_hfi_dq_[1]);
-        if (angle_diff > 5.0f) {
-            angle_diff = 5.0f;
-        } else if (angle_diff < -5.0f) {
-            angle_diff = -5.0f;
-        }
-
-        state_estimate_.angle_rad +=
-            (angle_diff * 0.05f - filtered_velocity_rad_per_s_ * t_) *
-            hfi_weight * hfi_weight;
-    }
-
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
     state_estimate_.angle_rad += update[1];
-    state_estimate_.angular_velocity_rad_per_s += update[0];
+    state_estimate_.angular_velocity_rad_per_s += update[0] * (1.0f - hfi_weight * hfi_weight);
 
     /*
     Calculate filtered velocity estimate by differentiating successive
-    position estimates.
+    position estimates and low-passing the result with a coefficient dependent
+    on the HFI weight (higher weights = lower low-pass filter cutoff
+    frequency).
     */
-    filtered_velocity_rad_per_s_ +=
-        ((state_estimate_.angle_rad - last_angle) * t_inv_ + state_estimate_.angular_velocity_rad_per_s * (1.0f - hfi_weight * hfi_weight)  - filtered_velocity_rad_per_s_) *
-        angular_velocity_lpf_coeff_ * std::max(0.01f, 1.0f - hfi_weight * hfi_weight);
-
-    /*
-    Update the t-1 angle with the t-1 angular velocity estimate; this brings
-    the angle estimate to the middle of the last PWM cycle (t), so it matches
-    the point at which the current reading was taken. This matches up with
-    the Vab output from t-2 controller iteration.
-    */
-    state_estimate_.angle_rad += filtered_velocity_rad_per_s_ * t_;
+    state_estimate_.angular_velocity_rad_per_s +=
+        ((state_estimate_.angle_rad - last_angle) * t_inv_ - state_estimate_.angular_velocity_rad_per_s) *
+        std::max(0.2f, 0.5f * hfi_weight * hfi_weight);
 
     /*
     Constrain angle to 0 .. 2 * pi; increment or decrement the revolution
@@ -268,28 +266,20 @@ void StateEstimator::update_state_estimate(
         //state_estimate_.revolution_count--;
     }
 
-    if (!is_converged()) {
-        if (std::abs(filtered_velocity_rad_per_s_) < 50.0f) {
-            is_converged_++;
-            if (is_converged()) {
-                filtered_velocity_rad_per_s_ = 0.0f;
-            }
-        } else {
-            is_converged_ = 0;
-        }
+    next_angle = state_estimate_.angle_rad;
 
+    if (!is_converged()) {
+        is_converged_++;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
-        next_angle = state_estimate_.angle_rad;
     } else {
-        next_angle = state_estimate_.angle_rad +
-                     filtered_velocity_rad_per_s_ * t_ * (1.0f - hfi_weight * hfi_weight);
+        next_angle += accel_direction * hfi_weight;
+
         if (next_angle > 2.0f * (float)M_PI) {
             next_angle -= 2.0f * (float)M_PI;
         } else if (next_angle < 0.0f) {
             next_angle += 2.0f * (float)M_PI;
         }
     }
-
 
     sin_cos(next_sin_theta_, next_cos_theta_, next_angle);
 

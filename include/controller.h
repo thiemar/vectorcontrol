@@ -73,9 +73,12 @@ public:
 
         ls_h_ = params.ls_h;
 
-        /* Current control bandwidth is always 10x speed control bandwidth */
+        /*
+        Convert control bandwidth to rad/s. Current controller bandwidth will
+        be set to 10x this value.
+        */
         bandwidth_rad_per_s = 2.0f * (float)M_PI *
-                              control_params.bandwidth_hz * 10.0f;
+                              control_params.bandwidth_hz;
 
         /*
         Parameter selection described in:
@@ -94,7 +97,7 @@ public:
 
         Scale Ki by t_s to avoid an extra multiplication each timestep.
         */
-        kp_ = ls_h_ * bandwidth_rad_per_s;
+        kp_ = ls_h_ * bandwidth_rad_per_s * 10.0f;
         ki_ = t_s * params.rs_r / ls_h_;
 
         /* Set modulation limit */
@@ -142,7 +145,7 @@ public:
         setpoint_rad_per_s_ = 0.0f;
     }
 
-    #pragma GCC optimize("03")
+    #pragma GCC optimize("O3")
     void set_setpoint(float setpoint) {
         if (setpoint > setpoint_rad_per_s_ + setpoint_slew_rate_) {
             setpoint_rad_per_s_ += setpoint_slew_rate_;
@@ -159,7 +162,7 @@ public:
         float t_s
     ) {
         kp_ = control_params.gain_a_s_per_rad;
-        ki_ = 2.0f * (float)M_PI * control_params.bandwidth_hz * t_s;
+        ki_ = control_params.bandwidth_hz * t_s;
 
         /*
         Maximum setpoint slew rate is from zero to max speed over a period
@@ -257,8 +260,8 @@ public:
         Gain is 10% of max current per radian position error.
         Integral time is 0.02 s.
         */
-        i_kp_ = params.max_current_a * 0.02f;
-        i_ki_ = t_s * 10.0f;
+        i_kp_ = params.max_current_a * 0.1f;
+        i_ki_ = t_s;
 
         /* Set modulation and current limit */
         v_limit_ = params.max_voltage_v;
