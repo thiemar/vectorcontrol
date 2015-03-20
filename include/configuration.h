@@ -39,7 +39,8 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include "fixed.h"
 
 
-enum {
+/* Up to */
+enum param_index_t {
     PARAM_MOTOR_NUM_POLES = 0,
     PARAM_MOTOR_CURRENT_LIMIT,
     PARAM_MOTOR_VOLTAGE_LIMIT,
@@ -47,13 +48,21 @@ enum {
     PARAM_MOTOR_RS,
     PARAM_MOTOR_LS,
     PARAM_MOTOR_KV,
-    PARAM_RPMCTL_GAIN,
-    PARAM_RPMCTL_BANDWIDTH,
-    PARAM_RPMCTL_ACCEL_MAX,
+    PARAM_CONTROL_ACCEL_TORQUE_MAX,
+    PARAM_CONTROL_LOAD_TORQUE,
+    PARAM_CONTROL_ACCEL_GAIN,
+    PARAM_CONTROL_ACCEL_TIME,
     PARAM_UAVCAN_ESCSTATUS_INTERVAL,
     PARAM_UAVCAN_NODE_ID,
     PARAM_UAVCAN_ESC_INDEX,
     PARAM_PWM_CONTROL_MODE,
+    PARAM_PWM_THROTTLE_MIN,
+    PARAM_PWM_THROTTLE_MAX,
+    PARAM_PWM_THROTTLE_DEADBAND,
+    PARAM_PWM_CONTROL_OFFSET,
+    PARAM_PWM_CONTROL_MIN,
+    PARAM_PWM_CONTROL_MAX,
+    PARAM_PWM_CONTROL_CURVE,
     NUM_PARAMS
 };
 
@@ -77,6 +86,7 @@ public:
 
     void read_motor_params(struct motor_params_t& params);
     void read_control_params(struct control_params_t& params);
+    void read_pwm_params(struct pwm_params_t& params);
 
     bool get_param_by_name(struct param_t& out_param, const char* name);
     bool get_param_by_index(struct param_t& out_param, uint8_t index);

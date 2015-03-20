@@ -57,18 +57,26 @@ CAN_CONFIG_INDEXES = {
         "ls": 5,
         "kv": 6
     },
-    "rpmctl": {
-        "gain": 7,
-        "bandwidth": 8,
-        "accel_max": 9
+    "control": {
+        "accel_torque_max": 7,
+        "load_torque": 8,
+        "accel_gain": 9,
+        "accel_time": 10
     },
     "uavcan": {
-        "escstatus_interval": 10,
-        "node_id": 11,
-        "esc_index": 12
+        "escstatus_interval": 11,
+        "node_id": 12,
+        "esc_index": 13
     },
     "pwm": {
-        "ctl_mode": 13
+        "control_mode": 14,
+        "throttle_min": 15,
+        "throttle_max": 16,
+        "throttle_deadband": 17,
+        "control_offset": 18,
+        "control_min": 19,
+        "control_max": 20,
+        "control_curve": 21
     }
 }
 
@@ -375,7 +383,7 @@ def update_config(dev, config_path, node_id):
 
             # Send the configuration message
             item_id = CAN_CONFIG_INDEXES[section][item]
-            if section == "pwm" and item == "ctl_mode":
+            if section == "pwm" and item == "control_mode":
                 value = 1 if parser.get(section, item) == "torque" else 0
             else:
                 value = parser.getfloat(section, item)
@@ -451,7 +459,7 @@ def read_config(dev, node_id):
                     result_value = struct.unpack("<BBf", message[1])[2]
 
         # Add the parameter value to the map
-        if index == CAN_CONFIG_INDEXES["pwm"]["ctl_mode"]:
+        if index == CAN_CONFIG_INDEXES["pwm"]["control_mode"]:
             if result_value:
                 result_value = "torque"
             else:

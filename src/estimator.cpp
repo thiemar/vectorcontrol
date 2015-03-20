@@ -31,7 +31,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #define STATE_DIM 2
 #define MEASUREMENT_DIM 2
 
-const float g_process_noise[2] = { 10.0f, 1e-6f };
+const float g_process_noise[2] = { 1.0f, 1e-6f };
 const float g_measurement_noise[2] = { 0.005f, 0.005f };
 
 #pragma GCC optimize("O3")
@@ -95,7 +95,7 @@ void StateEstimator::update_state_estimate(
                              i_hfi_dq_[1] * i_hfi_dq_[1]);
         hfi_scale = std::max(1.0f, hfi_scale);
 
-        angle_diff = 0.2f * (i_hfi_dq_[1] - i_hfi_dq_[0]) / hfi_scale;
+        angle_diff = 0.1f * (i_hfi_dq_[1] - i_hfi_dq_[0]) / hfi_scale;
 
         state_estimate_.angle_rad += angle_diff * hfi_weight;
     }
@@ -242,7 +242,7 @@ void StateEstimator::update_state_estimate(
 
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
     state_estimate_.angle_rad += update[1];
-    state_estimate_.angular_velocity_rad_per_s += update[0] * (1.0f - hfi_weight * hfi_weight);
+    state_estimate_.angular_velocity_rad_per_s += update[0];
 
     /*
     Calculate filtered velocity estimate by differentiating successive
@@ -252,7 +252,7 @@ void StateEstimator::update_state_estimate(
     */
     state_estimate_.angular_velocity_rad_per_s +=
         ((state_estimate_.angle_rad - last_angle) * t_inv_ - state_estimate_.angular_velocity_rad_per_s) *
-        std::max(0.2f, 0.5f * hfi_weight * hfi_weight);
+        std::max(0.2f, 0.5f * hfi_weight);
 
     /*
     Constrain angle to 0 .. 2 * pi; increment or decrement the revolution

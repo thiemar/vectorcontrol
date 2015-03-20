@@ -439,23 +439,59 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
                     <h3>Control parameters</h3>
                     <label>
-                        <span>Speed gain (As / rad)</span>
-                        <input name="rpmctl_gain" class="configuration" type="number" min="0.001" max="0.1" step="0.001">
+                        <span>Acceleration torque limit (A)</span>
+                        <input name="control_accel_torque_max" class="configuration" type="number" min="0.1" max="40.0" step="0.1">
                     </label>
                     <label>
-                        <span>Speed bandwidth (Hz)</span>
-                        <input name="rpmctl_bandwidth" class="configuration" type="number" min="10.0" max="400.0" step="10.0">
+                        <span>Nominal load torque (A)</span>
+                        <input name="control_load_torque" class="configuration" type="number" min="1.0" max="40.0" step="1.0">
                     </label>
                     <label>
-                        <span>Acceleration limit (rpm / s)</span>
-                        <input name="rpmctl_accel_max" class="configuration" type="number" min="100.0" max="100000.0" step="100.0">
+                        <span>Acceleration gain</span>
+                        <input name="control_accel_gain" class="configuration" type="number" min="0.0" max="1.0" step="0.001">
+                    </label>
+                    <label>
+                        <span>Acceleration time (s)</span>
+                        <input name="control_accel_time" class="configuration" type="number" min="0.01" max="1.0" step="0.01">
                     </label>
                     <label>
                         <span>PWM control mode</span>
-                        <select name="pwm_ctl_mode" class="configuration">
+                        <select name="pwm_control_mode" class="configuration">
                             <option>speed</option>
                             <option>torque</option>
                         </select>
+                    </label>
+                    <label>
+                        <span>PWM min pulse width (µs)</span>
+                        <input name="pwm_throttle_min" class="configuration" type="number" min="1000.0" max="2000.0" step="1.0">
+                    </label>
+                    <label>
+                        <span>PWM max pulse width (µs)</span>
+                        <input name="pwm_throttle_max" class="configuration" type="number" min="1000.0" max="2000.0" step="1.0">
+                    </label>
+                    <label>
+                        <span>PWM deadband width (µs)</span>
+                        <input name="pwm_throttle_deadband" class="configuration" type="number" min="0.0" max="1000.0" step="1.0">
+                    </label>
+                    <label>
+                        <span>PWM control offset</span>
+                        <input name="pwm_control_offset" class="configuration" type="number" min="-1.0" max="1.0" step="0.01">
+                    </label>
+                    <label>
+                        <span>PWM control curve</span>
+                        <select name="pwm_control_curve" class="configuration">
+                            <option value="0.5">sqrt</option>
+                            <option value="1.0">linear</option>
+                            <option value="2.0">quadratic</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>PWM control min</span>
+                        <input name="pwm_control_min" class="configuration" type="number" min="-40000.0" max="40000.0" step="100.0">
+                    </label>
+                    <label>
+                        <span>PWM control max</span>
+                        <input name="pwm_control_max" class="configuration" type="number" min="-40000.0" max="40000.0" step="100.0">
                     </label>
 
                     <h3>UAVCAN parameters</h3>

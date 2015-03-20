@@ -83,6 +83,7 @@ volatile static struct motor_state_t g_motor_state;
 volatile static float g_vbus_v;
 volatile static float g_v_dq_v[2];
 volatile static struct motor_params_t g_motor_params;
+volatile static struct pwm_params_t g_pwm_params;
 volatile static float g_i_samples[4];
 volatile static float g_v_samples[4];
 volatile static bool g_parameter_estimator_done;
@@ -108,8 +109,6 @@ static UAVCANServer g_uavcan_server(g_configuration);
 /* RC PWM minimum and maximum limits */
 #define RC_PWM_ARM_PULSES 10u
 #define RC_PWM_MIN_WIDTH_US 950u
-#define RC_PWM_ZERO_WIDTH_US 1100u
-#define RC_PWM_FS_WIDTH_US 1850u
 #define RC_PWM_MAX_WIDTH_US 2100u
 #define RC_PWM_MIN_PERIOD_US 2000u
 #define RC_PWM_MAX_PERIOD_US 50000u
@@ -402,9 +401,9 @@ void systick_cb(void) {
     g_time++;
     esc_assert(!g_fault);
 
-    /* Motor shutdown logic -- stop when back EMF drops below 0.01 V */
+    /* Motor shutdown logic -- stop when back EMF drops below 0.05 V */
     if (std::abs(motor_state.angular_velocity_rad_per_s) <
-            0.01f / g_motor_params.phi_v_s_per_rad &&
+            0.05f / g_motor_params.phi_v_s_per_rad &&
             g_controller_mode == CONTROLLER_STOPPING) {
         g_controller_mode = CONTROLLER_STOPPED;
         g_speed_controller_setpoint = 0.0f;
@@ -571,7 +570,10 @@ void can_rx_cb(const CANMessage& message) {
 
 
 void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
-    float setpoint;
+    struct pwm_params_t params;
+    float setpoint, scale_factor, sign;
+
+    params = const_cast<struct pwm_params_t&>(g_pwm_params);
 
     /* PWM arm/disarm logic */
     if (width_us > RC_PWM_MIN_WIDTH_US && width_us < RC_PWM_MAX_WIDTH_US &&
@@ -580,14 +582,15 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
         g_valid_pwm++;
 
         if (g_valid_pwm >= RC_PWM_ARM_PULSES &&
-                width_us > RC_PWM_ZERO_WIDTH_US) {
+                width_us > params.throttle_pulse_min_us) {
             g_input_source = INPUT_PWM;
             g_controller_mode = g_pwm_controller_mode;
             g_last_pwm = g_time;
         }
 
         /* Constrain the PWM signal to full scale */
-        width_us = std::min((uint32_t)RC_PWM_FS_WIDTH_US, (uint32_t)width_us);
+        width_us = std::min((uint32_t)params.throttle_pulse_max_us,
+                            (uint32_t)width_us);
 
         /* Disable CAN if we have valid PWM */
         hal_disable_can_transmit();
@@ -598,26 +601,42 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
 
     /* If PWM control is armed, and the pulse is valid, update the setpoint */
     if (g_input_source == INPUT_PWM && !g_fault &&
-            width_us >= RC_PWM_ZERO_WIDTH_US &&
-            width_us <= RC_PWM_FS_WIDTH_US) {
-        setpoint = (float)(width_us - RC_PWM_ZERO_WIDTH_US) /
-                   (float)(RC_PWM_FS_WIDTH_US - RC_PWM_ZERO_WIDTH_US);
-        setpoint = std::min(setpoint, 1.0f);
+            width_us >= params.throttle_pulse_min_us &&
+            width_us <= params.throttle_pulse_max_us) {
+        scale_factor = 1.0f / (float)(params.throttle_pulse_max_us -
+                                      params.throttle_pulse_min_us);
+        setpoint = (float)(width_us - params.throttle_pulse_min_us) *
+                   scale_factor;
+        setpoint -= params.control_offset;
+        if (std::abs(setpoint) <=
+                (float)params.throttle_deadband_us * scale_factor) {
+            setpoint = 0.0f;
+            sign = 1.0f;
+        } else if (setpoint < 0.0f) {
+            sign = -1.0f;
+        } else {
+            sign = 1.0f;
+        }
+
+        switch (params.control_curve) {
+            case pwm_params_t::SQRT:
+                setpoint = __VSQRTF(std::abs(setpoint));
+                break;
+            case pwm_params_t::QUADRATIC:
+                setpoint *= setpoint;
+                break;
+            default:
+                break;
+        }
+        setpoint = params.control_min +
+                   setpoint * (params.control_max - params.control_min);
 
         if (g_controller_mode == CONTROLLER_SPEED) {
-            /*
-            PWM duty cycle controls thrust (proportional to square of RPM);
-            maximum RPM is determined by configuration. Minimum speed is 10%.
-            */
-            g_speed_controller_setpoint = g_motor_params.max_speed_rad_per_s *
-                                          std::max(0.1f, __VSQRTF(setpoint));
+            /* PWM pulse width controls speed */
+            g_speed_controller_setpoint = setpoint * sign;
         } else if (g_controller_mode == CONTROLLER_TORQUE) {
-            /*
-            PWM duty cycle controls torque (approximately proportional to
-            thrust). Minimum throttle is 10%.
-            */
-            g_current_controller_setpoint =
-                g_motor_params.max_current_a * std::max(0.1f, setpoint);
+            /* PWM pulse width controls torque */
+            g_current_controller_setpoint = setpoint * sign;
         }
     }
 }

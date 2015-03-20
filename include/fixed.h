@@ -52,9 +52,23 @@ struct motor_params_t {
 
 
 struct control_params_t {
-    float gain_a_s_per_rad;
     float bandwidth_hz;
-    float max_accel_rad_per_s2;
+    float max_accel_torque_a;
+    float load_torque_a;
+    float accel_gain;
+    float accel_time_s;
+};
+
+
+struct pwm_params_t {
+    float control_offset;
+    float control_min;
+    float control_max;
+    uint16_t throttle_pulse_min_us;
+    uint16_t throttle_pulse_max_us;
+    uint16_t throttle_deadband_us;
+    enum { SQRT = 0, LINEAR = 1, QUADRATIC = 2 } control_curve;
+    bool use_speed_controller;
 };
 
 

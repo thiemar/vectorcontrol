@@ -42,6 +42,7 @@ class DQCurrentController {
     0.95 * Vbus)
     */
     float v_limit_;
+    float accel_current_limit_a_;
 
 public:
     DQCurrentController(void):
@@ -51,7 +52,8 @@ public:
         kp_(0.0f),
         ki_(0.0f),
         ls_h_(0.0f),
-        v_limit_(0.1f)
+        v_limit_(0.1f),
+        accel_current_limit_a_(0.0f)
     {}
 
     void reset_state(void) {
@@ -102,6 +104,8 @@ public:
 
         /* Set modulation limit */
         v_limit_ = params.max_voltage_v;
+
+        accel_current_limit_a_ = params.max_current_a;
     }
 
     void update(
@@ -123,10 +127,8 @@ protected:
     float kp_inv_;
 
     float current_limit_a_;
+    float accel_current_limit_a_;
     float speed_limit_rad_per_s_;
-
-    /* Maximum setpoint slew rate */
-    float setpoint_slew_rate_;
 
 public:
     SpeedController():
@@ -136,8 +138,8 @@ public:
         ki_(0.0f),
         kp_inv_(0.0f),
         current_limit_a_(0.0f),
-        speed_limit_rad_per_s_(0.0f),
-        setpoint_slew_rate_(0.0f)
+        accel_current_limit_a_(0.0f),
+        speed_limit_rad_per_s_(0.0f)
     {}
 
     void reset_state() {
@@ -147,13 +149,7 @@ public:
 
     #pragma GCC optimize("O3")
     void set_setpoint(float setpoint) {
-        if (setpoint > setpoint_rad_per_s_ + setpoint_slew_rate_) {
-            setpoint_rad_per_s_ += setpoint_slew_rate_;
-        } else if (setpoint < setpoint_rad_per_s_ - setpoint_slew_rate_) {
-            setpoint_rad_per_s_ -= setpoint_slew_rate_;
-        } else {
-            setpoint_rad_per_s_ = setpoint;
-        }
+        setpoint_rad_per_s_ = setpoint;
     }
 
     void set_params(
@@ -161,25 +157,32 @@ public:
         const struct control_params_t& control_params,
         float t_s
     ) {
-        kp_ = control_params.gain_a_s_per_rad;
-        ki_ = control_params.bandwidth_hz * t_s;
+        kp_ = 0.01f * control_params.max_accel_torque_a *
+              control_params.accel_gain;
+        ki_ = t_s / control_params.accel_time_s;
 
-        /*
-        Maximum setpoint slew rate is from zero to max speed over a period
-        equal to the controller integral time. Scale by timestep to avoid
-        needing to multiply later.
-        */
-        setpoint_slew_rate_ = control_params.max_accel_rad_per_s2 * t_s;
         speed_limit_rad_per_s_ = motor_params.max_speed_rad_per_s;
         current_limit_a_ = motor_params.max_current_a;
+        accel_current_limit_a_ = control_params.max_accel_torque_a;
     }
 
     #pragma GCC optimize("O3")
     float update(const struct motor_state_t& state) {
-        float error_rad_per_s, result_a, out_a;
+        float error_rad_per_s, accel_torque_a, result_a, out_a;
 
         error_rad_per_s = setpoint_rad_per_s_ -
                           state.angular_velocity_rad_per_s;
+
+        /*
+        Determine acceleration torque, and limit to the configured maximum
+        */
+        accel_torque_a = kp_ * error_rad_per_s;
+
+        if (accel_torque_a > accel_current_limit_a_) {
+            accel_torque_a = accel_current_limit_a_;
+        } else if (accel_torque_a < -accel_current_limit_a_) {
+            accel_torque_a = -accel_current_limit_a_;
+        }
 
         out_a = kp_ * error_rad_per_s + integral_error_a_;
 

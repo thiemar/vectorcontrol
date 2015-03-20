@@ -54,6 +54,13 @@ void DQCurrentController::update(
     ed_a = 0.0f - i_dq_a[0];
     eq_a = i_setpoint_a_ - i_dq_a[1];
 
+    /* Limit error */
+    if (eq_a > accel_current_limit_a_) {
+        eq_a = accel_current_limit_a_;
+    } else if (eq_a < -accel_current_limit_a_) {
+        eq_a = -accel_current_limit_a_;
+    }
+
     /* Decouple Idq using feed-forward, and add the integral error */
     ccd_v = integral_vd_v_ - ls_h_ * angular_velocity_rad_per_s * i_dq_a[1];
     ccq_v = integral_vq_v_ + ls_h_ * angular_velocity_rad_per_s * i_dq_a[0];

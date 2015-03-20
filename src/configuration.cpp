@@ -78,27 +78,35 @@ struct param_t flash_params[NUM_PARAMS] = {
         850.0f, 850.0f, 100.0f, 5000.0f},
 
     /*
-    Speed (RPM) controller gain. Determines controller aggressiveness; units
-    are amp-seconds per radian. Systems with higher rotational inertia (large
-    props) will need gain increased; systems with low rotational inertia
-    (small props) may need gain decreased. Higher values result in faster
-    response, but may result in oscillation and excessive overshoot. Lower
-    values result in a slower, smoother response.
+    Acceleration torque limit in amps. Determines the maximum difference
+    between the torque setpoint and the load torque, and therefore the amount
+    of torque available for acceleration. This is a critical factor in smooth
+    start-up into high-inertia systems.
     */
-    {PARAM_RPMCTL_GAIN, "rpmctl_gain",
-        2.0e-2f, 15.5e-3f, 1e-6f, 1.0f},
+    {PARAM_CONTROL_ACCEL_TORQUE_MAX, "control_accel_torque_max",
+        2.0f, 2.0f, 0.1f, 40.0f},
 
     /*
-    Speed controller bandwidth, in Hz.
+    Load torque in amps. This is a target value for torque at full throttle,
+    rather than a limit, and in conjunction with ctl_accel_time it determines
+    the torque output from the speed controller.
     */
-    {PARAM_RPMCTL_BANDWIDTH, "rpmctl_bandwidth",
-        75.0f, 150.0f, 1.0f, 400.0f},
+    {PARAM_CONTROL_LOAD_TORQUE, "control_load_torque",
+        10.0f, 10.0f, 1.0f, 40.0f},
 
     /*
-    Speed controller maximum acceleration, in rpm/s.
+    Speed controller acceleration gain. Multiplies the
     */
-    {PARAM_RPMCTL_ACCEL_MAX, "rpmctl_accel_max",
-        30000.0f, 10000.0f, 100.0f, 100000.0f},
+    {PARAM_CONTROL_ACCEL_GAIN, "control_accel_gain",
+        0.1f, 0.1f, 0.0f, 1.0f},
+
+    /*
+    Rise time of the speed controller's torque output; this determines the
+    target time to accelerate from near zero to full throttle. (The actual
+    rise time will be determined by the .)
+    */
+    {PARAM_CONTROL_ACCEL_TIME, "control_accel_time",
+        0.1f, 0.1f, 0.01f, 1.0f},
 
     /*
     Interval in seconds at which the UAVCAN standard ESC status message should
@@ -122,8 +130,29 @@ struct param_t flash_params[NUM_PARAMS] = {
     controller (the speed controller is bypassed), and the input pulse width
     is proportional to torque controller setpoint.
     */
-    {PARAM_PWM_CONTROL_MODE, "pwm_ctl_mode",
-        0.0f, 0.0f, 0.0f, 1.0f}
+    {PARAM_PWM_CONTROL_MODE, "pwm_control_mode",
+        0.0f, 0.0f, 0.0f, 1.0f},
+
+    {PARAM_PWM_THROTTLE_MIN, "pwm_throttle_min",
+        1100.0f, 1100.0f, 1000.0f, 2000.0f},
+
+    {PARAM_PWM_THROTTLE_MAX, "pwm_throttle_max",
+        1900.0f, 1900.0f, 1000.0f, 2000.0f},
+
+    {PARAM_PWM_THROTTLE_DEADBAND, "pwm_throttle_deadband",
+        10.0f, 10.0f, 0.0f, 1000.0f},
+
+    {PARAM_PWM_CONTROL_OFFSET, "pwm_control_offset",
+        0.0f, 0.0f, -1.0f, 1.0f},
+
+    {PARAM_PWM_CONTROL_CURVE, "pwm_control_curve",
+        1.0f, 1.0f, 0.5f, 2.0f},
+
+    {PARAM_PWM_CONTROL_MIN, "pwm_control_min",
+        0.0f, 0.0f, -40000.0f, 40000.0f},
+
+    {PARAM_PWM_CONTROL_MAX, "pwm_control_max",
+        0.0f, 0.0f, -40000.0f, 40000.0f},
 };
 
 
@@ -157,11 +186,40 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
 void Configuration::read_control_params(
     struct control_params_t& params
 ) {
-    params.gain_a_s_per_rad = params_[PARAM_RPMCTL_GAIN].value;
-    params.bandwidth_hz = params_[PARAM_RPMCTL_BANDWIDTH].value;
-    params.max_accel_rad_per_s2 =
-        _rad_per_s_from_rpm(params_[PARAM_RPMCTL_ACCEL_MAX].value,
-                            (uint32_t)params_[PARAM_MOTOR_NUM_POLES].value);
+    params.bandwidth_hz = 50.0f;
+    params.max_accel_torque_a = params_[PARAM_CONTROL_ACCEL_TORQUE_MAX].value;
+    params.load_torque_a = params_[PARAM_CONTROL_LOAD_TORQUE].value;
+    params.accel_gain = params_[PARAM_CONTROL_ACCEL_GAIN].value;
+    params.accel_time_s = params_[PARAM_CONTROL_ACCEL_TIME].value;
+}
+
+
+void Configuration::read_pwm_params(struct pwm_params_t& params) {
+    params.use_speed_controller =
+        params_[PARAM_PWM_CONTROL_MODE].value > 0.0f ? true : false;
+    params.throttle_pulse_min_us =
+        (uint16_t)params_[PARAM_PWM_THROTTLE_MIN].value;
+    params.throttle_pulse_max_us =
+        (uint16_t)params_[PARAM_PWM_THROTTLE_MAX].value;
+    params.throttle_deadband_us =
+        (uint16_t)params_[PARAM_PWM_THROTTLE_DEADBAND].value;
+    params.control_offset = params_[PARAM_PWM_CONTROL_OFFSET].value;
+    params.control_min = params_[PARAM_PWM_CONTROL_MIN].value;
+    params.control_max = params_[PARAM_PWM_CONTROL_MAX].value;
+    switch ((uint8_t)params_[PARAM_PWM_CONTROL_CURVE].value) {
+        case 0:
+            params.control_curve = pwm_params_t::SQRT;
+            break;
+        case 1:
+            params.control_curve = pwm_params_t::LINEAR;
+            break;
+        case 2:
+            params.control_curve = pwm_params_t::QUADRATIC;
+            break;
+        default:
+            params.control_curve = pwm_params_t::LINEAR;
+            break;
+    }
 }
 
 
