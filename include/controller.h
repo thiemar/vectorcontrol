@@ -126,6 +126,7 @@ protected:
     float ki_;
     float kp_inv_;
 
+    float min_speed_rad_per_s_;
     float current_limit_a_;
     float accel_current_limit_a_;
     float speed_limit_rad_per_s_;
@@ -137,6 +138,7 @@ public:
         kp_(0.0f),
         ki_(0.0f),
         kp_inv_(0.0f),
+        min_speed_rad_per_s_(0.0f),
         current_limit_a_(0.0f),
         accel_current_limit_a_(0.0f),
         speed_limit_rad_per_s_(0.0f)
@@ -161,6 +163,7 @@ public:
               control_params.accel_gain;
         ki_ = t_s / control_params.accel_time_s;
 
+        min_speed_rad_per_s_ = 1.0f / motor_params.phi_v_s_per_rad;
         speed_limit_rad_per_s_ = motor_params.max_speed_rad_per_s;
         current_limit_a_ = motor_params.max_current_a;
         accel_current_limit_a_ = control_params.max_accel_torque_a;
@@ -184,7 +187,7 @@ public:
             accel_torque_a = -accel_current_limit_a_;
         }
 
-        out_a = kp_ * error_rad_per_s + integral_error_a_;
+        out_a = accel_torque_a + integral_error_a_;
 
         /* Limit output to maximum current */
         if (out_a > current_limit_a_) {
@@ -199,7 +202,11 @@ public:
         Limit integral term accumulation when the output current is saturated
         (or when it's lagging behind the setpoint).
         */
-        integral_error_a_ += ki_ * (result_a - integral_error_a_);
+        if (std::abs(state.angular_velocity_rad_per_s) > min_speed_rad_per_s_) {
+            integral_error_a_ += ki_ * (result_a - integral_error_a_);
+        } else {
+            integral_error_a_ -= ki_ * integral_error_a_;
+        }
 
         return result_a;
     }
