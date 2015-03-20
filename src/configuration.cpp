@@ -80,30 +80,37 @@ struct param_t flash_params[NUM_PARAMS] = {
     /*
     Acceleration torque limit in amps. Determines the maximum difference
     between the torque setpoint and the load torque, and therefore the amount
-    of torque available for acceleration. This is a critical factor in smooth
-    start-up into high-inertia systems.
+    of torque available for acceleration.
+
+    This is a critical factor in smooth start-up into high-inertia systems. If
+    start-up is rough, lower this parameter and/or control_accel_gain. If
+    controller response is too slow, increase this parameter and/or
+    control_accel_gain.
     */
     {PARAM_CONTROL_ACCEL_TORQUE_MAX, "control_accel_torque_max",
         2.0f, 2.0f, 0.1f, 40.0f},
 
     /*
     Load torque in amps. This is a target value for torque at full throttle,
-    rather than a limit, and in conjunction with ctl_accel_time it determines
-    the torque output from the speed controller.
+    rather than a limit, and in conjunction with control_accel_time it
+    determines the torque output from the speed controller.
     */
     {PARAM_CONTROL_LOAD_TORQUE, "control_load_torque",
         10.0f, 10.0f, 1.0f, 40.0f},
 
     /*
-    Speed controller acceleration gain. Multiplies the
+    Speed controller acceleration gain. A gain of 0.0 results in no torque
+    output proportional to the required acceleration, whiel a gain of 1.0
+    results in a full-scale acceleration torque output for an error of
+    100 rad/s electrical.
     */
     {PARAM_CONTROL_ACCEL_GAIN, "control_accel_gain",
         0.1f, 0.1f, 0.0f, 1.0f},
 
     /*
     Rise time of the speed controller's torque output; this determines the
-    target time to accelerate from near zero to full throttle. (The actual
-    rise time will be determined by the .)
+    target time to accelerate from near zero to full throttle, subject to
+    the overall current limits and load inertia.
     */
     {PARAM_CONTROL_ACCEL_TIME, "control_accel_time",
         0.1f, 0.1f, 0.01f, 1.0f},
@@ -133,26 +140,56 @@ struct param_t flash_params[NUM_PARAMS] = {
     {PARAM_PWM_CONTROL_MODE, "pwm_control_mode",
         0.0f, 0.0f, 0.0f, 1.0f},
 
+    /*
+    Sets the pulse width (in us) at which the controller is activated and the
+    output setpoint takes its minimum value.
+    */
     {PARAM_PWM_THROTTLE_MIN, "pwm_throttle_min",
         1100.0f, 1100.0f, 1000.0f, 2000.0f},
 
+    /*
+    Sets the pulse width (in us) at which the output setpoint takes its
+    maximum value.
+    */
     {PARAM_PWM_THROTTLE_MAX, "pwm_throttle_max",
         1900.0f, 1900.0f, 1000.0f, 2000.0f},
 
+    /*
+    Sets the range of pulse widths (in us) either side of the zero throttle
+    point within which the output setpoint should be pwm_control_min.
+    */
     {PARAM_PWM_THROTTLE_DEADBAND, "pwm_throttle_deadband",
         10.0f, 10.0f, 0.0f, 1000.0f},
 
+    /*
+    Offsets the range of output setpoint values.
+
+    If the value of this parameter is 0.5, the range of setpoints output from
+    [pwm_throttle_min, pwm_throttle_max] is [-pwm_control_max, pwm_control_max].
+
+    If the value is 0.0, the range of setpoints output from
+    [pwm_throttle_min, pwm_throttle_max] is [pwm_control_min, pwm_control_max].
+    */
     {PARAM_PWM_CONTROL_OFFSET, "pwm_control_offset",
         0.0f, 0.0f, -1.0f, 1.0f},
 
+    /*
+    Determines the relationship between input throttle and output setpoint.
+    Valide values are 0.5, which results in the setpoint being proportional
+    to the square root of the throttle; 1.0, which results in a linear
+    relationship between setpoint and throttle; and 2.0, which results in the
+    setpoint being proportional to the square of the throttle.
+    */
     {PARAM_PWM_CONTROL_CURVE, "pwm_control_curve",
         1.0f, 1.0f, 0.5f, 2.0f},
 
+    /* Determines the setpoint for the minimum valid throttle value. */
     {PARAM_PWM_CONTROL_MIN, "pwm_control_min",
-        0.0f, 0.0f, -40000.0f, 40000.0f},
+        0.0f, 0.0f, 0.0f, 40000.0f},
 
+    /* Determines the setpoint for the maximum valid throttle value. */
     {PARAM_PWM_CONTROL_MAX, "pwm_control_max",
-        0.0f, 0.0f, -40000.0f, 40000.0f},
+        0.0f, 0.0f, 0.0f, 40000.0f},
 };
 
 
@@ -196,7 +233,7 @@ void Configuration::read_control_params(
 
 void Configuration::read_pwm_params(struct pwm_params_t& params) {
     params.use_speed_controller =
-        params_[PARAM_PWM_CONTROL_MODE].value > 0.0f ? true : false;
+        params_[PARAM_PWM_CONTROL_MODE].value > 0.0f ? false : true;
     params.throttle_pulse_min_us =
         (uint16_t)params_[PARAM_PWM_THROTTLE_MIN].value;
     params.throttle_pulse_max_us =
