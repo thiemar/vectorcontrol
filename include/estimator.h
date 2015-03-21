@@ -118,7 +118,7 @@ public:
         float weight;
         weight = std::min(std::abs(state_estimate_.angular_velocity_rad_per_s),
                           hfi_cutoff_rad_per_s_) * hfi_cutoff_inv_;
-        return 1.0f - weight;
+        return 1.0f - weight * weight;
     }
 
     void get_hfi_carrier_dq_v(float v_dq[2]) {

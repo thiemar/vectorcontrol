@@ -191,7 +191,8 @@ void control_cb(
 
     /* Update the state estimate with those values */
     g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
-                                      1e-2f * g_current_controller_setpoint);
+                                      g_speed_controller_setpoint > 0.0f ?
+                                        1e-2f : -1e-2f);
     g_estimator.get_state_estimate(motor_state);
 
     /*
