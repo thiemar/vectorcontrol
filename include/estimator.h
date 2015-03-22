@@ -88,8 +88,8 @@ public:
         next_sin_theta_ = 0;
         next_cos_theta_ = 1.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
-        state_covariance_[0] = state_covariance_[2] = 1.0f;
-        state_covariance_[1] = state_covariance_[3] = 0.0f;
+        state_covariance_[0] = state_covariance_[2] = 100.0f;
+        state_covariance_[1] = state_covariance_[3] = 10.0f;
         i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
         i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
         is_converged_ = 0;

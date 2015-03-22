@@ -31,7 +31,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #define STATE_DIM 2
 #define MEASUREMENT_DIM 2
 
-const float g_process_noise[2] = { 20.0f, 1e-4f };
+const float g_process_noise[2] = { 20.0f, 1e-5f };
 const float g_measurement_noise[2] = { 0.005f, 0.005f };
 
 #pragma GCC optimize("O3")
@@ -130,7 +130,7 @@ void StateEstimator::update_state_estimate(
     // Pm(1,0) = std::numeric_limits<float>::signaling_NaN();
     Pm(1,1) = P(0,0) * t_ * t_ +
               2.0f * t_ * P(0,1) +
-              P(1,1) + g_process_noise[1];
+              P(1,1) + g_process_noise[1] + hfi_weight * 1e-4f;
 
     /* These values are used a few times */
     b_est_sin_theta = b_ * sin_theta;
@@ -235,6 +235,9 @@ void StateEstimator::update_state_estimate(
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
     state_estimate_.angle_rad += update[1] * (1.0f - hfi_weight);
 
+    state_estimate_.angle_rad +=
+        state_estimate_.angular_velocity_rad_per_s * t_ * (1.0f - hfi_weight);
+
     /*
     Calculate filtered velocity estimate by differentiating successive
     position estimates and low-passing the result with a coefficient dependent
@@ -263,7 +266,7 @@ void StateEstimator::update_state_estimate(
     }
 
     next_angle = state_estimate_.angle_rad +
-                 state_estimate_.angular_velocity_rad_per_s * t_ +
+                 2.0f * state_estimate_.angular_velocity_rad_per_s * t_ +
                  accel_direction * hfi_weight;
     if (next_angle > 2.0f * (float)M_PI) {
         next_angle -= 2.0f * (float)M_PI;
