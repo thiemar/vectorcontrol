@@ -282,11 +282,27 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
         .hidden {
             display: none;
         }
+
+        #no-device-message {
+            display: none;
+        }
+
+        #no-device-message:nth-last-child(2) {
+            display: block;
+        }
     </style>
     <title>S2740VC Management</title>
 </head>
 <body>
 <div id="content">
+    <div class="device" id="no-device-message">
+        <div class="device-header">
+            <div class="device-info">
+                <h3>No ESC found! Please check your CAN connection.</h3>
+            </div>
+        </div>
+    </div>
+
     <div class="device" id="device-template">
         <div class="device-header">
             <div class="device-info">
