@@ -159,9 +159,11 @@ protected:
 public:
     CANMessage():
         id_(0),
-        data_ {0, 0, 0, 0, 0, 0, 0, 0},
         data_length_(0)
-    {}
+    {
+        data_[0] = data_[1] = data_[2] = data_[3] = data_[4] = data_[5] =
+            data_[6] = data_[7] = 0;
+    }
 
     bool has_extended_id() const {
         return id_ & ~CAN_STANDARD_ID_MASK;
@@ -448,11 +450,12 @@ public:
         last_esc_status_sent_time_ms_(0),
         last_esc_command_received_time_ms_(0),
         last_partial_frame_received_time_ms_(0),
-        broadcast_transfer_ids_ {0, 0, 0, 0},
         flash_save_request_cb_(NULL),
         restart_request_cb_(NULL),
         esc_command_cb_(NULL)
     {
+        broadcast_transfer_ids_[0] = broadcast_transfer_ids_[1] =
+            broadcast_transfer_ids_[2] = broadcast_transfer_ids_[3] = 0;
         reload_uavcan_config();
     }
 

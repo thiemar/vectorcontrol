@@ -59,9 +59,6 @@ class StateEstimator {
 
 public:
     StateEstimator():
-        state_estimate_ {0, 0.0f, 0.0f, 0.0f, 0.0f},
-        i_dq_m_a_ {0.0f, 0.0f},
-        i_hfi_dq_ {0.0f, 0.0f},
         hfi_cutoff_rad_per_s_(0.0f),
         hfi_cutoff_inv_(0.0f),
         carrier_v_(0.0f),
@@ -73,13 +70,21 @@ public:
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
         hfi_lpf_coeff_(0.0f),
-        state_covariance_ {1.0f, 0.0f, 0.0f, 1.0f},
-        last_i_ab_a_ {0.0f, 0.0f},
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f),
         is_converged_(0),
         is_hfi_active_(0)
-    {}
+    {
+        state_estimate_.revolution_count = 0;
+        state_estimate_.angular_velocity_rad_per_s = 0.0f;
+        state_estimate_.angle_rad = 0.0f;
+        state_estimate_.i_dq_a[0] = state_estimate_.i_dq_a[1] = 0.0f;
+        i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
+        i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
+        state_covariance_[0] = state_covariance_[1] = state_covariance_[2] =
+            state_covariance_[3] = 0.0f;
+        last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
+    }
 
     void reset_state() {
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
@@ -210,15 +215,18 @@ class ParameterEstimator {
 
 public:
     ParameterEstimator():
-        sample_voltages_ {0, 0, 0, 0},
-        sample_currents_ {0, 0, 0, 0},
         open_loop_angular_velocity_rad_per_s_(0.0f),
         open_loop_angle_rad_(0.0f),
         v_(0.0f),
         t_(0.0f),
         test_idx_(0),
         open_loop_test_samples_(0)
-    {}
+    {
+        sample_voltages_[0] = sample_voltages_[1] = sample_voltages_[2] =
+            sample_voltages_[3] = 0.0f;
+        sample_currents_[0] = sample_currents_[1] = sample_currents_[2] =
+            sample_currents_[3] = 0.0f;
+    }
 
     void start_estimation(float t);
 

@@ -277,6 +277,8 @@ void control_cb(
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, hfi_v);
         out_v_ab_v[0] += v_ab_v[0];
         out_v_ab_v[1] += v_ab_v[1];
+
+        v_dq_v[0] = v_dq_v[1] = 0.0f;
     }
 
     g_motor_state.angular_velocity_rad_per_s =
@@ -409,7 +411,11 @@ void systick_cb(void) {
         g_speed_controller_setpoint = 0.0f;
         g_current_controller_setpoint = 0.0f;
     } else if (g_controller_mode == CONTROLLER_STOPPING) {
-        g_current_controller_setpoint = 0.0f;
+        /*
+        Add a small amount of negative torque to ensure the motor actually
+        shuts down.
+        */
+        g_current_controller_setpoint = -0.25f;
     } else if (g_controller_mode == CONTROLLER_SPEED ||
                 g_controller_mode == CONTROLLER_TORQUE) {
         /*
