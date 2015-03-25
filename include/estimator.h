@@ -111,6 +111,7 @@ public:
         out_estimate = state_estimate_;
     }
 
+    #pragma GCC optimize("O3")
     void get_est_v_alpha_beta_from_v_dq(
         float out_v_alpha_beta[2],
         const float in_v_dq[2]
@@ -119,6 +120,7 @@ public:
                                next_cos_theta_);
     }
 
+    #pragma GCC optimize("O3")
     float get_hfi_weight(void) const {
         float weight;
         weight = std::min(std::abs(state_estimate_.angular_velocity_rad_per_s),
@@ -126,6 +128,7 @@ public:
         return 1.0f - weight * weight;
     }
 
+    #pragma GCC optimize("O3")
     void get_hfi_carrier_dq_v(float v_dq[2]) {
         float weight;
         weight = get_hfi_weight();
@@ -141,10 +144,9 @@ public:
         v_dq[1] = v_dq[0];
     }
 
-    void get_hfi_readings(float readings[3]) const {
+    void get_hfi_readings(float readings[2]) const {
         readings[0] = i_hfi_dq_[0];
         readings[1] = i_hfi_dq_[1];
-        readings[2] = 0.0f;
     }
 
     bool is_converged(void) const {
