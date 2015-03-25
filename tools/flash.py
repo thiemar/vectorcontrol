@@ -74,9 +74,9 @@ CAN_CONFIG_INDEXES = {
         "throttle_max": 16,
         "throttle_deadband": 17,
         "control_offset": 18,
-        "control_min": 19,
-        "control_max": 20,
-        "control_curve": 21
+        "control_curve": 19,
+        "control_min": 20,
+        "control_max": 21
     }
 }
 
