@@ -29,22 +29,16 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 
 #pragma GCC optimize("O3")
-static void _bitarray_copy(
+static void _bitarray_read(
     volatile void *dst_org,
-    size_t dst_offset,
     const void *src_org,
     size_t src_offset,
     size_t src_len
 ) {
-    static const uint8_t reverse_mask[] =
-        { 0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe, 0xff };
-    static const uint8_t reverse_mask_xor[] =
-        { 0xff, 0x7f, 0x3f, 0x1f, 0x0f, 0x07, 0x03, 0x01, 0x00 };
-
     const uint8_t *src;
     volatile uint8_t *dst;
     uint8_t c;
-    size_t src_offset_modulo, dst_offset_modulo, src_len_modulo,
+    size_t src_offset_modulo, src_len_modulo,
            bit_diff_ls, bit_diff_rs;
     ptrdiff_t byte_len, i;
 
@@ -52,65 +46,27 @@ static void _bitarray_copy(
         return;
     }
 
-#define PREPARE_FIRST_COPY()                                      \
-    do {                                                          \
-    if (src_len >= (8u - dst_offset_modulo)) {                    \
-        *dst &= reverse_mask[dst_offset_modulo];                  \
-        src_len -= 8u - dst_offset_modulo;                        \
-    } else {                                                      \
-        *dst &= reverse_mask[dst_offset_modulo]                   \
-              | reverse_mask_xor[dst_offset_modulo + src_len];    \
-         c &= reverse_mask[dst_offset_modulo + src_len];          \
-        src_len = 0;                                              \
-    } } while (0)
-
+    dst = (uint8_t*)dst_org;
     src = (uint8_t*)src_org + (src_offset >> 3u);
-    dst = (uint8_t*)dst_org + (dst_offset >> 3u);
-
     src_offset_modulo = src_offset & 7u;
-    dst_offset_modulo = dst_offset & 7u;
 
-    if (src_offset_modulo == dst_offset_modulo) {
-        if (src_offset_modulo) {
-            c = reverse_mask_xor[dst_offset_modulo] & *src++;
-
-            PREPARE_FIRST_COPY();
-            *dst++ |= c;
-        }
-
+    if (src_offset_modulo == 0) {
         byte_len = src_len >> 3u;
         src_len_modulo = src_len & 7u;
 
-        if (byte_len) {
-            for (i = 0; i < byte_len; i++) {
-                dst[i] = src[i];
-            }
-            src += byte_len;
-            dst += byte_len;
+        for (i = 0; i < byte_len; i++) {
+            *dst++ = *src++;
         }
+
         if (src_len_modulo) {
-            *dst &= reverse_mask_xor[src_len_modulo];
-            *dst |= reverse_mask[src_len_modulo] & *src;
+            *dst = (uint8_t)(*src >> (8u - src_len_modulo));
         }
     } else {
         /*
          * Begin: Line things up on destination.
          */
-        if (src_offset_modulo > dst_offset_modulo) {
-            bit_diff_ls = src_offset_modulo - dst_offset_modulo;
-            bit_diff_rs = 8u - bit_diff_ls;
-
-            c = (uint8_t)(*src++ << bit_diff_ls);
-            c |= (uint8_t)(*src >> bit_diff_rs);
-            c &= reverse_mask_xor[dst_offset_modulo];
-        } else {
-            bit_diff_rs = dst_offset_modulo - src_offset_modulo;
-            bit_diff_ls = 8u - bit_diff_rs;
-
-            c = (uint8_t)(*src >> bit_diff_rs & reverse_mask_xor[dst_offset_modulo]);
-        }
-        PREPARE_FIRST_COPY();
-        *dst++ |= c;
+        bit_diff_ls = src_offset_modulo;
+        bit_diff_rs = 8u - bit_diff_ls;
 
         /*
          * Middle: copy with only shifting the source.
@@ -127,6 +83,94 @@ static void _bitarray_copy(
          * End: copy the remaing bits;
          */
         src_len_modulo = src_len & 7u;
+        if (src_len_modulo) {
+            c = (uint8_t)(*src++ << bit_diff_ls);
+            c |= (uint8_t)(*src >> bit_diff_rs);
+
+            *dst = (uint8_t)(c >> (8u - src_len_modulo));
+        }
+    }
+}
+
+
+#pragma GCC optimize("O3")
+static void _bitarray_write(
+    volatile void *dst_org,
+    size_t dst_offset,
+    size_t dst_len,
+    const void *src_org
+) {
+    static const uint8_t reverse_mask[] =
+        { 0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe, 0xff };
+    static const uint8_t reverse_mask_xor[] =
+        { 0xff, 0x7f, 0x3f, 0x1f, 0x0f, 0x07, 0x03, 0x01, 0x00 };
+
+    const uint8_t *src;
+    volatile uint8_t *dst;
+    uint8_t c;
+    size_t dst_offset_modulo, src_len_modulo, bit_diff_ls, bit_diff_rs;
+    ptrdiff_t byte_len, i;
+
+    if (!dst_len) {
+        return;
+    }
+
+#define PREPARE_FIRST_COPY()                                      \
+    do {                                                          \
+    if (dst_len >= (8u - dst_offset_modulo)) {                    \
+        *dst &= reverse_mask[dst_offset_modulo];                  \
+        dst_len -= 8u - dst_offset_modulo;                        \
+    } else {                                                      \
+        *dst &= reverse_mask[dst_offset_modulo]                   \
+              | reverse_mask_xor[dst_offset_modulo + dst_len + 1];\
+         c &= reverse_mask[dst_offset_modulo + dst_len];          \
+        dst_len = 0;                                              \
+    } } while (0)
+
+    src = (uint8_t*)src_org;
+    dst = (uint8_t*)dst_org + (dst_offset >> 3u);
+
+    dst_offset_modulo = dst_offset & 7u;
+
+    if (dst_offset_modulo == 0) {
+        byte_len = dst_len >> 3u;
+        src_len_modulo = dst_len & 7u;
+
+        for (i = 0; i < byte_len; i++) {
+            *dst++ = *src++;
+        }
+
+        if (src_len_modulo) {
+            *dst &= reverse_mask_xor[src_len_modulo];
+            *dst |= reverse_mask[src_len_modulo] & *src;
+        }
+    } else {
+        /*
+         * Begin: Line things up on destination.
+         */
+        bit_diff_rs = dst_offset_modulo;
+        bit_diff_ls = 8u - bit_diff_rs;
+
+        c = (uint8_t)(*src >> bit_diff_rs & reverse_mask_xor[dst_offset_modulo]);
+
+        PREPARE_FIRST_COPY();
+        *dst++ |= c;
+
+        /*
+         * Middle: copy with only shifting the source.
+         */
+        byte_len = dst_len >> 3u;
+
+        while (--byte_len >= 0) {
+            c = (uint8_t)(*src++ << bit_diff_ls);
+            c |= (uint8_t)(*src >> bit_diff_rs);
+            *dst++ = c;
+        }
+
+        /*
+         * End: copy the remaing bits;
+         */
+        src_len_modulo = dst_len & 7u;
         if (src_len_modulo) {
             c = (uint8_t)(*src++ << bit_diff_ls);
             c |= (uint8_t)(*src >> bit_diff_rs);
@@ -204,7 +248,11 @@ bool UAVCANServer::parse_restartnode_request() {
     */
     uint64_t magic_number;
 
-    _bitarray_copy(&magic_number, 0, rx_transfer_bytes_, 0, 40u);
+    magic_number = rx_transfer_bytes_[0];
+    magic_number |= rx_transfer_bytes_[1] << 8u;
+    magic_number |= rx_transfer_bytes_[2] << 16u;
+    magic_number |= rx_transfer_bytes_[3] << 24u;
+    magic_number |= (uint64_t)rx_transfer_bytes_[4] << 32u;
 
     if (magic_number == 0xACCE551B1Eull) {
         return true;
@@ -297,12 +345,12 @@ bool UAVCANServer::parse_getset_request(
 
     /* Extract the value */
     bits = 0;
-    _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+    _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 1u);
     bit_index++;
     if (bits) {
         /* Boolean value */
         bits = 0;
-        _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+        _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 1u);
         bit_index++;
 
         if (std::isnan(out_value)) {
@@ -311,12 +359,12 @@ bool UAVCANServer::parse_getset_request(
     }
 
     bits = 0;
-    _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+    _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 1u);
     bit_index++;
     if (bits) {
         /* Int64 value -- only support writing the low word */
         bits = 0;
-        _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 64u);
+        _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 64u);
         bit_index += 64u;
 
         if (std::isnan(out_value)) {
@@ -326,11 +374,11 @@ bool UAVCANServer::parse_getset_request(
     }
 
     bits = 0;
-    _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 1u);
+    _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 1u);
     bit_index++;
     if (bits) {
         bits = 0;
-        _bitarray_copy(&bits, 0, rx_transfer_bytes_, bit_index, 32u);
+        _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 32u);
         bit_index += 32u;
 
         if (std::isnan(out_value)) {
@@ -339,13 +387,13 @@ bool UAVCANServer::parse_getset_request(
     }
 
     /* Extract the parameter index */
-    _bitarray_copy(&out_param_index, 0, rx_transfer_bytes_, bit_index, 8u);
+    _bitarray_read(&out_param_index, rx_transfer_bytes_, bit_index, 8u);
     bit_index += 8u;
 
     /* Extract the name -- uses tail array optimization */
     name_bytes = (transfer_bits - bit_index) >> 3u;
     if (name_bytes < 27u) {
-        _bitarray_copy(out_param_name, 0, rx_transfer_bytes_, bit_index,
+        _bitarray_read(out_param_name, rx_transfer_bytes_, bit_index,
                        transfer_bits - bit_index);
         out_param_name[name_bytes] = 0;
         return true;
@@ -382,13 +430,13 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
 #define SERIALIZE_FLOAT_VALUE(x) {                                           \
         if (!std::isnan(x)) {                                                \
             value_type = 0x20u;                                              \
-            _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, 3u);\
+            _bitarray_write(tx_transfer_bytes_, bit_index, 3u, &value_type); \
             bit_index += 3u;                                                 \
-            _bitarray_copy(tx_transfer_bytes_, bit_index, &x, 0, 32u);       \
-            bit_index += 32u;                                                 \
+            _bitarray_write(tx_transfer_bytes_, bit_index, 32u, &x);         \
+            bit_index += 32u;                                                \
         } else {                                                             \
             value_type = 0;                                                  \
-            _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, 3u);\
+            _bitarray_write(tx_transfer_bytes_, bit_index, 3u, &value_type); \
             bit_index += 3u;                                                 \
         }                                                                    \
     }
@@ -401,15 +449,14 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
 #undef SERIALIZE_FLOAT_VALUE
 
     name_bits = (strnlen(in_param.name, 27u) << 3u);
-    _bitarray_copy(tx_transfer_bytes_, bit_index, in_param.name, 0,
-                   name_bits);
+    _bitarray_write(tx_transfer_bytes_, bit_index, name_bits, in_param.name);
     bit_index += name_bits;
 
     /* Length is rounded up to the next byte */
     value_type = 0;
     length = (bit_index + 7u) >> 3u;
     pad_bits = (length << 3u) - bit_index;
-    _bitarray_copy(tx_transfer_bytes_, bit_index, &value_type, 0, pad_bits);
+    _bitarray_write(tx_transfer_bytes_, bit_index, pad_bits, &value_type);
 
     tx_transfer_transfer_type_transfer_id_ = (uint8_t)
         ((UAVCAN_TRANSFER_SERVICE_RESPONSE << 4u) |
@@ -422,7 +469,6 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
     tx_transfer_done_ = false;
 }
 
-
 float UAVCANServer::get_esccommand_value() {
     /*
     260.RawCommand
@@ -433,11 +479,12 @@ float UAVCANServer::get_esccommand_value() {
 
     int18[<=20] rpm
     */
-    uint8_t field_width;
+    uint32_t field_width;
     uint32_t value, bit_index;
     float result;
 
     result = std::numeric_limits<float>::signaling_NaN();
+    field_width = 0;
 
     if (rx_transfer_.get_data_type_id() == UAVCAN_RAWCOMMAND) {
         field_width = 14u;
@@ -452,10 +499,10 @@ float UAVCANServer::get_esccommand_value() {
     bit_index = config_esc_index_ * field_width;
 
     if (bit_index + field_width <= rx_transfer_length_ * 8u) {
-        _bitarray_copy(&value, 0, rx_transfer_bytes_, bit_index, field_width);
+        _bitarray_read(&value, rx_transfer_bytes_, bit_index, field_width);
         if (value >= (1u << (field_width - 1u))) {
             /*
-            The value is negative, so convert to float exluding the sign bit
+            The value is negative, so convert to float excluding the sign bit
             and
             */
             result = -(float)((1u << field_width) - value);
@@ -493,38 +540,40 @@ void UAVCANServer::serialize_esc_status(
     bit_index = 32u;
 
     temp = float16(state.vbus_v);
-    _bitarray_copy(status_transfer_bytes_, bit_index, &temp, 0, 16u);
+    _bitarray_write(status_transfer_bytes_, bit_index, 16u, &temp);
     bit_index += 16u;
 
     temp = float16(state.ibus_a);
-    _bitarray_copy(status_transfer_bytes_, bit_index, &temp, 0, 16u);
+    _bitarray_write(status_transfer_bytes_, bit_index, 16u, &temp);
     bit_index += 16u;
 
     temp = float16(state.temperature_degc + 273.15f);
-    _bitarray_copy(status_transfer_bytes_, bit_index, &temp, 0, 16u);
+    _bitarray_write(status_transfer_bytes_, bit_index, 16u, &temp);
     bit_index += 16u;
 
     itemp = (int32_t)state.speed_rpm;
-    _bitarray_copy(status_transfer_bytes_, bit_index, &itemp, 0, 18u);
+    _bitarray_write(status_transfer_bytes_, bit_index, 18u, &itemp);
     bit_index += 18u;
 
     utemp = (uint8_t)state.power_pct;
-    _bitarray_copy(status_transfer_bytes_, bit_index, &utemp, 0, 7u);
+    _bitarray_write(status_transfer_bytes_, bit_index, 7u, &utemp);
     bit_index += 7u;
 
     utemp = (uint8_t)config_esc_index_;
-    _bitarray_copy(status_transfer_bytes_, bit_index, &utemp, 0, 5u);
+    _bitarray_write(status_transfer_bytes_, bit_index, 5u, &utemp);
     bit_index += 5u;
 
     /* Add padding if required and set the lengths */
     utemp = 0;
     length = (bit_index + 7u) >> 3u;
     pad_bits = (length << 3u) - bit_index;
-    _bitarray_copy(status_transfer_bytes_, bit_index, &utemp, 0, pad_bits);
+    _bitarray_write(status_transfer_bytes_, bit_index, pad_bits, &utemp);
 
     status_transfer_length_ = length;
     status_transfer_index_ = 0;
     status_transfer_frame_index_ = 0;
+
+    broadcast_transfer_ids_[1]++;
 }
 
 
@@ -602,7 +651,8 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
         return true;
     } else if (status_transfer_index_ < status_transfer_length_) {
         i = 0;
-        out_message.set_transfer_id((broadcast_transfer_ids_[1]++) & 7u);
+        out_message.set_id(0);
+        out_message.set_transfer_id(broadcast_transfer_ids_[1] & 7u);
         out_message.set_source_node_id(config_local_node_id_);
         out_message.set_transfer_type(UAVCAN_TRANSFER_MESSAGE_BROADCAST);
         out_message.set_data_type_id(UAVCAN_ESCSTATUS);
@@ -624,8 +674,10 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
         }
 
         out_message.set_length(i);
-        if (status_transfer_index_ == status_transfer_index_) {
+        if (status_transfer_index_ == status_transfer_length_) {
             out_message.set_last_frame(true);
+        } else {
+            out_message.set_last_frame(false);
         }
         out_message.set_frame_index((uint8_t)(status_transfer_frame_index_++));
 
