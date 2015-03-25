@@ -61,7 +61,7 @@ volatile static enum {
 volatile static float g_current_controller_setpoint;
 volatile static float g_speed_controller_setpoint;
 volatile static bool g_estimator_converged;
-volatile static float g_estimator_hfi[3];
+volatile static float g_estimator_hfi[2];
 
 
 volatile static uint32_t g_time;
@@ -185,7 +185,7 @@ void control_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float v_dq_v[2], current_setpoint, speed_setpoint, readings[3], hfi_v[2],
+    float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
           v_ab_v[2];
     struct motor_state_t motor_state;
 
@@ -214,7 +214,7 @@ void control_cb(
         g_speed_controller.reset_state();
         g_alignment_controller.reset_state();
         g_estimator_converged = false;
-        readings[0] = readings[1] = readings[2] = 0.0f;
+        readings[0] = readings[1] = 0.0f;
     } else if (g_estimator.is_converged()) {
         g_estimator_converged = true;
         /* Update the speed controller setpoint */
@@ -291,7 +291,6 @@ void control_cb(
     g_vbus_v = vbus_v;
     g_estimator_hfi[0] = readings[0];
     g_estimator_hfi[1] = readings[1];
-    g_estimator_hfi[2] = readings[2];
 }
 
 
@@ -415,7 +414,8 @@ void systick_cb(void) {
         Add a small amount of negative torque to ensure the motor actually
         shuts down.
         */
-        g_current_controller_setpoint = -0.25f;
+        g_current_controller_setpoint = g_speed_controller_setpoint > 0.0f ?
+                                        -0.25f : 0.25f;
     } else if (g_controller_mode == CONTROLLER_SPEED ||
                 g_controller_mode == CONTROLLER_TORQUE) {
         /*
@@ -454,7 +454,7 @@ bool can_write_flash_command_cb(void) {
 
 
 bool can_esc_command_cb(enum uavcan_data_type_id_t type, float value) {
-    if (value > 0.0f) {
+    if (value < 0.0f || value > 0.0f) {
         if (type == UAVCAN_RAWCOMMAND) {
             g_controller_mode = CONTROLLER_TORQUE;
             g_current_controller_setpoint =
@@ -651,6 +651,7 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
 int __attribute__ ((externally_visible)) main(void) {
     struct control_params_t control_params;
     struct motor_params_t motor_params;
+    struct pwm_params_t pwm_params;
     uint32_t i;
     float i_samples[4], v_samples[4], rs_r, ls_h, limit_speed;
 
@@ -660,6 +661,9 @@ int __attribute__ ((externally_visible)) main(void) {
     /* Read parameters from flash */
     g_configuration.read_motor_params(motor_params);
     g_configuration.read_control_params(control_params);
+    g_configuration.read_pwm_params(pwm_params);
+    g_pwm_controller_mode = pwm_params.use_speed_controller ?
+                            CONTROLLER_SPEED : CONTROLLER_TORQUE;
 
     /* Estimate motor parameters */
     g_parameter_estimator_done = false;
@@ -738,6 +742,15 @@ int __attribute__ ((externally_visible)) main(void) {
     g_motor_params.max_current_a = motor_params.max_current_a;
     g_motor_params.max_speed_rad_per_s = motor_params.max_speed_rad_per_s;
     g_motor_params.num_poles = motor_params.num_poles;
+
+    g_pwm_params.control_offset = pwm_params.control_offset;
+    g_pwm_params.control_min = pwm_params.control_min;
+    g_pwm_params.control_max = pwm_params.control_max;
+    g_pwm_params.throttle_pulse_min_us = pwm_params.throttle_pulse_min_us;
+    g_pwm_params.throttle_pulse_max_us = pwm_params.throttle_pulse_max_us;
+    g_pwm_params.throttle_deadband_us = pwm_params.throttle_deadband_us;
+    g_pwm_params.control_curve = pwm_params.control_curve;
+    g_pwm_params.use_speed_controller = pwm_params.use_speed_controller;
 
     /* Start PWM */
     hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
