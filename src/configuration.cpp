@@ -34,7 +34,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     speeds.
     */
     {PARAM_MOTOR_NUM_POLES, "motor_num_poles",
-        14.0f, 14.0f, 4.0f, 40.0f},
+        14.0f, 14.0f, 2.0f, 40.0f},
 
     /*
     Motor current limit in amps. This determines the maximum current
