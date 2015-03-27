@@ -525,7 +525,7 @@ if __name__ == "__main__":
         sys.exit()
 
     if options.node_id:
-        target_node_id = options.node_id
+        target_node_id = int(options.node_id)
     elif node_ids:
         target_node_id = node_ids.pop()
 
