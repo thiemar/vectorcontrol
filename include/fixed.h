@@ -75,8 +75,9 @@ struct pwm_params_t {
 #define APPROXIMATE_SIN_COS
 #define APPROXIMATE_EXP
 
-#pragma GCC optimize("O3")
-inline float fast_expf(float x) {
+
+inline float __attribute__((optimize("O3")))
+fast_expf(float x) {
 #ifdef APPROXIMATE_EXP
 /*
 fast_expf is copyright (C) 2011 Paul Mineiro
@@ -131,8 +132,8 @@ Contact: Paul Mineiro <paul@mineiro.com>
 }
 
 
-#pragma GCC optimize("O3")
-inline void sin_cos(
+inline void __attribute__((optimize("O3")))
+sin_cos(
     float& sinx,
     float& cosx,
     float x

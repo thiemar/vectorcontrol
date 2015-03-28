@@ -149,7 +149,6 @@ public:
         setpoint_rad_per_s_ = 0.0f;
     }
 
-    #pragma GCC optimize("O3")
     void set_setpoint(float setpoint) {
         setpoint_rad_per_s_ = setpoint;
     }
@@ -169,8 +168,8 @@ public:
         accel_current_limit_a_ = control_params.max_accel_torque_a;
     }
 
-    #pragma GCC optimize("O3")
-    float update(const struct motor_state_t& state) {
+    float __attribute__((optimize("O3")))
+    update(const struct motor_state_t& state) {
         float error_rad_per_s, accel_torque_a, result_a, out_a;
 
         error_rad_per_s = setpoint_rad_per_s_ -
@@ -279,8 +278,8 @@ public:
         i_limit_ = params.max_current_a;
     }
 
-    #pragma GCC optimize("03")
-    void update(
+    void __attribute__((optimize("O3")))
+    update(
         float out_v_ab_v[2],
         const float i_ab_a[2],
         float angle_rad,

@@ -28,8 +28,8 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include "configuration.h"
 
 
-#pragma GCC optimize("O3")
-static void _bitarray_read(
+static void __attribute__((optimize("O3")))
+_bitarray_read(
     volatile void *dst_org,
     const void *src_org,
     size_t src_offset,
@@ -93,8 +93,8 @@ static void _bitarray_read(
 }
 
 
-#pragma GCC optimize("O3")
-static void _bitarray_write(
+static void __attribute__((optimize("O3")))
+_bitarray_write(
     volatile void *dst_org,
     size_t dst_offset,
     size_t dst_len,
@@ -885,7 +885,6 @@ void UAVCANServer::process_transfer() {
 }
 
 
-#pragma GCC optimize("O0")
 uint16_t UAVCANServer::compute_crc(
     uint64_t data_type_signature,
     const volatile uint8_t* payload,

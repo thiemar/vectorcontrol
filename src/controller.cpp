@@ -24,8 +24,9 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include "controller.h"
 #include "fixed.h"
 
-#pragma GCC optimize("O3")
-void DQCurrentController::update(
+
+void __attribute__((optimize("O3")))
+DQCurrentController::update(
     float out_v_dq_v[2],
     const float i_dq_a[2],
     float angular_velocity_rad_per_s,

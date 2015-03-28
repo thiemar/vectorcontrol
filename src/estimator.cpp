@@ -31,14 +31,16 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #define STATE_DIM 2
 #define MEASUREMENT_DIM 2
 
+
 const float g_process_noise[2] = { 20.0f, 1e-5f };
 const float g_measurement_noise[2] = { 0.005f, 0.005f };
 
-#pragma GCC optimize("O3")
-void StateEstimator::update_state_estimate(
+
+void __attribute__((optimize("O3")))
+StateEstimator::update_state_estimate(
     const float i_ab_a[2],
     const float v_ab_v[2],
-    float accel_direction
+    float __attribute__((unused)) accel_direction
 ) {
     /*
     EKF observer largely derived from:
@@ -91,11 +93,11 @@ void StateEstimator::update_state_estimate(
     /* Merge the EKF and HFI angle estimates */
     hfi_weight = get_hfi_weight();
     if (is_hfi_active_) {
-        hfi_scale = __VSQRTF(i_hfi_dq_[0] * i_hfi_dq_[0] +
-                             i_hfi_dq_[1] * i_hfi_dq_[1]);
-        hfi_scale = std::max(1.0f, hfi_scale);
-
-        angle_diff = (i_hfi_dq_[1] - i_hfi_dq_[0]) / hfi_scale;
+        hfi_scale = std::max(0.1f, i_hfi_dq_[0] + i_hfi_dq_[1]);
+        if (accel_direction > 0.0f) {
+            hfi_scale = -hfi_scale;
+        }
+        angle_diff = (i_hfi_dq_[0] - i_hfi_dq_[1]) / hfi_scale;
 
         state_estimate_.angle_rad += angle_diff * hfi_weight;
     }
@@ -233,10 +235,9 @@ void StateEstimator::update_state_estimate(
     update[1] = K(0,1) * innovation[0] + K(1,1) * innovation[1];
 
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
-    state_estimate_.angle_rad += update[1] * (1.0f - hfi_weight);
-
+    state_estimate_.angle_rad += update[1] * std::max(0.5f, 1.0f - hfi_weight);
     state_estimate_.angle_rad +=
-        state_estimate_.angular_velocity_rad_per_s * t_ * (1.0f - hfi_weight);
+        state_estimate_.angular_velocity_rad_per_s * t_; //* (1.0f - hfi_weight);
 
     /*
     Calculate filtered velocity estimate by differentiating successive
@@ -246,7 +247,8 @@ void StateEstimator::update_state_estimate(
     */
     state_estimate_.angular_velocity_rad_per_s +=
         ((state_estimate_.angle_rad - last_angle) * t_inv_ -
-            state_estimate_.angular_velocity_rad_per_s) * 0.01f;
+            state_estimate_.angular_velocity_rad_per_s) * 0.01f *
+        std::max(0.25f, 1.0f - hfi_weight);
 
     if (!is_converged()) {
         is_converged_++;
@@ -259,15 +261,15 @@ void StateEstimator::update_state_estimate(
     */
     if (state_estimate_.angle_rad > 2.0f * (float)M_PI) {
         state_estimate_.angle_rad -= 2.0f * (float)M_PI;
-        //state_estimate_.revolution_count++;
+        state_estimate_.revolution_count++;
     } else if (state_estimate_.angle_rad < 0.0f) {
         state_estimate_.angle_rad += 2.0f * (float)M_PI;
-        //state_estimate_.revolution_count--;
+        state_estimate_.revolution_count--;
     }
 
     next_angle = state_estimate_.angle_rad +
                  2.0f * state_estimate_.angular_velocity_rad_per_s * t_ +
-                 accel_direction * hfi_weight;
+                 0.1f * accel_direction * hfi_weight;
     if (next_angle > 2.0f * (float)M_PI) {
         next_angle -= 2.0f * (float)M_PI;
     } else if (next_angle < 0.0f) {
@@ -322,7 +324,8 @@ void ParameterEstimator::start_estimation(float t) {
 }
 
 
-void ParameterEstimator::update_parameter_estimate(
+void __attribute__((optimize("O3")))
+ParameterEstimator::update_parameter_estimate(
     const float i_ab_a[2],
     const float v_ab_v[2]
 ) {
@@ -402,7 +405,8 @@ void ParameterEstimator::update_parameter_estimate(
 }
 
 
-void ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
+void __attribute__((optimize("O3")))
+ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
     /*
     Get alpha and beta voltage components for the latest phase angle. Only
     output a voltage for the first 12 out of 16 test cycles to give time for

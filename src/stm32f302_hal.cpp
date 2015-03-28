@@ -272,12 +272,13 @@ static volatile uint16_t adc_conversion_results_[2];
 
 
 /* Vbus in raw ADC units (1/LSB) */
-static volatile int32_t board_vbus_lsb_;
+static uint32_t board_vbus_lsb_;
 static volatile float vbus_v_;
+static volatile float vbus_inv_;
 
 
 /* Board temperature in raw ADC units (1/LSB) */
-static volatile int32_t board_temp_lsb_;
+static uint32_t board_temp_lsb_;
 static volatile float temp_degc_;
 
 
@@ -295,14 +296,11 @@ static void hal_init_adc_();
 static void hal_init_dma_();
 static void hal_init_can_();
 static void hal_run_calibration_();
-static enum hal_status_t hal_update_timer_(
-    uint8_t phase_pwm_sector,
-    const uint16_t phase_on_ticks[3]
-);
 static bool hal_read_last_vbus_temp_();
 
 
-inline void hal_read_phase_shunts_(
+inline void __attribute__((optimize("O3")))
+hal_read_phase_shunts_(
     int16_t phase_shunt_signal_lsb[3],
     uint8_t phase_pwm_sector
 ) {
@@ -346,6 +344,65 @@ inline void hal_read_phase_shunts_(
         default:
             break;
     }
+}
+
+
+inline void __attribute__((optimize("O3")))
+hal_update_timer_(
+    uint8_t phase_pwm_sector,
+    const uint16_t phase_on_ticks[3]
+) {
+    const uint8_t sector_phases[6][3] = {
+        /* primary, secondary, tertiary */
+        { 0, 1, 2 },
+        { 1, 0, 2 },
+        { 1, 2, 0 },
+        { 2, 1, 0 },
+        { 2, 0, 1 },
+        { 0, 2, 1 }
+    };
+    uint16_t sample_ticks, duty_delta_ticks, phase1_ticks, phase2_ticks,
+             period_ticks;
+
+    phase1_ticks = phase_on_ticks[sector_phases[phase_pwm_sector - 1][0]];
+    phase2_ticks = phase_on_ticks[sector_phases[phase_pwm_sector - 1][1]];
+    period_ticks = hal_pwm_half_period_ticks - 1u;
+
+    /* Polarity of CC4 is active high */
+    TIM1->CCER &= 0xDFFFu;
+
+    if ((uint16_t)(period_ticks - phase1_ticks) >
+            hal_adc_settling_time_ticks) {
+        sample_ticks = (uint16_t)(period_ticks - 1u);
+    } else {
+        duty_delta_ticks = (uint16_t)(phase1_ticks - phase2_ticks);
+        sample_ticks = (uint16_t)phase1_ticks;
+
+        /* Check which side of the crossing point we should sample */
+        if (duty_delta_ticks > (uint16_t)(period_ticks - phase1_ticks) * 2u) {
+            sample_ticks =
+                (uint16_t)(sample_ticks - hal_adc_sample_time_ticks);
+        } else {
+            sample_ticks =
+                (uint16_t)(sample_ticks + hal_adc_settling_time_ticks);
+
+            if (sample_ticks >= period_ticks) {
+                /* Make polarity of CC4 active low */
+                TIM1->CCER |= 0x2000u;
+
+                sample_ticks =
+                    (uint16_t)((2u * period_ticks) - sample_ticks - 1u);
+            }
+        }
+    }
+
+    /*
+    Update the on times for the PWM channels as well as the ADC trigger point
+    */
+    TIM1->CCR1 = phase_on_ticks[0];
+    TIM1->CCR2 = phase_on_ticks[1];
+    TIM1->CCR3 = phase_on_ticks[2];
+    TIM1->CCR4 = sample_ticks;
 }
 
 
@@ -396,8 +453,8 @@ void SysTick_Handler(void) {
 }
 
 
-#pragma GCC optimize("O3")
-void ADC1_2_IRQHandler(void) {
+void __attribute__((optimize("O3")))
+ADC1_2_IRQHandler(void) {
 PERF_COUNT_START
     static float last_v_ab[2];
     static float prev_v_ab[2];
@@ -407,7 +464,7 @@ PERF_COUNT_START
     int16_t phase_current_lsb[3];
     uint16_t phase_oc[3];
     float out_v_ab[2], i_ab[2];
-    float vbus_inv, temp;
+    float temp;
 
     /* Clear TIM1 update flag so failure to meet deadline can be detected */
     TIM1->SR &= ~(uint16_t)TIM_FLAG_Update;
@@ -445,18 +502,11 @@ PERF_COUNT_START
     /*
     Convert alpha-beta frame voltage fractions to SVM output compare values
     for each phase.
-
-    Only allow output when VBUS is greater than 6 V.
     */
-    if (vbus_v_ > 6.0f) {
-        vbus_inv = 32768.0f / vbus_v_;
-    } else {
-        vbus_inv = 0.0f;
-    }
     last_pwm_sector = svm_duty_cycle_from_v_alpha_beta(
         phase_oc,
-        (int16_t)__SSAT((int32_t)(vbus_inv * out_v_ab[0]), 16),
-        (int16_t)__SSAT((int32_t)(vbus_inv * out_v_ab[1]), 16),
+        (int16_t)__SSAT((int32_t)(vbus_inv_ * out_v_ab[0]), 16),
+        (int16_t)__SSAT((int32_t)(vbus_inv_ * out_v_ab[1]), 16),
         hal_pwm_period_ticks);
 
     /* Update the timer */
@@ -960,70 +1010,6 @@ static void hal_run_calibration_() {
 }
 
 
-static enum hal_status_t hal_update_timer_(
-    uint8_t phase_pwm_sector,
-    const uint16_t phase_on_ticks[3]
-) {
-    const uint8_t sector_phases[6][3] = {
-        /* primary, secondary, tertiary */
-        { 0, 1, 2 },
-        { 1, 0, 2 },
-        { 1, 2, 0 },
-        { 2, 1, 0 },
-        { 2, 0, 1 },
-        { 0, 2, 1 }
-    };
-    uint16_t sample_ticks, duty_delta_ticks, phase1_ticks, phase2_ticks,
-             period_ticks;
-
-    phase1_ticks = phase_on_ticks[sector_phases[phase_pwm_sector - 1][0]];
-    phase2_ticks = phase_on_ticks[sector_phases[phase_pwm_sector - 1][1]];
-    period_ticks = hal_pwm_half_period_ticks - 1u;
-
-    /* Polarity of CC4 is active high */
-    TIM1->CCER &= 0xDFFFu;
-
-    if ((uint16_t)(period_ticks - phase1_ticks) >
-            hal_adc_settling_time_ticks) {
-        sample_ticks = (uint16_t)(period_ticks - 1u);
-    } else {
-        duty_delta_ticks = (uint16_t)(phase1_ticks - phase2_ticks);
-        sample_ticks = (uint16_t)phase1_ticks;
-
-        /* Check which side of the crossing point we should sample */
-        if (duty_delta_ticks > (uint16_t)(period_ticks - phase1_ticks) * 2u) {
-            sample_ticks =
-                (uint16_t)(sample_ticks - hal_adc_sample_time_ticks);
-        } else {
-            sample_ticks =
-                (uint16_t)(sample_ticks + hal_adc_settling_time_ticks);
-
-            if (sample_ticks >= period_ticks) {
-                /* Make polarity of CC4 active low */
-                TIM1->CCER |= 0x2000u;
-
-                sample_ticks =
-                    (uint16_t)((2u * period_ticks) - sample_ticks - 1u);
-            }
-        }
-    }
-
-    /*
-    Update the on times for the PWM channels as well as the ADC trigger point
-    */
-    TIM1->CCR1 = phase_on_ticks[0];
-    TIM1->CCR2 = phase_on_ticks[1];
-    TIM1->CCR3 = phase_on_ticks[2];
-    TIM1->CCR4 = sample_ticks;
-
-    if ((TIM1->SR & TIM_FLAG_Update) == TIM_FLAG_Update) {
-        return HAL_STATUS_ERROR;
-    } else {
-        return HAL_STATUS_OK;
-    }
-}
-
-
 static bool hal_read_last_vbus_temp_() {
     /* TS_CAL_1 is the temperature sensor reading at 30 deg C */
     static uint16_t ts_cal_1 = *((volatile uint16_t*)(0x1FFFF7B8));
@@ -1031,6 +1017,7 @@ static bool hal_read_last_vbus_temp_() {
     static uint16_t ts_cal_2 = *((volatile uint16_t*)(0x1FFFF7C2));
     static float ts_deg_c_per_lsb = (110.0f - 30.0f) /
                                     (float)(ts_cal_2 - ts_cal_1);
+    float temp;
 
     /* Check if the last VBUS and temperature conversion is done */
     if (!ADC_GetStartConversionStatus(ADC1)) {
@@ -1040,21 +1027,28 @@ static bool hal_read_last_vbus_temp_() {
         */
         if (board_vbus_lsb_ > 0) {
             board_vbus_lsb_ = (board_vbus_lsb_ * 63 +
-                               adc_conversion_results_[0] * 128) / 64;
+                               (adc_conversion_results_[0] << 7)) >> 6;
         } else {
-            board_vbus_lsb_ = adc_conversion_results_[0] * 128;
+            board_vbus_lsb_ = adc_conversion_results_[0] << 7;
         }
-        vbus_v_ = (float)(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
-                  (1.0f / 32768.0f);
+        temp = (float)(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
+               (1.0f / 32768.0f);
+        vbus_v_ = temp;
+        if (temp > 6.0f) {
+            vbus_inv_ = 32768.0f / temp;
+        } else {
+            vbus_inv_ = 0.0f;
+        }
 
         if (board_temp_lsb_ > 0) {
             board_temp_lsb_ = (board_temp_lsb_ * 63 +
-                               adc_conversion_results_[1] * 128) / 64;
+                               (adc_conversion_results_[1] << 7)) >> 6;
         } else {
-            board_temp_lsb_ = adc_conversion_results_[1] * 128;
+            board_temp_lsb_ = adc_conversion_results_[1] << 7;
         }
-        temp_degc_ = 30.0f + (float)((board_temp_lsb_ >> 7) - ts_cal_1) *
-                             ts_deg_c_per_lsb;
+        temp = 30.0f + (float)((board_temp_lsb_ >> 7) - ts_cal_1) *
+                       ts_deg_c_per_lsb;
+        temp_degc_ = temp;
 
         /* Start a new conversion */
         ADC_StartConversion(ADC1);

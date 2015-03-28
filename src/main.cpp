@@ -60,7 +60,6 @@ volatile static enum {
 } g_input_source;
 volatile static float g_current_controller_setpoint;
 volatile static float g_speed_controller_setpoint;
-volatile static bool g_estimator_converged;
 volatile static float g_estimator_hfi[2];
 
 
@@ -138,7 +137,8 @@ extern "C" void can_rx_cb(const CANMessage& message);
 extern "C" void rc_pwm_cb(uint32_t width_us, uint32_t period_us);
 
 
-void identification_cb(
+void __attribute__((optimize("O3")))
+identification_cb(
     float out_v_ab_v[2],
     const float last_v_ab_v[2],
     const float i_ab_a[2],
@@ -166,7 +166,7 @@ void identification_cb(
     Handle stop condition -- set Vd, Vq to zero. Trigger at current limit.
     */
     if (i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1] >
-            HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A) {
+            HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A || g_fault) {
         g_fault = true;
         g_controller_mode = CONTROLLER_STOPPED;
     }
@@ -178,8 +178,8 @@ void identification_cb(
 }
 
 
-#pragma GCC optimize("O3")
-void control_cb(
+void __attribute__((optimize("O3")))
+control_cb(
     float out_v_ab_v[2],
     const float last_v_ab_v[2],
     const float i_ab_a[2],
@@ -188,11 +188,14 @@ void control_cb(
     float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
           v_ab_v[2];
     struct motor_state_t motor_state;
+    enum controller_mode_t controller_mode;
+
+    controller_mode = g_controller_mode;
 
     /* Update the state estimate with those values */
     g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
                                       g_speed_controller_setpoint > 0.0f ?
-                                        1e-1f : -1e-1f);
+                                        1.0 : -1.0f);
     g_estimator.get_state_estimate(motor_state);
 
     /*
@@ -200,26 +203,22 @@ void control_cb(
     stop doesn't break anything. Trigger at current limit.
     */
     if (i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1] >
-            HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A) {
+            HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A || g_fault) {
         g_fault = true;
-        g_controller_mode = CONTROLLER_STOPPED;
+        g_controller_mode = controller_mode = CONTROLLER_STOPPED;
     }
 
-    if (g_controller_mode == CONTROLLER_STOPPED) {
+    if (controller_mode == CONTROLLER_STOPPED) {
         out_v_ab_v[0] = out_v_ab_v[1] = v_dq_v[0] = v_dq_v[1] = 0.0f;
-        current_setpoint = 0.0f;
-        speed_setpoint = 0.0f;
         g_estimator.reset_state();
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
         g_alignment_controller.reset_state();
-        g_estimator_converged = false;
         readings[0] = readings[1] = 0.0f;
     } else if (g_estimator.is_converged()) {
-        g_estimator_converged = true;
         /* Update the speed controller setpoint */
-        if (g_controller_mode == CONTROLLER_TORQUE ||
-                g_controller_mode == CONTROLLER_STOPPING) {
+        if (controller_mode == CONTROLLER_TORQUE ||
+                controller_mode == CONTROLLER_STOPPING) {
             speed_setpoint = motor_state.angular_velocity_rad_per_s;
             g_speed_controller_setpoint = speed_setpoint;
         } else {
@@ -232,8 +231,8 @@ void control_cb(
         when in speed control mode.
         */
         current_setpoint = g_speed_controller.update(motor_state);
-        if (g_controller_mode == CONTROLLER_TORQUE ||
-                g_controller_mode == CONTROLLER_STOPPING) {
+        if (controller_mode == CONTROLLER_TORQUE ||
+                controller_mode == CONTROLLER_STOPPING) {
             current_setpoint = g_current_controller_setpoint;
         } else {
             g_current_controller_setpoint = current_setpoint;
@@ -260,7 +259,6 @@ void control_cb(
         */
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
     } else {
-        g_estimator_converged = false;
         /*
         Estimator is still aligning/converging; run the alignment controller
         and add the HFI voltages on top.
@@ -400,7 +398,6 @@ void systick_cb(void) {
     }
 
     g_time++;
-    esc_assert(!g_fault);
 
     /* Motor shutdown logic -- stop when back EMF drops below 0.05 V */
     if (std::abs(motor_state.angular_velocity_rad_per_s) <

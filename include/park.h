@@ -20,8 +20,8 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 #include "fixed.h"
 
-#pragma GCC optimize("O3")
-inline void park_transform(
+inline void __attribute__((optimize("O3")))
+park_transform(
     float dq[2],
     const float alpha_beta[2],
     float sin_theta,
@@ -32,8 +32,8 @@ inline void park_transform(
 }
 
 
-#pragma GCC optimize("O3")
-inline void park_transform(
+inline void __attribute__((optimize("O3")))
+park_transform(
     float dq[2],
     const float alpha_beta[2],
     float theta
@@ -45,8 +45,8 @@ inline void park_transform(
 }
 
 
-#pragma GCC optimize("O3")
-inline void inverse_park_transform(
+inline void __attribute__((optimize("O3")))
+inverse_park_transform(
     float alpha_beta[2],
     const float dq[2],
     float sin_theta,
@@ -57,8 +57,8 @@ inline void inverse_park_transform(
 }
 
 
-#pragma GCC optimize("O3")
-inline void inverse_park_transform(
+inline void __attribute__((optimize("O3")))
+inverse_park_transform(
     float alpha_beta[2],
     const float dq[2],
     float theta

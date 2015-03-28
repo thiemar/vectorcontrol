@@ -111,8 +111,8 @@ public:
         out_estimate = state_estimate_;
     }
 
-    #pragma GCC optimize("O3")
-    void get_est_v_alpha_beta_from_v_dq(
+    void __attribute__((optimize("O3")))
+    get_est_v_alpha_beta_from_v_dq(
         float out_v_alpha_beta[2],
         const float in_v_dq[2]
     ) const {
@@ -120,16 +120,16 @@ public:
                                next_cos_theta_);
     }
 
-    #pragma GCC optimize("O3")
-    float get_hfi_weight(void) const {
-        float weight;
-        weight = std::min(std::abs(state_estimate_.angular_velocity_rad_per_s),
-                          hfi_cutoff_rad_per_s_) * hfi_cutoff_inv_;
-        return 1.0f - weight * weight;
+    float __attribute__((optimize("O3")))
+    get_hfi_weight(void) const {
+        float weight, temp;
+        temp = state_estimate_.angular_velocity_rad_per_s * hfi_cutoff_inv_;
+        weight = 1.0f - std::abs(temp);
+        return weight > 0.0f ? weight : 0.0f;
     }
 
-    #pragma GCC optimize("O3")
-    void get_hfi_carrier_dq_v(float v_dq[2]) {
+    void __attribute__((optimize("O3")))
+    get_hfi_carrier_dq_v(float v_dq[2]) {
         float weight;
         weight = get_hfi_weight();
 
@@ -141,7 +141,7 @@ public:
 
         carrier_v_ = -carrier_v_;
         v_dq[0] = carrier_v_ * ((float)is_hfi_active_ * (1.0f / 500.0f));
-        v_dq[1] = v_dq[0];
+        v_dq[1] = -v_dq[0];
     }
 
     void get_hfi_readings(float readings[2]) const {
