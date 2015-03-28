@@ -320,7 +320,7 @@ function setupHFIChart(device) {
 
     result.y0 = d3.scale.linear()
         .range([height, 0.0])
-        .domain([-1.0, 1.0]);
+        .domain([0.0, 0.5]);
 
     result.y1 = d3.scale.linear()
         .range([height, 0.0])
