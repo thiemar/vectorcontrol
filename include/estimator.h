@@ -50,9 +50,11 @@ class StateEstimator {
     /* Column-major */
     float state_covariance_[4];
 
+    /* Intermediate state */
     float last_i_ab_a_[2];
     float next_sin_theta_;
     float next_cos_theta_;
+    float innovation_[2];
 
     uint16_t is_converged_;
     uint16_t is_hfi_active_;
@@ -84,6 +86,7 @@ public:
         state_covariance_[0] = state_covariance_[1] = state_covariance_[2] =
             state_covariance_[3] = 0.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
+        innovation_[0] = innovation_[1] = 0.0f;
     }
 
     void reset_state() {
@@ -97,6 +100,7 @@ public:
         state_covariance_[1] = state_covariance_[3] = 10.0f;
         i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
         i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
+        innovation_[0] = innovation_[1] = 0.0f;
         is_converged_ = 0;
         is_hfi_active_ = 0;
     }
@@ -147,6 +151,27 @@ public:
     void get_hfi_readings(float readings[2]) const {
         readings[0] = i_hfi_dq_[0];
         readings[1] = i_hfi_dq_[1];
+    }
+
+    float __attribute__((optimize("O3")))
+    get_consistency(void) const {
+        /*
+        The estimator's consistency value is based on the difference between
+        the output voltage predicted by the model, and the actual output
+        voltage. This is captured by the innovation calculated in the EKF
+        update step.
+        */
+        float scale, innovation;
+        scale = last_i_ab_a_[0] * last_i_ab_a_[0] +
+                last_i_ab_a_[1] * last_i_ab_a_[1];
+        innovation = innovation_[0] * innovation_[0] +
+                     innovation_[1] * innovation_[1];
+
+        if (scale > 1e-3f) {
+            return innovation / scale;
+        } else {
+            return 0.0f;
+        }
     }
 
     bool is_converged(void) const {

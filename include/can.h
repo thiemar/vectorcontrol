@@ -29,7 +29,7 @@ enum can_nonstandard_message_id_t {
     CAN_STATUS_CONTROLLER = 0x730,
     CAN_STATUS_MEASUREMENT = 0x731,
     CAN_STATUS_CONFIG = 0x732,
-    CAN_STATUS_ESTIMATOR = 0x733,
+    CAN_STATUS_VOLTAGE = 0x733,
     CAN_STATUS_HFI = 0x734,
     CAN_COMMAND_SETPOINT = 0x740,
     CAN_COMMAND_CONFIG = 0x741,
@@ -48,10 +48,10 @@ struct can_status_hfi_t {
     float16_t angle_rad;
 } __attribute__ ((packed));
 
-struct can_status_estimator_t {
+struct can_status_voltage_t {
     uint8_t node_id;
-    float16_t angle_covariance, velocity_covariance;
-    float16_t innovation;
+    float16_t vd, vq;
+    float16_t consistency;
 } __attribute__ ((packed));
 
 struct can_status_measurement_t {

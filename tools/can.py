@@ -18,6 +18,7 @@
 # vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import sys
 import time
 import serial
 import struct
@@ -143,6 +144,7 @@ class CAN(object):
         self.conn.write("S8\r")
         self.conn.flush()
         self.recv()
+        time.sleep(0.1)
         self.conn.write("O\r")
         self.conn.flush()
         self.recv()
@@ -181,7 +183,7 @@ class CAN(object):
         # Filter, parse and return the messages
         messages = list(self.parse(m) for m in messages
                         if m and m[0] in ("t", "T"))
-        messages = filter(lambda x: x, messages)
+        messages = filter(lambda x: x and x[0], messages)
 
         if callback:
             for message in messages:
@@ -198,7 +200,6 @@ class CAN(object):
     def send(self, message_id, message, extended=False):
         #log.debug("CAN.send({!r}, {!r}, {!r})".format(message_id, message,
         #                                              extended))
-
         if extended:
             start = "T{0:8X}".format(message_id)
         else:
@@ -219,14 +220,16 @@ if __name__ == "__main__":
     last_status = time.time()
     transfer_id = 0
     while True:
+        messages = can.recv()
+        for message in messages:
+            if message[0]:
+                print(repr(message))
+
         # Send node status every 0.5 s
         if time.time() - last_status > 0.5:
             message_id = uavcan_broadcast_id(transfer_id,
                                              UAVCAN_NODESTATUS_ID)
-            can.send(UAVCAN_NODESTATUS_ID, "\x00\x00\x00\x00", True)
+            can.send(message_id, "\x00\x00\x00\x00", extended=True)
             last_status = time.time()
-
-        messages = can.recv()
-        for message in messages:
-            print(message)
+            transfer_id += 1
 

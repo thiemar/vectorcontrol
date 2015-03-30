@@ -20,9 +20,11 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 NodeList.prototype.forEach = Array.prototype.forEach;
 HTMLCollection.prototype.forEach = Array.prototype.forEach;
 
-var ws, deviceCurrentData = {}, deviceSpeedData = {}, deviceCurrentCharts = {},
-    deviceSpeedCharts = {}, deviceVoltageTempCharts = {}, deviceHFIData = {},
-    deviceHFICharts = {}, lastUpdate = null;
+var ws, deviceCurrentData = {}, deviceSpeedData = {}, deviceHFIData = {},
+    deviceOutputVoltageData = {},
+    deviceCurrentCharts = {}, deviceSpeedCharts = {}, deviceHFICharts = {},
+    deviceVoltageTempCharts = {}, deviceOutputVoltageCharts = {},
+    lastUpdate = null;
 
 function connect() {
     ws = new WebSocket("ws://" + window.location.host + "/can");
@@ -57,6 +59,7 @@ function connect() {
             setupCurrentChart(nodeUi);
             setupVoltageTempChart(nodeUi);
             setupHFIChart(nodeUi);
+            setupOutputVoltageChart(nodeUi);
         }
 
         /* Process message data */
@@ -78,6 +81,7 @@ function connect() {
 
             updateCurrentChart(nodeUi, deviceCurrentData[message.node_id] || []);
             updateSpeedChart(nodeUi, deviceSpeedData[message.node_id] || []);
+            updateOutputVoltageChart(nodeUi, deviceOutputVoltageData[message.node_id] || []);
         } else if (message.current) {
             /*
             Current measurement data -- add it to the measurement array,
@@ -122,6 +126,20 @@ function connect() {
                         deviceHFIData[message.node_id].length - 1500);
             }
             updateHFIChart(nodeUi, deviceHFIData[message.node_id]);
+        } else if (message.voltage) {
+            /* Output voltage and estimator consistency data */
+            if (!deviceOutputVoltageData[message.node_id]) {
+                deviceOutputVoltageData[message.node_id] = [];
+            }
+            Array.prototype.push.apply(deviceOutputVoltageData[message.node_id],
+                                       message.hfi);
+            if (deviceOutputVoltageData[message.node_id].length > 1500) {
+                deviceOutputVoltageData[message.node_id] =
+                    deviceOutputVoltageData[message.node_id].slice(
+                        deviceOutputVoltageData[message.node_id].length - 1500);
+            }
+            updateOutputVoltageChart(
+                nodeUi, deviceOutputVoltageData[message.node_id]);
         }
     }
 
@@ -458,6 +476,94 @@ function setupSpeedChart(device) {
     deviceSpeedCharts[parseInt(device.id.split("-")[1], 10)] = result;
 }
 
+
+function setupOutputVoltageChart(device) {
+    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
+        svg = device.querySelector("svg.output-voltage-chart"),
+        container = device.querySelector("div.device-measurements"),
+        width = container.clientWidth - 150,
+        height = 200,
+        margin = {top: 10, right: 50, left: 50, bottom: 10};
+
+    result.x = d3.scale.linear()
+        .range([0, width])
+        .domain([0.0, 27.0]);
+
+    result.y0 = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([-30.0, 30.0]);
+
+    result.y1 = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([0, 2.0]);
+
+    result.xAxis = d3.svg.axis()
+        .scale(result.x)
+        .orient("bottom")
+        .ticks(30)
+        .tickFormat("")
+        .tickSize(-height, 0, 0);
+    result.yAxis0 = d3.svg.axis()
+        .scale(result.y0)
+        .orient("left");
+    result.yAxis1 = d3.svg.axis()
+        .scale(result.y1)
+        .orient("right");
+
+    result.chart = d3.select(svg)
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    result.chart.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(result.xAxis);
+
+    result.chart.append("g")
+        .attr("class", "y0 axis")
+        .call(result.yAxis0)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Output voltage (V)");
+
+    result.chart.append("g")
+        .attr("class", "y1 axis consistency")
+        .attr("transform", "translate(" + width + ", 0)")
+        .call(result.yAxis1)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", 40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Estimator consistency (%)");
+
+    result.chart.append("clipPath")
+        .attr("id", "clip")
+    .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+
+    result.chart.append("path")
+        .attr("class", "consistency")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "voltage-vd")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "voltage-vq")
+        .attr('clip-path', 'url(#clip)');
+
+    deviceOutputVoltageCharts[parseInt(device.id.split("-")[1], 10)] = result;
+}
+
+
 function updateVoltageTempChart(device, data) {
     var seriesData, deviceId, chart;
 
@@ -522,6 +628,7 @@ function updateCurrentChart(device, data) {
         .attr("d", current);
 }
 
+
 function updateSpeedChart(device, data) {
     var speed, deviceId, chart, maxSpeed;
 
@@ -551,6 +658,7 @@ function updateSpeedChart(device, data) {
         .datum(data)
         .attr("d", speed);
 }
+
 
 function updateHFIChart(device, data) {
     var seriesData, deviceId, chart;
@@ -585,6 +693,47 @@ function updateHFIChart(device, data) {
         .datum(data)
         .attr("d", seriesData);
 }
+
+
+function updateOutputVoltageChart(device, data) {
+    var voltage, deviceId, chart, maxVoltage, consistency;
+
+    deviceId = parseInt(device.id.split("-")[1], 10);
+    chart = deviceCurrentCharts[deviceId];
+    maxVoltage = parseFloat(device.querySelector("input[name=motor_voltage_limit]").value);
+
+    chart.y0.domain([-maxVoltage, maxVoltage]);
+    chart.yAxis0.scale(chart.y0);
+    chart.chart.select(".y0.axis").call(chart.yAxis);
+
+    /* Consistency line */
+    consistency = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 50.0); })
+        .y(function(d) { return chart.y1(d.consistency); });
+
+    chart.chart.select(".consistency")
+        .datum(data)
+        .attr("d", consistency);
+
+    /* Vd line */
+    voltage = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 50.0); })
+        .y(function(d) { return chart.y0(d.v_d); });
+
+    chart.chart.select(".voltage-vd")
+        .datum(data)
+        .attr("d", voltage);
+
+    /* Vq line */
+    voltage = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 50.0); })
+        .y(function(d) { return chart.y0(d.v_q); });
+
+    chart.chart.select(".voltage-vq")
+        .datum(data)
+        .attr("d", voltage);
+}
+
 
 function updateSetpointSchedule(device) {
     var tTotal, tLow, tRise, tHigh, tFall, minSetpoint, maxSetpoint, i, f, d,

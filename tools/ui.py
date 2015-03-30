@@ -48,7 +48,7 @@ UAVCAN_NODESTATUS_ID = 550
 CAN_COMMAND_SETPOINT_ID = 0x740
 CAN_STATUS_CONTROLLER_ID = 0x730
 CAN_STATUS_MEASUREMENT_ID = 0x731
-CAN_STATUS_ESTIMATOR_ID = 0x733
+CAN_STATUS_VOLTAGE_ID = 0x733
 CAN_STATUS_HFI_ID = 0x734
 
 
@@ -60,8 +60,9 @@ UAVCAN_NODE_SETPOINT_SCHEDULE = collections.defaultdict(list)
 UAVCAN_NODE_SETPOINT_STARTUP = collections.defaultdict(list)
 UAVCAN_NODE_CONTROL_MODE = collections.defaultdict(int)
 UAVCAN_NODE_MOTOR_RUNNING = collections.defaultdict(bool)
-UAVCAN_NODE_MEASUREMENT_QUEUE = collections.defaultdict(collections.deque)
 UAVCAN_NODE_CONTROLLER_QUEUE = collections.defaultdict(collections.deque)
+UAVCAN_NODE_MEASUREMENT_QUEUE = collections.defaultdict(collections.deque)
+UAVCAN_NODE_VOLTAGE_QUEUE = collections.defaultdict(collections.deque)
 UAVCAN_NODE_HFI_QUEUE = collections.defaultdict(collections.deque)
 
 
@@ -148,53 +149,49 @@ def handle_can_message(conn, message):
             "param_name": param_name,
             "value": value
         })
-    elif message_id == CAN_STATUS_CONTROLLER_ID:
-        node_id, i_d, i_q, i_setpoint = struct.unpack("<BHHH", message_data)
-        i_d = can.f32_from_f16(i_d)
-        i_q = can.f32_from_f16(i_q)
-        i_setpoint = can.f32_from_f16(i_setpoint)
-        UAVCAN_NODE_CONTROLLER_QUEUE[node_id].append({
-            "i_d": i_d,
-            "i_q": i_q,
-            "i_setpoint": i_setpoint
-        })
-        if len(UAVCAN_NODE_CONTROLLER_QUEUE[node_id]) == 10:
+    elif message_id in (CAN_STATUS_CONTROLLER_ID, CAN_STATUS_MEASUREMENT_ID,
+                        CAN_STATUS_VOLTAGE_ID, CAN_STATUS_HFI_ID):
+        queue = key = node_id = None
+        data = {}
+
+        if message_id == CAN_STATUS_CONTROLLER_ID:
+            node_id, i_d, i_q, i_setpoint = struct.unpack("<BHHH", message_data)
+            data["i_d"] = can.f32_from_f16(i_d)
+            data["i_q"] = can.f32_from_f16(i_q)
+            data["i_setpoint"] = can.f32_from_f16(i_setpoint)
+            queue = UAVCAN_NODE_CONTROLLER_QUEUE
+            key = "current"
+        elif message_id == CAN_STATUS_MEASUREMENT_ID:
+            node_id, temperature, rpm_setpoint, rpm, vbus = \
+                struct.unpack("<BbhhH", message_data)
+            data["temperature"] = temperature
+            data["rpm_setpoint"] = rpm_setpoint
+            data["rpm"] = rpm
+            data["vbus"] = can.f32_from_f16(vbus)
+            queue = UAVCAN_NODE_MEASUREMENT_QUEUE
+            key = "speed"
+        elif message_id == CAN_STATUS_VOLTAGE_ID:
+            node_id, v_d, v_q, consistency = struct.unpack("<BHHH", message_data)
+            data["v_d"] = can.f32_from_f16(v_d)
+            data["v_q"] = can.f32_from_f16(v_q)
+            data["consistency"] = can.f32_from_f16(consistency)
+            queue = UAVCAN_NODE_VOLTAGE_QUEUE
+            key = "voltage"
+        elif message_id == CAN_STATUS_HFI_ID:
+            node_id, hfi_d, hfi_q, angle = struct.unpack("<BHHH", message_data)
+            data["hfi_d"] = can.f32_from_f16(hfi_d)
+            data["hfi_q"] = can.f32_from_f16(hfi_q)
+            data["angle"] = can.f32_from_f16(angle)
+            queue = UAVCAN_NODE_HFI_QUEUE
+            key = "hfi"
+
+        queue.append(data)
+        if len(queue[node_id]) == 10:
             send_all({
                 "node_id": node_id,
-                "current": list(UAVCAN_NODE_CONTROLLER_QUEUE[node_id])
+                key: list(queue[node_id])
             })
-            UAVCAN_NODE_CONTROLLER_QUEUE[node_id].clear()
-    elif message_id == CAN_STATUS_MEASUREMENT_ID:
-        node_id, temperature, rpm_setpoint, rpm, vbus = \
-            struct.unpack("<BbhhH", message_data)
-        UAVCAN_NODE_MEASUREMENT_QUEUE[node_id].append({
-            "temperature": temperature,
-            "rpm_setpoint": rpm_setpoint,
-            "rpm": rpm,
-            "vbus": can.f32_from_f16(vbus)
-        })
-        if len(UAVCAN_NODE_MEASUREMENT_QUEUE[node_id]) == 10:
-            send_all({
-                "node_id": node_id,
-                "speed": list(UAVCAN_NODE_MEASUREMENT_QUEUE[node_id])
-            })
-            UAVCAN_NODE_MEASUREMENT_QUEUE[node_id].clear()
-    elif message_id == CAN_STATUS_HFI_ID:
-        node_id, hfi_d, hfi_q, angle_rad = struct.unpack("<BHHH", message_data)
-        hfi_d = can.f32_from_f16(hfi_d)
-        hfi_q = can.f32_from_f16(hfi_q)
-        angle_rad = can.f32_from_f16(angle_rad)
-        UAVCAN_NODE_HFI_QUEUE[node_id].append({
-            "hfi_d": hfi_d,
-            "hfi_q": hfi_q,
-            "angle": angle_rad
-        })
-        if len(UAVCAN_NODE_HFI_QUEUE[node_id]) == 10:
-            send_all({
-                "node_id": node_id,
-                "hfi": list(UAVCAN_NODE_HFI_QUEUE[node_id])
-            })
-            UAVCAN_NODE_HFI_QUEUE[node_id].clear()
+            queue[node_id].clear()
 
 
 def send_node_status(conn):
