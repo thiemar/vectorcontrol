@@ -132,7 +132,7 @@ function connect() {
                 deviceOutputVoltageData[message.node_id] = [];
             }
             Array.prototype.push.apply(deviceOutputVoltageData[message.node_id],
-                                       message.hfi);
+                                       message.voltage);
             if (deviceOutputVoltageData[message.node_id].length > 1500) {
                 deviceOutputVoltageData[message.node_id] =
                     deviceOutputVoltageData[message.node_id].slice(
@@ -699,12 +699,12 @@ function updateOutputVoltageChart(device, data) {
     var voltage, deviceId, chart, maxVoltage, consistency;
 
     deviceId = parseInt(device.id.split("-")[1], 10);
-    chart = deviceCurrentCharts[deviceId];
+    chart = deviceOutputVoltageCharts[deviceId];
     maxVoltage = parseFloat(device.querySelector("input[name=motor_voltage_limit]").value);
 
     chart.y0.domain([-maxVoltage, maxVoltage]);
     chart.yAxis0.scale(chart.y0);
-    chart.chart.select(".y0.axis").call(chart.yAxis);
+    chart.chart.select(".y0.axis").call(chart.yAxis0);
 
     /* Consistency line */
     consistency = d3.svg.line()

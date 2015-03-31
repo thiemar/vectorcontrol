@@ -185,7 +185,7 @@ def handle_can_message(conn, message):
             queue = UAVCAN_NODE_HFI_QUEUE
             key = "hfi"
 
-        queue.append(data)
+        queue[node_id].append(data)
         if len(queue[node_id]) == 10:
             send_all({
                 "node_id": node_id,
