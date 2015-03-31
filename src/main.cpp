@@ -472,17 +472,7 @@ bool can_esc_command_cb(enum uavcan_data_type_id_t type, float value) {
 
 
 void can_rx_cb(const CANMessage& message) {
-    union {
-        uint8_t bytes[8];
-        struct can_command_setpoint_t setpoint;
-        struct can_command_config_t config;
-        struct can_command_restart_t restart;
-        struct can_status_config_t config_reply;
-    } debug_message;
     UAVCANMessage m(message);
-    CANMessage reply;
-    float temp;
-    uint8_t param_index;
 
     /* Enable transmission */
     g_valid_can = true;
@@ -491,83 +481,6 @@ void can_rx_cb(const CANMessage& message) {
     if (message.has_extended_id()) {
         /* UAVCAN message */
         g_uavcan_server.process_rx(m);
-    } else {
-        /* Debug CAN message */
-        (void)message.get_data(debug_message.bytes);
-        if (debug_message.bytes[0] == g_can_node_id) {
-            switch (message.get_id()) {
-                case CAN_COMMAND_SETPOINT:
-                    /* Pass through to the UAVCAN ESC command controller */
-                    switch (debug_message.setpoint.controller_mode) {
-                        case CONTROLLER_TORQUE:
-                            temp = (float)debug_message.setpoint.torque_setpoint;
-                            if (temp < 0.0f || temp > 0.0f) {
-                                g_controller_mode = CONTROLLER_TORQUE;
-                                g_current_controller_setpoint =
-                                    g_motor_params.max_current_a * temp *
-                                    (1.0f / 8192.0f);
-                                g_input_source = INPUT_CAN;
-                                g_last_can = g_time;
-                            }
-                            break;
-                        case CONTROLLER_SPEED:
-                            temp = (float)debug_message.setpoint.rpm_setpoint;
-                            if (temp < 0.0f || temp > 0.0f) {
-                                g_controller_mode = CONTROLLER_SPEED;
-                                temp *= (1.0f / 60.0f) *
-                                        (float)g_motor_params.num_poles *
-                                        (float)M_PI;
-                                g_speed_controller_setpoint = temp;
-                                g_input_source = INPUT_CAN;
-                                g_last_can = g_time;
-                            }
-                            break;
-                        default:
-                            if (g_controller_mode == CONTROLLER_TORQUE ||
-                                    g_controller_mode == CONTROLLER_SPEED) {
-                                g_controller_mode = CONTROLLER_STOPPING;
-                            }
-                            break;
-                    }
-                    break;
-                case CAN_COMMAND_CONFIG:
-                    /*
-                    Store the node ID to which this message was sent, so we
-                    send the reply with that ID even if the node ID changes
-                    (e.g. due to changing the uavcan_node_id parameter).
-                    */
-                    param_index = debug_message.config.param_index;
-                    if (debug_message.config.set) {
-                        g_configuration.set_param_value_by_index(
-                            param_index, debug_message.config.param_value);
-                    }
-                    if (debug_message.config.save) {
-                        can_write_flash_command_cb();
-                    }
-                    /* Reply with current parameter value */
-                    temp = g_configuration.get_param_value_by_index(
-                        param_index);
-                    debug_message.config_reply.node_id = g_can_node_id;
-                    debug_message.config_reply.param_index = param_index;
-                    debug_message.config_reply.param_value = temp;
-                    reply.set_data(sizeof(struct can_status_config_t),
-                                   debug_message.bytes);
-                    reply.set_id(CAN_STATUS_CONFIG);
-                    /*
-                    This is not thread-safe -- could result in packet loss
-                    or corruption if this interrupt is called at the same time
-                    as the timer task is transmitting.
-                    */
-                    hal_transmit_can_message(reply);
-                    break;
-                case CAN_COMMAND_RESTART:
-                    if (debug_message.restart.magic == CAN_COMMAND_RESTART_MAGIC &&
-                            g_controller_mode == CONTROLLER_STOPPED) {
-                        hal_restart();
-                    }
-                    break;
-            }
-        }
     }
 }
 

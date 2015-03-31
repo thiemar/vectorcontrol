@@ -23,8 +23,11 @@ import sys
 import time
 import zlib
 import struct
+import uavcan
+import logging
 import binascii
 import optparse
+import functools
 import cStringIO
 import collections
 import ConfigParser
@@ -37,48 +40,13 @@ except Exception:
     sys.exit()
 
 
-CAN_COMMAND_RESTART_MAGIC = 1860004564
-CAN_COMMAND_RESTART_ID = 0x742
-CAN_COMMAND_CONFIG_ID = 0x741
-CAN_STATUS_CONFIG_ID = 0x732
-
-
-UAVCAN_NODESTATUS_ID = 550
-
-
-# Map from config file sections and items to device parameter indexes
-CAN_CONFIG_INDEXES = {
-    "motor": {
-        "num_poles": 0,
-        "current_limit": 1,
-        "voltage_limit": 2,
-        "rpm_max": 3,
-        "rs": 4,
-        "ls": 5,
-        "kv": 6
-    },
-    "control": {
-        "accel_torque_max": 7,
-        "load_torque": 8,
-        "accel_gain": 9,
-        "accel_time": 10
-    },
-    "uavcan": {
-        "escstatus_interval": 11,
-        "node_id": 12,
-        "esc_index": 13
-    },
-    "pwm": {
-        "control_mode": 14,
-        "throttle_min": 15,
-        "throttle_max": 16,
-        "throttle_deadband": 17,
-        "control_offset": 18,
-        "control_curve": 19,
-        "control_min": 20,
-        "control_max": 21
-    }
-}
+try:
+    import tornado
+    import tornado.gen
+    import tornado.ioloop
+except Exception:
+    print("Please install tornado.")
+    sys.exit()
 
 
 CAN_BOOTLOADER_REQUEST_ID = 0x720
@@ -243,60 +211,6 @@ def write_page(dev, page, timeout=5.0):
     return -1
 
 
-def uavcan_broadcast_id(transfer_id, data_type_id):
-    return (
-        (transfer_id & 0x7) |
-        (1 << 3) |  # Last frame = true
-        (0 << 4) |  # Frame index = 0
-        (127 << 10) |  # Source node ID = 0x7F
-        (2 << 17) |  # Transfer type = broadcast
-        ((data_type_id & 0x3FF) << 19)  # Data type ID
-    )
-
-
-def uavcan_get_node_id(message_id):
-    # Extract the 7-bit node ID field from the message ID
-    return (message_id >> 10) & 0x7F
-
-
-def uavcan_get_data_type_id(message_id):
-    return (message_id >> 19) & 0x3FF
-
-
-def detect_node_ids(dev, timeout=2.0):
-    print("Detecting running devices...")
-
-    transfer_id = 0
-    running_node_ids = set()
-
-    start = time.time()
-    while time.time() < start + timeout:
-        # This is just a presence message to ensure ESCs are communicating
-        # using UAVCAN, so it doesn't need to contain anything -- this sends
-        # node uptime = 0 seconds, and node status = OK
-        message_id = uavcan_broadcast_id(transfer_id, UAVCAN_NODESTATUS_ID)
-        transfer_id += 1
-        dev.send(message_id, "\x00\x00\x00\x00", extended=True)
-
-        # Check for status messages from other nodes
-        result = dev.recv()
-        for message in result:
-            if uavcan_get_data_type_id(message[0]) != UAVCAN_NODESTATUS_ID:
-                continue
-
-            node_id = uavcan_get_node_id(message[0])
-            if node_id < 0x7F:
-                # If found, and the node ID is valid, add it to the list
-                running_node_ids.add(node_id)
-
-        time.sleep(0.1)
-
-    print("Found {0} devices: {1}".format(
-        len(running_node_ids), ", ".join(str(x) for x in running_node_ids)))
-
-    return running_node_ids
-
-
 def update_firmware(dev, hex_path):
     print("Please connect ESC power now. Waiting for ESC startup.")
 
@@ -360,124 +274,83 @@ def update_firmware(dev, hex_path):
     dev.send(CAN_BOOTLOADER_RESTART_ID, "")
 
 
-def update_config(dev, config_path, node_id):
-    print("Parsing configuration file at {0}.".format(config_path))
-    parser = ConfigParser.SafeConfigParser()
-    parser.read(config_path)
+@tornado.gen.coroutine
+def node_write_config(app, target_node_id, parser):
+    logging.info("Writing configuration of node {0}.".format(target_node_id))
 
-    config_items = []
+    section = "Node{0:03d}".format(target_node_id)
+    if not parser.has_section(section):
+        raise tornado.gen.Return()
 
-    for section in parser.sections():
-        section = section.lower()
-        if section not in CAN_CONFIG_INDEXES:
-            print("Ignoring unknown section {0}".format(section))
-            continue
+    for param_name, param_value in parser.items(section):
+        # Retrive the parameter with the current index
+        param_value = float(param_value)
+        logging.debug("Writing parameter {0}: {1:f}.".format(param_name, param_value))
+        request = uavcan.ParamGetSetRequest()
+        request.name = param_name
+        request.value.float_value = param_value
+        response, transfer = yield app.send_request(request, target_node_id)
 
-        items = parser.options(section)
-        for item in items:
-            item = item.lower()
-            if item not in CAN_CONFIG_INDEXES[section]:
-                print(("Ignorning unknown item {0} in section " +
-                       "{1}").format(item, section))
-                continue
+        logging.info("Read parameter {0}: {1:f}.".format(
+                     response.name, response.value.float_value))
 
-            # Send the configuration message
-            item_id = CAN_CONFIG_INDEXES[section][item]
-            if section == "pwm" and item == "control_mode":
-                value = 1 if parser.get(section, item) == "torque" else 0
-            else:
-                value = parser.getfloat(section, item)
+        parser.set(section, response.name,
+                   "{0:.4g}".format(response.value.float_value))
 
-            command = struct.pack("<BBBBf", node_id, item_id, 1, 0, value)
-            dev.send(CAN_COMMAND_CONFIG_ID, command)
+    raise tornado.gen.Return()
 
-            print("Setting parameter {0}_{1} to {2:.4g}.".format(section, item,
-                                                                 value))
 
-            # Wait for the reply -- the returned packet contains the current
-            # value, which should normally be what we just wrote.
-            result_value = None
-            while result_value is None:
-                result = dev.recv()
-                for message in result:
-                    if message[0] == CAN_STATUS_CONFIG_ID:
-                        result_value = struct.unpack("<BBf", message[1])[2]
+@tornado.gen.coroutine
+def node_read_config(app, target_node_id, parser):
+    logging.info("Reading configuration of node {0}.".format(target_node_id))
 
-            print(("Returned value for {0}_{1} was " +
-                   "{2:.4g}.").format(section, item, result_value))
+    section = "Node{0:03d}".format(target_node_id)
+    parser.add_section(section)
 
-            # Update the node ID if that parameter was reconfigured
-            if section == "uavcan" and item == "node_id":
-                node_id = int(result_value)
+    for index in xrange(256):
+        # Retrive the parameter with the current index
+        logging.debug("Retrieving parameter {0}.".format(index))
+        request = uavcan.ParamGetSetRequest()
+        request.index = index
+        response, transfer = yield app.send_request(request, target_node_id)
 
-    # Save the configuration to flash
-    print("Saving configuration.")
-    command = struct.pack("<BBBBf", node_id, 0, 0, 1, 0)
-    dev.send(CAN_COMMAND_CONFIG_ID, command)
-
-    # Wait for acknowledgement
-    while True:
-        result = dev.recv()
-        if any(map(lambda m: m[0] == CAN_STATUS_CONFIG_ID, result)):
+        # Early exit if we hit an unknown parameter
+        if response.value.float_value is None:
             break
 
-    # Once acknowledged, restart the ESC to complete the process.
-    print("Configuration updated. Restarting ESC.")
-    can_send_node_restart(dev, node_id)
+        logging.info("Read parameter {0}, {1}: {2:f}.".format(
+                     index, response.name, response.value.float_value))
+
+        parser.set(section, response.name,
+                   "{0:.4g}".format(response.value.float_value))
+
+    raise tornado.gen.Return()
 
 
-def read_config(dev, node_id):
-    print("Reading configuration of node {0}.".format(node_id))
-    parser = ConfigParser.SafeConfigParser()
-
-    # Generate reverse lookup tables so we can loop through all item indexes
-    # and add the values to the relevant configuration sections
-    sections_by_index = {}
-    params_by_index = {}
-    param_values = {}
-    for section_name, params in CAN_CONFIG_INDEXES.iteritems():
-        for param_name, param_index in params.iteritems():
-            sections_by_index[param_index] = section_name
-            params_by_index[param_index] = param_name
-            param_values[param_index] = None
-
-    for section in set(sections_by_index.values()):
-        parser.add_section(section)
-
-    for index in param_values.keys():
-        # Retrive the parameter with the current index
-        command = struct.pack("<BBBBf", node_id, index, 0, 0, 0)
-        dev.send(CAN_COMMAND_CONFIG_ID, command)
-        print("Retrieving parameter {0}.".format(index))
-
-        # Wait for a parameter status response
-        result_value = None
-        while result_value is None:
-            result = dev.recv()
-            for message in result:
-                if message[0] == CAN_STATUS_CONFIG_ID:
-                    result_value = struct.unpack("<BBf", message[1])[2]
-
-        # Add the parameter value to the map
-        if index == CAN_CONFIG_INDEXES["pwm"]["control_mode"]:
-            if result_value:
-                result_value = "torque"
-            else:
-                result_value = "speed"
-            parser.set(sections_by_index[index], params_by_index[index],
-                       result_value)
-        else:
-            parser.set(sections_by_index[index], params_by_index[index],
-                       "{0:.4g}".format(result_value))
-
-    buf = cStringIO.StringIO()
-    parser.write(buf)
-    return buf.getvalue()
+@tornado.gen.coroutine
+def node_save_config(app, target_node_id):
+    logging.info("Saving configuration of node {0}.".format(target_node_id))
+    request = uavcan.ParamSaveEraseRequest()
+    request.save = True
+    response, transfer = yield app.send_request(request, target_node_id)
+    raise tornado.gen.Return(response.ok)
 
 
-def can_send_node_restart(dev, node_id):
-    print("Restarting ESC.")
-    dev.send(CAN_COMMAND_RESTART_ID, chr(node_id) + "\xD4\x6A\xDD\x6E")
+@tornado.gen.coroutine
+def node_erase_config(app, target_node_id):
+    logging.info("Erasing configuration of node {0}.".format(target_node_id))
+    request = uavcan.ParamSaveEraseRequest()
+    request.erase = True
+    response, transfer = yield app.send_request(request, target_node_id)
+    raise tornado.gen.Return(response.ok)
+
+
+@tornado.gen.coroutine
+def node_restart(app, target_node_id):
+    logging.info("Restarting node {0}.".format(target_node_id))
+    request = uavcan.RestartNodeRequest()
+    response, transfer = yield app.send_request(request, target_node_id)
+    raise tornado.gen.Return(response.ok)
 
 
 if __name__ == "__main__":
@@ -500,78 +373,33 @@ if __name__ == "__main__":
         parser.error("missing path to CAN device")
         sys.exit()
 
-    print("Opening CAN interface at {0}.".format(args[0]))
-    dev = can.CAN(args[0])
-    dev.open()
+    logging.basicConfig(level=logging.INFO)
 
-    # Look for the IDs of UAVCAN nodes on the network. Doesn't really matter
-    # if they're ESCs or not, because other nodes will ignore the restart
-    # request.
-    node_ids = detect_node_ids(dev)
-    target_node_id = None
+    logging.info("Opening CAN interface at {0}.".format(args[0]))
+    app = uavcan.Application([], node_id=127)
+    app.listen(args[0])
 
-    # Ensure the node selection is unambiguous. If the user hasn't specified
-    # a node ID, there must be either only one node on the network (the target
-    # ESC), or the target ESC must be currently powered down.
-    if len(node_ids) > 1 and not options.node_id:
-        print("No node ID specified, but multiple devices are on the " +
-              "network. Please use the -n/--node-id option to specify a " +
-              "device to flash, or connect to only one device.")
-        sys.exit()
-    elif not node_ids and options.node_id:
-        print(("Couldn't find node {0} on the network. Please ensure it is " +
-               "running, or run this command without the -n/--node-id " +
-               "option.").format(options.node_id))
-        sys.exit()
+    parser = ConfigParser.SafeConfigParser()
 
-    if options.node_id:
-        target_node_id = int(options.node_id)
-    elif node_ids:
-        target_node_id = node_ids.pop()
+    tornado.ioloop.IOLoop.current().run_sync(
+        functools.partial(node_read_config, app, int(options.node_id), parser))
 
-    # Flash the ESC's firmware if requested. If a node ID is specified, try to
-    # restart it first; otherwise, if there's only one node on the network,
-    # try to restart that (if the node ID wasn't specified and there's more
-    # than one node, we will have already exited). If the target ESC isn't
-    # powered on, the restart request will obviously do nothing, but we'll
-    # start the bootloader automatically when it's powered up.
-    if options.hex_path:
-        if target_node_id is not None:
-            can_send_node_restart(dev, target_node_id)
+    parser.set("Node002", "uavcan_node_id", "2")
 
-        print("Updating firmware. Please power the ESC up if it is not " +
-              "already running.")
-        update_firmware(dev, options.hex_path)
+    tornado.ioloop.IOLoop.current().run_sync(
+        functools.partial(node_write_config, app, int(options.node_id), parser))
 
-        # Look for node IDs again. This is necessary because the user may have
-        # specified no node ID and started with a powered-off ESC. In this
-        # scenario, only one node ID will be on the network at this point.
-        if target_node_id is None:
-            node_ids = detect_node_ids(dev)
-            if len(node_ids) > 1:
-                print("No node ID specified, but multiple devices are on " +
-                      "the network. Please use the -n/--node-id option to " +
-                      "specify a device to configure.")
-                sys.exit()
-            elif not node_ids:
-                print("The device did not start up. Please power cycle it " +
-                      "and try again.")
-                sys.exit()
+    ok = tornado.ioloop.IOLoop.current().run_sync(
+        functools.partial(node_save_config, app, int(options.node_id)))
+    logging.info("Configuration save completed with ok={0!r}".format(ok))
 
-            target_node_id = node_ids.pop()
-        else:
-            detect_node_ids(dev)
+    ok = tornado.ioloop.IOLoop.current().run_sync(
+        functools.partial(node_restart, app, int(options.node_id)))
+    logging.info("Node restart completed with ok={0!r}".format(ok))
 
-    # If the user has requested the ESC be configured, do that now.
-    if options.config_path:
-        print("Updating configuration of device {0}.".format(target_node_id))
-        update_config(dev, options.config_path, target_node_id)
+    buf = cStringIO.StringIO()
+    parser.write(buf)
+    config = buf.getvalue()
 
-    # If the user has asked to read the configuration of the selected device,
-    # try to do that.
-    if options.read_config:
-        if target_node_id is None:
-            print("No nodes available for reading. Please specify a node ID.")
-            sys.exit()
-        print(read_config(dev, target_node_id))
+    print config
 

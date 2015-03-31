@@ -26,78 +26,6 @@ import functools
 import logging as log
 
 
-UAVCAN_NODESTATUS_ID = 550
-
-
-# http://davidejones.com/blog/1413-python-precision-floating-point/
-def f16_from_f32(float32):
-    F16_EXPONENT_BITS = 0x1F
-    F16_EXPONENT_SHIFT = 10
-    F16_EXPONENT_BIAS = 15
-    F16_MANTISSA_BITS = 0x3ff
-    F16_MANTISSA_SHIFT =  (23 - F16_EXPONENT_SHIFT)
-    F16_MAX_EXPONENT =  (F16_EXPONENT_BITS << F16_EXPONENT_SHIFT)
-
-    a = struct.pack('>f', float32)
-    b = binascii.hexlify(a)
-
-    f32 = int(b, 16)
-    f16 = 0
-    sign = (f32 >> 16) & 0x8000
-    exponent = ((f32 >> 23) & 0xff) - 127
-    mantissa = f32 & 0x007fffff
-
-    if exponent == 128:
-        f16 = sign | F16_MAX_EXPONENT
-        if mantissa:
-            f16 |= (mantissa & F16_MANTISSA_BITS)
-    elif exponent > 15:
-        f16 = sign | F16_MAX_EXPONENT
-    elif exponent > -15:
-        exponent += F16_EXPONENT_BIAS
-        mantissa >>= F16_MANTISSA_SHIFT
-        f16 = sign | exponent << F16_EXPONENT_SHIFT | mantissa
-    else:
-        f16 = sign
-    return f16
-
-
-# http://davidejones.com/blog/1413-python-precision-floating-point/
-def f32_from_f16(float16):
-    t1 = float16 & 0x7FFF
-    t2 = float16 & 0x8000
-    t3 = float16 & 0x7C00
-
-    t1 <<= 13
-    t2 <<= 16
-
-    t1 += 0x38000000
-    t1 = 0 if t3 == 0 else t1
-    t1 |= t2
-
-    return struct.unpack("<f", struct.pack("<L", t1))
-
-
-def uavcan_broadcast_id(transfer_id, data_type_id):
-    return (
-        (transfer_id & 0x7) |
-        (1 << 3) |  # Last frame = true
-        (0 << 4) |  # Frame index = 0
-        (127 << 10) |  # Source node ID = 0x7F
-        (2 << 17) |  # Transfer type = broadcast
-        ((data_type_id & 0x3FF) << 19)  # Data type ID
-    )
-
-
-def uavcan_get_node_id(message_id):
-    # Extract the 7-bit node ID field from the message ID
-    return (message_id >> 10) & 0x7F
-
-
-def uavcan_get_data_type_id(message_id):
-    return (message_id >> 19) & 0x3FF
-
-
 class CAN(object):
     def __init__(self, device, baudrate=1000000):
         self.conn = serial.Serial(device, baudrate, timeout=0)
@@ -181,23 +109,23 @@ class CAN(object):
         # Filter, parse and return the messages
         messages = list(self.parse(m) for m in messages
                         if m and m[0] in ("t", "T"))
-        messages = filter(lambda x: x, messages)
+        messages = filter(lambda x: x and x[0], messages)
 
         if callback:
             for message in messages:
-                #log.debug("CAN.recv(): {!r}".format(message))
+                log.debug("CAN.recv(): {!r}".format(message))
                 try:
                     callback(self, message)
                 except Exception:
-                    pass
+                    raise
         else:
-            #for message in messages:
-            #    log.debug("CAN.recv(): {!r}".format(message))
+            for message in messages:
+                log.debug("CAN.recv(): {!r}".format(message))
             return messages
 
     def send(self, message_id, message, extended=False):
-        #log.debug("CAN.send({!r}, {!r}, {!r})".format(message_id, message,
-        #                                              extended))
+        log.debug("CAN.send({!r}, {!r}, {!r})".format(message_id, message,
+                                                      extended))
 
         if extended:
             start = "T{0:8X}".format(message_id)
@@ -216,16 +144,7 @@ if __name__ == "__main__":
 
     can = CAN(sys.argv[1])
     can.open()
-    last_status = time.time()
-    transfer_id = 0
     while True:
-        # Send node status every 0.5 s
-        if time.time() - last_status > 0.5:
-            message_id = uavcan_broadcast_id(transfer_id,
-                                             UAVCAN_NODESTATUS_ID)
-            can.send(UAVCAN_NODESTATUS_ID, "\x00\x00\x00\x00", True)
-            last_status = time.time()
-
         messages = can.recv()
         for message in messages:
             print(message)

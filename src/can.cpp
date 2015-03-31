@@ -246,15 +246,11 @@ bool UAVCANServer::parse_restartnode_request() {
     ---
     bool ok
     */
-    uint64_t magic_number;
-
-    magic_number = rx_transfer_bytes_[0];
-    magic_number |= rx_transfer_bytes_[1] << 8u;
-    magic_number |= rx_transfer_bytes_[2] << 16u;
-    magic_number |= rx_transfer_bytes_[3] << 24u;
-    magic_number |= (uint64_t)rx_transfer_bytes_[4] << 32u;
-
-    if (magic_number == 0xACCE551B1Eull) {
+    if (rx_transfer_bytes_[0] == 0x1Eu &&
+        rx_transfer_bytes_[1] == 0x1Bu &&
+        rx_transfer_bytes_[2] == 0x55u &&
+        rx_transfer_bytes_[3] == 0xCEu &&
+        rx_transfer_bytes_[4] == 0xACu) {
         return true;
     } else {
         return false;
