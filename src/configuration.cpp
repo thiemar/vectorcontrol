@@ -33,7 +33,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     Number of motor poles. Used to convert mechanical speeds to electrical
     speeds.
     */
-    {PARAM_MOTOR_NUM_POLES, "motor_num_poles",
+    {PARAM_MOTOR_NUM_POLES, PARAM_TYPE_INT, "motor_num_poles",
         14.0f, 14.0f, 2.0f, 40.0f},
 
     /*
@@ -41,7 +41,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     controller setpoint, as well as the maximum allowable current setpoint
     slew rate.
     */
-    {PARAM_MOTOR_CURRENT_LIMIT, "motor_current_limit",
+    {PARAM_MOTOR_CURRENT_LIMIT, PARAM_TYPE_FLOAT, "motor_current_limit",
         1.0f, 10.0f, 1.0f, 40.0f},
 
     /*
@@ -52,29 +52,29 @@ struct param_t flash_params[NUM_PARAMS] = {
     determine the actual motor voltage limit, divide the motor's rated maximum
     power by the motor current limit.
     */
-    {PARAM_MOTOR_VOLTAGE_LIMIT, "motor_voltage_limit",
+    {PARAM_MOTOR_VOLTAGE_LIMIT, PARAM_TYPE_FLOAT, "motor_voltage_limit",
         2.0f, 7.4f, 0.5f, 27.0f},
 
     /*
     Motor maximum rated RPM. This limits the upper end of the PWM setpoint
     range if it's lower than KV multiplied by Vbus.
     */
-    {PARAM_MOTOR_RPM_MAX, "motor_rpm_max",
+    {PARAM_MOTOR_RPM_MAX, PARAM_TYPE_INT, "motor_rpm_max",
         20000.0f, 20000.0f, 500.0f, 40000.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
-    {PARAM_MOTOR_RS, "motor_rs",
+    {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
         60e-3f, 60e-3f, 1e-3f, 1000e-3f},
 
     /* Motor inductance in henries. This is estimated on start-up. */
-    {PARAM_MOTOR_LS, "motor_ls",
+    {PARAM_MOTOR_LS, PARAM_TYPE_FLOAT, "motor_ls",
         20e-6f, 20e-6f, 1e-6f, 1000e-6f},
 
     /*
     Motor KV in RPM per volt. This can be taken from the motor's spec sheet;
     accuracy will help control performance but a 20% error is fine.
     */
-    {PARAM_MOTOR_KV, "motor_kv",
+    {PARAM_MOTOR_KV, PARAM_TYPE_FLOAT, "motor_kv",
         850.0f, 850.0f, 100.0f, 5000.0f},
 
     /*
@@ -87,7 +87,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     controller response is too slow, increase this parameter and/or
     control_accel_gain.
     */
-    {PARAM_CONTROL_ACCEL_TORQUE_MAX, "control_accel_torque_max",
+    {PARAM_CONTROL_ACCEL_TORQUE_MAX, PARAM_TYPE_FLOAT, "control_accel_torque_max",
         2.0f, 2.0f, 0.1f, 40.0f},
 
     /*
@@ -95,7 +95,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     rather than a limit, and in conjunction with control_accel_time it
     determines the torque output from the speed controller.
     */
-    {PARAM_CONTROL_LOAD_TORQUE, "control_load_torque",
+    {PARAM_CONTROL_LOAD_TORQUE, PARAM_TYPE_FLOAT, "control_load_torque",
         10.0f, 10.0f, 1.0f, 40.0f},
 
     /*
@@ -104,7 +104,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     results in a full-scale acceleration torque output for an error of
     100 rad/s electrical.
     */
-    {PARAM_CONTROL_ACCEL_GAIN, "control_accel_gain",
+    {PARAM_CONTROL_ACCEL_GAIN, PARAM_TYPE_FLOAT, "control_accel_gain",
         0.1f, 0.1f, 0.0f, 1.0f},
 
     /*
@@ -112,22 +112,46 @@ struct param_t flash_params[NUM_PARAMS] = {
     target time to accelerate from near zero to full throttle, subject to
     the overall current limits and load inertia.
     */
-    {PARAM_CONTROL_ACCEL_TIME, "control_accel_time",
+    {PARAM_CONTROL_ACCEL_TIME, PARAM_TYPE_FLOAT, "control_accel_time",
         0.1f, 0.1f, 0.01f, 1.0f},
 
+    /* Data type ID of the custom ESC status message. */
+    {PARAM_CUSTOM_ESCCOMMAND_ID, PARAM_TYPE_INT,
+        "uavcan.dtid-thiemar.equipment.esc.Command",
+        700, 700, 1, 2047},
+
     /*
-    Interval in seconds at which the UAVCAN standard ESC status message should
-    be sent.
+    Interval in microseconds at which custom ESC status messages should be
+    sent. Zero disables publication.
     */
-    {PARAM_UAVCAN_ESCSTATUS_INTERVAL, "uavcan_escstatus_interval",
-        100e-3f, 100e-3f, 1e-3f, 1000e-3f},
+    {PARAM_CUSTOM_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
+        "uavcan.pubp-thiemar.equipment.esc.Status",
+        20e3, 20e3, 0, 1e6f},
+
+    /* Data type ID of the custom ESC status message. */
+    {PARAM_CUSTOM_ESCSTATUS_ID, PARAM_TYPE_INT,
+        "uavcan.dtid-thiemar.equipment.esc.Status",
+        700, 700, 1, 2047},
+
+    /*
+    Interval in microseconds at which UAVCAN standard ESC status messages
+    should be sent. Zero disables publication.
+    */
+    {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
+        "uavcan.pubp-uavcan.equipment.esc.Status",
+        1e5f, 1e5f, 0, 1e6f},
 
     /* Node ID of this ESC in the UAVCAN network. */
-    {PARAM_UAVCAN_NODE_ID, "uavcan_node_id",
+    {PARAM_UAVCAN_NODE_ID, PARAM_TYPE_INT, "uavcan.node_id",
+        1.0f, 0.0f, 0.0f, 125.0f},
+
+    /* Bitrate of the UAVCAN network. */
+    {PARAM_UAVCAN_BITRATE, PARAM_TYPE_INT, "uavcan.can_bus_bitrate",
         1.0f, 0.0f, 0.0f, 125.0f},
 
     /* Index of this ESC in throttle command messages. */
-    {PARAM_UAVCAN_ESC_INDEX, "uavcan_esc_index",
+    {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT,
+        "uavcan.id-uavcan.equipment.esc-esc_index",
         0.0f, 0.0f, 0.0f, 15.0f},
 
     /*
@@ -137,28 +161,28 @@ struct param_t flash_params[NUM_PARAMS] = {
     controller (the speed controller is bypassed), and the input pulse width
     is proportional to torque controller setpoint.
     */
-    {PARAM_PWM_CONTROL_MODE, "pwm_control_mode",
+    {PARAM_PWM_CONTROL_MODE, PARAM_TYPE_INT, "pwm_control_mode",
         0.0f, 0.0f, 0.0f, 1.0f},
 
     /*
     Sets the pulse width (in us) at which the controller is activated and the
     output setpoint takes its minimum value.
     */
-    {PARAM_PWM_THROTTLE_MIN, "pwm_throttle_min",
+    {PARAM_PWM_THROTTLE_MIN, PARAM_TYPE_INT, "pwm_throttle_min",
         1100.0f, 1100.0f, 1000.0f, 2000.0f},
 
     /*
     Sets the pulse width (in us) at which the output setpoint takes its
     maximum value.
     */
-    {PARAM_PWM_THROTTLE_MAX, "pwm_throttle_max",
+    {PARAM_PWM_THROTTLE_MAX, PARAM_TYPE_INT, "pwm_throttle_max",
         1900.0f, 1900.0f, 1000.0f, 2000.0f},
 
     /*
     Sets the range of pulse widths (in us) either side of the zero throttle
     point within which the output setpoint should be pwm_control_min.
     */
-    {PARAM_PWM_THROTTLE_DEADBAND, "pwm_throttle_deadband",
+    {PARAM_PWM_THROTTLE_DEADBAND, PARAM_TYPE_INT, "pwm_throttle_deadband",
         10.0f, 10.0f, 0.0f, 1000.0f},
 
     /*
@@ -170,7 +194,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     If the value is 0.0, the range of setpoints output from
     [pwm_throttle_min, pwm_throttle_max] is [pwm_control_min, pwm_control_max].
     */
-    {PARAM_PWM_CONTROL_OFFSET, "pwm_control_offset",
+    {PARAM_PWM_CONTROL_OFFSET, PARAM_TYPE_FLOAT, "pwm_control_offset",
         0.0f, 0.0f, -1.0f, 1.0f},
 
     /*
@@ -180,15 +204,15 @@ struct param_t flash_params[NUM_PARAMS] = {
     relationship between setpoint and throttle; and 2.0, which results in the
     setpoint being proportional to the square of the throttle.
     */
-    {PARAM_PWM_CONTROL_CURVE, "pwm_control_curve",
+    {PARAM_PWM_CONTROL_CURVE, PARAM_TYPE_FLOAT, "pwm_control_curve",
         1.0f, 1.0f, 0.5f, 2.0f},
 
     /* Determines the setpoint for the minimum valid throttle value. */
-    {PARAM_PWM_CONTROL_MIN, "pwm_control_min",
+    {PARAM_PWM_CONTROL_MIN, PARAM_TYPE_FLOAT, "pwm_control_min",
         0.0f, 0.0f, 0.0f, 40000.0f},
 
     /* Determines the setpoint for the maximum valid throttle value. */
-    {PARAM_PWM_CONTROL_MAX, "pwm_control_max",
+    {PARAM_PWM_CONTROL_MAX, PARAM_TYPE_FLOAT, "pwm_control_max",
         0.0f, 0.0f, 0.0f, 40000.0f},
 };
 

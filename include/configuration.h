@@ -52,6 +52,9 @@ enum param_index_t {
     PARAM_CONTROL_LOAD_TORQUE,
     PARAM_CONTROL_ACCEL_GAIN,
     PARAM_CONTROL_ACCEL_TIME,
+    PARAM_CUSTOM_ESCCOMMAND_ID,
+    PARAM_CUSTOM_ESCSTATUS_INTERVAL,
+    PARAM_CUSTOM_ESCSTATUS_ID,
     PARAM_UAVCAN_ESCSTATUS_INTERVAL,
     PARAM_UAVCAN_NODE_ID,
     PARAM_UAVCAN_ESC_INDEX,
@@ -67,9 +70,16 @@ enum param_index_t {
 };
 
 
+enum param_type_t {
+    PARAM_TYPE_INT = 0,
+    PARAM_TYPE_FLOAT,
+    PARAM_TYPE_BOOL
+};
+
 struct param_t {
     uint8_t index;
-    char name[27];
+    uint8_t public_type;
+    char name[46];
     float value;
     float default_value;
     float min_value;
