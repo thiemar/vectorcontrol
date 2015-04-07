@@ -1046,8 +1046,9 @@ static bool hal_read_last_vbus_temp_() {
         } else {
             board_temp_lsb_ = adc_conversion_results_[1] << 7;
         }
-        temp = 30.0f + (float)((board_temp_lsb_ >> 7) - ts_cal_1) *
-                       ts_deg_c_per_lsb;
+        temp = 30.0f +
+               (float)((int32_t)(board_temp_lsb_ >> 7) - (int32_t)ts_cal_1) *
+               ts_deg_c_per_lsb;
         temp_degc_ = temp;
 
         /* Start a new conversion */
