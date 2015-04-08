@@ -24,73 +24,6 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include "float16.h"
 
 
-/* Debug (non-standard) message types */
-enum can_nonstandard_message_id_t {
-    CAN_STATUS_CONTROLLER = 0x730,
-    CAN_STATUS_MEASUREMENT = 0x731,
-    CAN_STATUS_CONFIG = 0x732,
-    CAN_STATUS_ESTIMATOR = 0x733,
-    CAN_STATUS_HFI = 0x734,
-    CAN_COMMAND_SETPOINT = 0x740,
-    CAN_COMMAND_CONFIG = 0x741,
-    CAN_COMMAND_RESTART = 0x742
-};
-
-struct can_status_controller_t {
-    uint8_t node_id;
-    float16_t id, iq;
-    float16_t iq_setpoint;
-} __attribute__ ((packed));
-
-struct can_status_hfi_t {
-    uint8_t node_id;
-    float16_t hfi_d, hfi_q;
-    float16_t angle_rad;
-} __attribute__ ((packed));
-
-struct can_status_estimator_t {
-    uint8_t node_id;
-    float16_t angle_covariance, velocity_covariance;
-    float16_t innovation;
-} __attribute__ ((packed));
-
-struct can_status_measurement_t {
-    uint8_t node_id;
-    int8_t temperature;
-    int16_t rpm_setpoint;
-    int16_t rpm;
-    float16_t vbus;
-} __attribute__ ((packed));
-
-struct can_status_config_t {
-    uint8_t node_id;
-    uint8_t param_index;
-    float param_value;
-} __attribute__ ((packed));
-
-struct can_command_setpoint_t {
-    uint8_t node_id;
-    uint8_t controller_mode;
-    int16_t torque_setpoint;
-    int16_t rpm_setpoint;
-} __attribute__ ((packed));
-
-struct can_command_config_t {
-    uint8_t node_id;
-    uint8_t param_index;
-    uint8_t set;
-    uint8_t save;
-    float param_value;
-} __attribute__ ((packed));
-
-struct can_command_restart_t {
-    uint8_t node_id;
-    uint32_t magic;
-} __attribute__ ((packed));
-
-#define CAN_COMMAND_RESTART_MAGIC 1860004564u
-
-
 /* UAVCAN message types */
 enum uavcan_data_type_id_t {
     UAVCAN_RAWCOMMAND = 260,
@@ -395,7 +328,7 @@ class UAVCANServer {
         uint8_t& out_param_index,
         char *out_param_name
     );
-    void serialize_getset_reply(const struct param_t& in_param);
+    void serialize_getset_reply(const struct param_t& in_param, float value);
 
     bool parse_restartnode_request();
     void serialize_restartnode_reply(bool ok);
@@ -404,7 +337,7 @@ class UAVCANServer {
 
     void reload_uavcan_config() {
         config_local_node_id_ = (uint8_t)
-            configuration_->get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
+            10u; // configuration_->get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
         config_esc_status_interval_ = (uint16_t)
             (configuration_->get_param_value_by_index(PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 1000.0f);
         config_esc_index_ = (uint16_t)

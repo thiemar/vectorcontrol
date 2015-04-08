@@ -19,24 +19,33 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 /*
-64 KiB of flash, for layout see ldscripts/mem.ld:
+64 KiB of flash:
 
-    FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 52K
-    PARAMFLASH (rw) : ORIGIN = 0x0800D800, LENGTH = 4K
-    BOOTLOADER (rx) : ORIGIN = 0x0800E000, LENGTH = 4K
-    ROFLASH (rx) : ORIGIN = 0x0800F000, LENGTH = 4K
-
-* 2 KiB init region with SystemInit etc (everything up to main), which will be
-  updated at the end of the firmware update process
-* 52 KiB main application area (main onwards)
-* 2 KiB parameter area
-* 4 KiB bootloader (read-only), which the init code jumps to if the bootloader
-  flag is set
-* 4 KiB static area (hardware ID etc, read-only)
+* 8 KiB bootloader region (stubbed out in default image) at 0x08000000
+* 52 KiB main application area starting at 0x08002000
+* 2 KiB parameter area starting at 0x0800F000
+* 2 KiB read-only area starting at 0x0800F800
 */
+#define FLASH_PARAM_ADDRESS 0x0800F000
+#define FLASH_PARAM_LENGTH  0x00000800
+
+#define FLASH_READONLY_ADDRESS 0x0800F800
+#define FLASH_READONLY_LENGTH  0x00000800
+
 
 #include <algorithm>
 #include "fixed.h"
+
+
+struct bootloader_app_descriptor {
+    uint64_t signature;
+    uint64_t image_crc;
+    uint32_t image_size;
+    uint32_t vcs_commit;
+    uint8_t major_version;
+    uint8_t minor_version;
+    uint8_t padding[6];
+} __attribute__((packed));
 
 
 /* Up to */
@@ -56,7 +65,6 @@ enum param_index_t {
     PARAM_CUSTOM_ESCSTATUS_INTERVAL,
     PARAM_CUSTOM_ESCSTATUS_ID,
     PARAM_UAVCAN_ESCSTATUS_INTERVAL,
-    PARAM_UAVCAN_NODE_ID,
     PARAM_UAVCAN_ESC_INDEX,
     PARAM_PWM_CONTROL_MODE,
     PARAM_PWM_THROTTLE_MIN,
@@ -80,7 +88,6 @@ struct param_t {
     uint8_t index;
     uint8_t public_type;
     char name[46];
-    float value;
     float default_value;
     float min_value;
     float max_value;
@@ -89,7 +96,7 @@ struct param_t {
 
 class Configuration {
 private:
-    param_t params_[NUM_PARAMS];
+    float params_[NUM_PARAMS];
 
 public:
     Configuration(void);
@@ -108,7 +115,7 @@ public:
         if (index >= NUM_PARAMS) {
             return std::numeric_limits<float>::signaling_NaN();
         } else {
-            return params_[index].value;
+            return params_[index];
         }
     }
 

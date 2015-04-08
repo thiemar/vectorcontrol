@@ -1099,6 +1099,8 @@ void hal_reset(void) {
     /* Enable SysTick 1 kHz periodic task */
     SysTick_Config(hal_core_frequency_hz / 1000u);
     NVIC_SetPriority(SysTick_IRQn, SYSTICK_PRIORITY);
+
+    __enable_irq();
 }
 
 

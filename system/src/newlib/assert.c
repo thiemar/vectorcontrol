@@ -13,7 +13,7 @@
 // ----------------------------------------------------------------------------
 
 void
-__attribute__((section(".bootloader"),noreturn))
+__attribute__((noreturn))
 __assert_func (
     const char __attribute__((unused)) *file,
     int __attribute__((unused))  line,
@@ -43,7 +43,7 @@ assert_failed (uint8_t* file, uint32_t line);
 
 // Called from the assert_param() macro, usually defined in the stm32f*_conf.h
 void
-__attribute__((section(".bootloader"),noreturn))
+__attribute__((noreturn))
 assert_failed (
     uint8_t __attribute__((unused))  *file,
     uint32_t __attribute__((unused))  line

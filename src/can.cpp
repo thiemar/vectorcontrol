@@ -399,7 +399,10 @@ bool UAVCANServer::parse_getset_request(
 }
 
 
-void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
+void UAVCANServer::serialize_getset_reply(
+    const struct param_t &in_param,
+    float value
+) {
     /*
     599.GetSet
 
@@ -437,7 +440,7 @@ void UAVCANServer::serialize_getset_reply(const struct param_t &in_param) {
         }                                                                    \
     }
 
-    SERIALIZE_FLOAT_VALUE(in_param.value);
+    SERIALIZE_FLOAT_VALUE(value);
     SERIALIZE_FLOAT_VALUE(in_param.default_value);
     SERIALIZE_FLOAT_VALUE(in_param.max_value);
     SERIALIZE_FLOAT_VALUE(in_param.min_value);
@@ -808,7 +811,8 @@ void UAVCANServer::process_transfer() {
     uint8_t index;
     char name[27];
 
-    data_type_id = (enum uavcan_data_type_id_t)rx_transfer_.get_data_type_id();
+    data_type_id =
+        (enum uavcan_data_type_id_t)rx_transfer_.get_data_type_id();
 
     switch (data_type_id) {
         case UAVCAN_RAWCOMMAND:
@@ -834,11 +838,6 @@ void UAVCANServer::process_transfer() {
                 if (saveerase_opcode == UAVCAN_SAVEERASE_OPCODE_ERASE) {
                     /* Reset parameters to their default values */
                     for (i = 0; i < NUM_PARAMS; i++) {
-                        /* Don't reset the node ID */
-                        if (i == PARAM_UAVCAN_NODE_ID) {
-                            continue;
-                        }
-
                         configuration_->get_param_by_index(param, (uint8_t)i);
                         configuration_->set_param_value_by_index(
                             (uint8_t)i, param.default_value);
@@ -865,15 +864,19 @@ void UAVCANServer::process_transfer() {
             }
 
             if (!valid) {
-                param.value = std::numeric_limits<float>::signaling_NaN();
-                param.default_value = std::numeric_limits<float>::signaling_NaN();
+                result = std::numeric_limits<float>::signaling_NaN();
+                param.default_value =
+                    std::numeric_limits<float>::signaling_NaN();
                 param.min_value = std::numeric_limits<float>::signaling_NaN();
                 param.max_value = std::numeric_limits<float>::signaling_NaN();
                 param.index = 0;
                 param.name[0] = 0;
+            } else {
+                result =
+                    configuration_->get_param_value_by_index(param.index);
             }
 
-            serialize_getset_reply(param);
+            serialize_getset_reply(param, result);
             break;
         default:
             break;

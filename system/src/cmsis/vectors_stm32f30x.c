@@ -8,11 +8,13 @@
 // ----------------------------------------------------------------------------
 
 #include "cortexm/ExceptionHandlers.h"
+#include "stm32f30x.h"
 
 // ----------------------------------------------------------------------------
 
 void __attribute__((weak))
 Default_Handler(void);
+void Bootloader_Handler(void);
 
 // Forward declaration of the specific IRQ handlers. These are aliased
 // to the Default_Handler, which is a 'forever' loop. When the application
@@ -161,6 +163,38 @@ typedef void
 
 // ----------------------------------------------------------------------------
 
+__attribute__ ((section(".bootloader_vector"),used))
+pHandler __bootloader_vectors[] =
+  {
+  // Core Level - CM4
+      (pHandler) &_estack, // The initial stack pointer
+      Reset_Handler, // The reset handler
+
+      NMI_Handler, // The NMI handler
+      HardFault_Handler, // The hard fault handler
+#if defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__)
+      MemManage_Handler,                        // The MPU fault handler
+      BusFault_Handler,                        // The bus fault handler
+      UsageFault_Handler,                        // The usage fault handler
+#else
+      0, 0, 0,                                  // Reserved
+#endif
+      0,                                        // Reserved
+      0,                                        // Reserved
+      0,                                        // Reserved
+      0,                                        // Reserved
+      SVC_Handler,                              // SVCall handler
+#if defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__)
+      DebugMon_Handler,                         // Debug monitor handler
+#else
+      0,                                        // Reserved
+#endif
+      0, // Reserved
+      PendSV_Handler, // The PendSV handler
+      SysTick_Handler // The SysTick handler
+};
+
+
 // The vector table.
 // This relies on the linker script to place at correct location in memory.
 
@@ -292,5 +326,3 @@ Default_Handler(void)
     {
     }
 }
-
-// ----------------------------------------------------------------------------

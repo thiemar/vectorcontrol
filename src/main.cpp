@@ -24,7 +24,6 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include "stm32f30x.h"
 #include "core_cmInstr.h"
 #include "hal.h"
-#include "bootloader.h"
 #include "can.h"
 #include "park.h"
 #include "perf.h"
@@ -67,10 +66,8 @@ volatile static uint32_t g_time;
 volatile static uint32_t g_last_pwm;
 volatile static uint32_t g_valid_pwm;
 volatile static bool g_valid_can;
-volatile static uint32_t g_last_can;
 volatile static uint32_t g_last_uavcan;
 volatile static bool g_fault;
-volatile static uint8_t g_can_node_id;
 
 
 /*
@@ -294,17 +291,9 @@ control_cb(
 
 void systick_cb(void) {
     struct motor_state_t motor_state;
-    union {
-        uint8_t bytes[8];
-        struct can_status_controller_t controller;
-        struct can_status_measurement_t measurement;
-        struct can_status_hfi_t hfi;
-        struct can_status_estimator_t estimator;
-    } message;
     UAVCANMessage out_message;
-    CANMessage out_debug_message;
     struct uavcan_esc_state_t uavcan_state;
-    float temp, v_dq_v[2], is_a, vs_v;
+    float v_dq_v[2], is_a, vs_v;
 
     motor_state = const_cast<struct motor_state_t&>(g_motor_state);
     v_dq_v[0] = g_v_dq_v[0];
@@ -333,70 +322,6 @@ void systick_cb(void) {
         (void)hal_transmit_can_message(out_message);
     }
 
-    /*
-    Process debug CAN status transmissions whenever debug CAN is the active
-    interface.
-    */
-    if (g_valid_can && g_last_can &&
-            g_time - g_last_can < INTERFACE_TIMEOUT_MS) {
-        if ((g_time % 20) == 0) {
-            /* Send measurement status */
-            message.measurement.node_id = g_can_node_id;
-            message.measurement.temperature =
-                (int8_t)hal_get_temperature_degc();
-            temp = g_speed_controller_setpoint;
-            temp *= (60.0f / (float)M_PI) / (float)g_motor_params.num_poles;
-            message.measurement.rpm_setpoint = (int16_t)temp;
-            temp = motor_state.angular_velocity_rad_per_s;
-            temp *= (60.0f / (float)M_PI) / (float)g_motor_params.num_poles;
-            message.measurement.rpm = (int16_t)temp;
-            message.measurement.vbus = float16(g_vbus_v);
-            out_debug_message.set_id(CAN_STATUS_MEASUREMENT);
-            out_debug_message.set_data(sizeof(struct can_status_measurement_t),
-                                       message.bytes);
-            hal_transmit_can_message(out_debug_message);
-        } else if ((g_time % 20) == 5) {
-            /* Send HFI status */
-            message.hfi.node_id = g_can_node_id;
-
-            message.hfi.hfi_d = float16(g_estimator_hfi[0]);
-            message.hfi.hfi_q = float16(g_estimator_hfi[1]);
-            message.hfi.angle_rad = float16(motor_state.angle_rad *
-                                            (0.5f / (float)M_PI));
-
-            out_debug_message.set_id(CAN_STATUS_HFI);
-            out_debug_message.set_data(sizeof(struct can_status_hfi_t),
-                                       message.bytes);
-            hal_transmit_can_message(out_debug_message);
-        } else if ((g_time % 20) == 10) {
-            /* Send controller status */
-            message.controller.node_id = g_can_node_id;
-
-            message.controller.id = float16(motor_state.i_dq_a[0]);
-            message.controller.iq = float16(motor_state.i_dq_a[1]);
-            message.controller.iq_setpoint =
-                float16(g_current_controller_setpoint);
-
-            out_debug_message.set_id(CAN_STATUS_CONTROLLER);
-            out_debug_message.set_data(sizeof(struct can_status_controller_t),
-                                       message.bytes);
-            hal_transmit_can_message(out_debug_message);
-        } else if ((g_time % 20) == 15) {
-            /* TODO: Send estimator status */
-            message.estimator.node_id = g_can_node_id;
-
-            //message.estimator.id = float16(motor_state.i_dq_a[0]);
-            //message.estimator.iq = float16(motor_state.i_dq_a[1]);
-            //message.estimator.iq_setpoint =
-            //    float16(g_current_controller_setpoint);
-
-            out_debug_message.set_id(CAN_STATUS_ESTIMATOR);
-            out_debug_message.set_data(sizeof(struct can_status_estimator_t),
-                                       message.bytes);
-            hal_transmit_can_message(out_debug_message);
-        }
-    }
-
     g_time++;
 
     /* Motor shutdown logic -- stop when back EMF drops below 0.05 V */
@@ -419,9 +344,10 @@ void systick_cb(void) {
         Stop gracefully if the present command mode doesn't provide an
         updated setpoint in the required period.
         */
-        if ((g_input_source == INPUT_PWM && g_time - g_last_pwm > THROTTLE_TIMEOUT_MS) ||
-                (g_input_source == INPUT_CAN && g_time - g_last_can > THROTTLE_TIMEOUT_MS) ||
-                (g_input_source == INPUT_UAVCAN && g_time - g_last_uavcan > THROTTLE_TIMEOUT_MS)) {
+        if ((g_input_source == INPUT_PWM &&
+                    g_time - g_last_pwm > THROTTLE_TIMEOUT_MS) ||
+                (g_input_source == INPUT_UAVCAN &&
+                    g_time - g_last_uavcan > THROTTLE_TIMEOUT_MS)) {
             g_controller_mode = CONTROLLER_STOPPING;
             g_valid_pwm = 0;
         }
@@ -620,10 +546,6 @@ int __attribute__ ((externally_visible)) main(void) {
     */
     g_configuration.set_param_value_by_index(PARAM_MOTOR_RS, rs_r);
     g_configuration.set_param_value_by_index(PARAM_MOTOR_LS, ls_h);
-
-    /* Get the node ID */
-    g_can_node_id = (uint8_t)
-        g_configuration.get_param_value_by_index(PARAM_UAVCAN_NODE_ID);
 
     /* Initialize the system with the motor parameters */
     g_estimator.set_params(motor_params, control_params,

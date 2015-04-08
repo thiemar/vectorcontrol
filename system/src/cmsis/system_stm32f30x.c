@@ -119,7 +119,7 @@
 /*!< Uncomment the following line if you need to relocate your vector Table in
      Internal SRAM. */
 /* #define VECT_TAB_SRAM */
-#define VECT_TAB_OFFSET  0x0 /*!< Vector Table base offset field.
+#define VECT_TAB_OFFSET  0x2000 /*!< Vector Table base offset field.
                                   This value must be a multiple of 0x200. */
 /**
   * @}
@@ -164,7 +164,7 @@ static void SetSysClock(void);
   * @param  None
   * @retval None
   */
-void __attribute__((section(".bootloader"),externally_visible)) SystemInit(void)
+void __attribute__((externally_visible)) SystemInit(void)
 {
   /* FPU settings ------------------------------------------------------------*/
   #if (__FPU_PRESENT == 1) && (__FPU_USED == 1)
@@ -205,6 +205,8 @@ void __attribute__((section(".bootloader"),externally_visible)) SystemInit(void)
 #else
   SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal FLASH. */
 #endif
+
+  SCB->CPACR |= (0xF << 20);
 }
 
 /**
@@ -215,7 +217,7 @@ void __attribute__((section(".bootloader"),externally_visible)) SystemInit(void)
   * @param  None
   * @retval None
   */
-static void __attribute__((section(".bootloader"))) SetSysClock(void)
+static void  SetSysClock(void)
 {
   __IO uint32_t StartUpCounter = 0, HSEStatus = 0;
 

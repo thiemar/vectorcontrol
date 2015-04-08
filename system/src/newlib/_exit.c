@@ -9,6 +9,6 @@
 #include <stdlib.h>
 
 
-void __attribute__((section(".bootloader"),weak,noreturn)) abort(void) {
+void __attribute__((weak,noreturn)) abort(void) {
     while (1);
 }

@@ -11,7 +11,7 @@ _estack = __stack; 	/* STM specific definition */
  * for the different modes.
  */
 
-__Main_Stack_Size = 1024 ;
+__Main_Stack_Size = 2048 ;
 
 PROVIDE ( _Main_Stack_Size = __Main_Stack_Size ) ;
 
@@ -24,7 +24,7 @@ PROVIDE ( _Main_Stack_Limit = __Main_Stack_Limit ) ;
  * There will be a link error if there is not this amount of
  * RAM free at the end.
  */
-_Minimum_Stack_Size = 1024 ;
+_Minimum_Stack_Size = 2048 ;
 
 /*
  * Default heap definitions.
@@ -38,7 +38,7 @@ PROVIDE ( _Heap_Limit = __stack - __Main_Stack_Size ) ;
  * The entry point is informative, for debuggers and simulators,
  * since the Cortex-M vector points to it anyway.
  */
-ENTRY(bootloader_start)
+ENTRY(_start)
 
 
 /* Sections Definitions */
@@ -46,15 +46,28 @@ ENTRY(bootloader_start)
 SECTIONS
 {
     /*
+    Bootloader stub for JTAG/SWD debuggigng -- remap interrupt vector to
+    application image location and jump to the application's reset handler
+    */
+    .bootloader_vector :
+    {
+        . = ALIGN(4);
+        KEEP(*(.bootloader_vector))
+        . = ALIGN(4);
+
+        FILL(0xDEADC0DE);
+        . = 0x2000;
+    } > FLASH
+
+    /*
      * For Cortex-M devices, the beginning of the startup code is stored in
      * the .isr_vector section, which goes to FLASH
      */
     .isr_vector :
     {
         . = ALIGN(4);
-        KEEP(*(.isr_vector))     	/* Interrupt vectors */
 
-		KEEP(*(.cfmconfig))			/* Freescale configuration words */
+        KEEP(*(.isr_vector))     	/* Interrupt vectors */
 
         /*
          * This section is here for convenience, to store the
@@ -62,6 +75,8 @@ SECTIONS
          * this will increase the readability of the listing.
          */
         *(.after_vectors .after_vectors.*)	/* Startup code and ISR */
+
+        KEEP(*(.app_descriptor)) /* Firmware image descriptor */
 
         . = ALIGN(4);
     } > FLASH
@@ -129,23 +144,12 @@ SECTIONS
     } > FLASH
 
     /*
-     * For some STRx devices, the beginning of the startup code
-     * is stored in the .flashtext section, which goes to FLASH.
-     */
-    .flashtext :
-    {
-        . = ALIGN(4);
-        *(.flashtext .flashtext.*)	/* Startup code */
-        . = ALIGN(4);
-    } > FLASH
-
-    /*
      * The program code is stored in the .text section,
      * which goes to FLASH.
      */
     .text :
     {
-        . = ALIGN(1024);
+        . = ALIGN(128);
 
         *(.text._start)           /* Startup routine first */
 
@@ -278,44 +282,6 @@ SECTIONS
 
 	    . = ALIGN(4);
     } > RAM
-
-	.bss_CCMRAM : ALIGN(4)
-	{
-		*(.bss.CCMRAM .bss.CCMRAM.*)
-	} > CCMRAM
-
-    .fill _sidata + (_edata - _sdata) :
-    {
-        FILL(0xDEADC0DE);
-        . = (0x0800D000 - (_sidata + (_edata - _sdata)) - 1);
-        BYTE(0x00)
-    } > FLASH
-
-    /* Read/write param section */
-    .paramflash 0x0800D000 :
-    {
-        . = ALIGN(4);
-        *(.paramflash .paramflash.*)
-        . = ALIGN(4);
-    } > FLASH
-
-    /* Bootloader code section */
-    .bootloader 0x0800E000 :
-    {
-        . = ALIGN(4);
-
-        *(.bootloader .bootloader.*)
-
-        . = ALIGN(4);
-    } > FLASH
-
-    /* Read-only param section */
-    .roflash 0x0800F000 :
-    {
-        . = ALIGN(4);
-        *(.roflash .roflash.*)
-        . = ALIGN(4);
-    } > FLASH
 
     /* After that there are only debugging sections. */
 
