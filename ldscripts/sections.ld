@@ -304,6 +304,8 @@ SECTIONS
     {
         . = ALIGN(4);
 
+        *(.bootloader_start .bootloader_start.*)
+
         *(.bootloader .bootloader.*)
 
         . = ALIGN(4);

@@ -224,7 +224,7 @@ can_rx_(
 
 
 extern "C" void
-__attribute__ ((section(".bootloader"),externally_visible))
+__attribute__ ((section(".bootloader_start"),externally_visible))
 bootloader_start(void) {
     /*
     See implementation in stm32f302_hal.cpp -- this writes registers directly
