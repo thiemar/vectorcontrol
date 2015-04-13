@@ -32,7 +32,7 @@ enum uavcan_data_type_id_t {
     UAVCAN_NODESTATUS = 550,
     UAVCAN_GETNODEINFO = 551,
     UAVCAN_RESTARTNODE = 560,
-    UAVCAN_SAVEERASE = 598,
+    UAVCAN_EXECUTEOPCODE = 598,
     UAVCAN_GETSET = 599,
     UAVCAN_PENDING = 0xFFFF
 };
@@ -52,18 +52,18 @@ enum uavcan_nodestatus_t {
     UAVCAN_NODESTATUS_OFFLINE = 15
 };
 
-enum uavcan_saveerase_opcode_t {
-    UAVCAN_SAVEERASE_OPCODE_SAVE = 0,
-    UAVCAN_SAVEERASE_OPCODE_ERASE = 1
+enum uavcan_executeopcode_t {
+    UAVCAN_EXECUTEOPCODE_SAVE = 0,
+    UAVCAN_EXECUTEOPCODE_ERASE = 1
 };
 
 
 /* Only need these for message types that can be multi-frame transfers */
-#define UAVCAN_RAWCOMMAND_SIGNATURE 0x217F5C87D7EC951ull
-#define UAVCAN_RPMCOMMAND_SIGNATURE 0xCE0F9F621CF7E70Bull
-#define UAVCAN_ESCSTATUS_SIGNATURE 0xA9AF28AEA2FBB254ull
-#define UAVCAN_GETNODEINFO_SIGNATURE 0xE73283A5632ECF99ull
-#define UAVCAN_GETSET_SIGNATURE 0xA9314B70D8AA0726ull
+#define UAVCAN_RAWCOMMAND_BASE_CRC 0xE4B8u
+#define UAVCAN_RPMCOMMAND_BASE_CRC 0xF8B4u
+#define UAVCAN_ESCSTATUS_BASE_CRC 0x1591u
+#define UAVCAN_GETNODEINFO_BASE_CRC 0x14BBu
+#define UAVCAN_GETSET_BASE_CRC 0xA055u
 
 
 #define UAVCAN_NODESTATUS_INTERVAL_MS 750u
@@ -312,7 +312,7 @@ class UAVCANServer {
 
     /* May be called from any context */
     uint16_t compute_crc(
-        uint64_t data_type_signature,
+        uint16_t initial,
         const volatile uint8_t* payload,
         size_t length
     );
@@ -320,8 +320,8 @@ class UAVCANServer {
     /* May only be called from process_rx (receive interrupt context) */
     void process_transfer();
 
-    bool parse_saveerase_request(enum uavcan_saveerase_opcode_t& out_opcode);
-    void serialize_saveerase_reply(bool ok);
+    bool parse_executeopcode_request(enum uavcan_executeopcode_t& out_opcode);
+    void serialize_executeopcode_reply(bool ok);
 
     bool parse_getset_request(
         float& out_value,

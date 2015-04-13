@@ -24,8 +24,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#pragma once
+#include <cstdint>
+#include <cfloat>
+#include <algorithm>
+#include "float16.h"
 
-typedef uint16_t float16_t;
+float16_t __attribute__((optimize("O3")))
+float16(float value) {
+    uint16_t hbits;
+    int32_t ival;
+    int iexp;
+    float diff;
 
-uint16_t float16(float value);
+    hbits = (uint16_t)(std::signbit(value) ? 0x8000u : 0);
+    if (!(value < 0.0f || value > 0.0f)) {
+        return hbits;
+    }
+    if (std::isnan(value)) {
+        return hbits | 0x7FFFu;
+    }
+    if (std::isinf(value)) {
+        return hbits | 0x7C00u;
+    }
+    (void)std::frexp(value, &iexp);
+    if (iexp > 16) {
+        return hbits | 0x7C00u;
+    }
+    if (iexp < -13) {
+        value = std::ldexp(value, 24);
+    } else {
+        value = std::ldexp(value, 11 - iexp);
+        hbits |= uint16_t((iexp + 14) << 10);
+    }
+    ival = (int32_t)value;
+    hbits = (uint16_t)
+        (hbits | ((uint32_t)(ival < 0 ? -ival : ival) & 0x3FFu));
+    diff = std::fabs(value - (float)ival);
+    hbits = (uint16_t)(hbits + (diff >= 0.5f));
+    return (float16_t)hbits;
+}

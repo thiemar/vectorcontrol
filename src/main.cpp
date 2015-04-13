@@ -51,7 +51,6 @@ enum controller_mode_t {
     CONTROLLER_STOPPING
 };
 volatile static enum controller_mode_t g_controller_mode;
-volatile static enum controller_mode_t g_pwm_controller_mode;
 volatile static enum {
     INPUT_PWM,
     INPUT_CAN,
@@ -83,6 +82,7 @@ volatile static struct pwm_params_t g_pwm_params;
 volatile static float g_i_samples[4];
 volatile static float g_v_samples[4];
 volatile static bool g_parameter_estimator_done;
+volatile static float g_estimator_consistency;
 
 
 /* "Owned" by can_rx_cb */
@@ -276,6 +276,7 @@ control_cb(
         v_dq_v[0] = v_dq_v[1] = 0.0f;
     }
 
+    g_estimator_consistency = g_estimator.get_consistency();
     g_motor_state.angular_velocity_rad_per_s =
         motor_state.angular_velocity_rad_per_s;
     g_motor_state.angle_rad = motor_state.angle_rad;
@@ -294,6 +295,7 @@ void systick_cb(void) {
     UAVCANMessage out_message;
     struct uavcan_esc_state_t uavcan_state;
     float v_dq_v[2], is_a, vs_v;
+    bool needs_tx;
 
     motor_state = const_cast<struct motor_state_t&>(g_motor_state);
     v_dq_v[0] = g_v_dq_v[0];
@@ -318,8 +320,10 @@ void systick_cb(void) {
 
     /* Process UAVCAN transmissions */
     if (g_valid_can) {
-        g_uavcan_server.process_tx(out_message);
-        (void)hal_transmit_can_message(out_message);
+        needs_tx = g_uavcan_server.process_tx(out_message);
+        if (needs_tx) {
+            (void)hal_transmit_can_message(out_message);
+        }
     }
 
     g_time++;
@@ -402,6 +406,7 @@ void can_rx_cb(const CANMessage& message) {
 
     /* Enable transmission */
     g_valid_can = true;
+    hal_enable_can_transmit();
     g_valid_pwm = 0;
 
     if (message.has_extended_id()) {
@@ -426,7 +431,8 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
         if (g_valid_pwm >= RC_PWM_ARM_PULSES &&
                 width_us > params.throttle_pulse_min_us) {
             g_input_source = INPUT_PWM;
-            g_controller_mode = g_pwm_controller_mode;
+            g_controller_mode = g_pwm_params.use_speed_controller ?
+                                CONTROLLER_SPEED : CONTROLLER_TORQUE;
             g_last_pwm = g_time;
         }
 
@@ -498,8 +504,6 @@ int __attribute__ ((externally_visible)) main(void) {
     g_configuration.read_motor_params(motor_params);
     g_configuration.read_control_params(control_params);
     g_configuration.read_pwm_params(pwm_params);
-    g_pwm_controller_mode = pwm_params.use_speed_controller ?
-                            CONTROLLER_SPEED : CONTROLLER_TORQUE;
 
     /* Estimate motor parameters */
     g_parameter_estimator_done = false;
@@ -567,6 +571,10 @@ int __attribute__ ((externally_visible)) main(void) {
         motor_params.max_speed_rad_per_s = limit_speed;
     }
 
+    /*
+    Copy configured/measured parameters into the volatile global parameter
+    structures.
+    */
     g_motor_params.rs_r = motor_params.rs_r;
     g_motor_params.ls_h = motor_params.ls_h;
     g_motor_params.phi_v_s_per_rad = motor_params.phi_v_s_per_rad;

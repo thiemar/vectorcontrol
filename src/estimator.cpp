@@ -53,7 +53,6 @@ StateEstimator::update_state_estimate(
     float covariance_temp[STATE_DIM * STATE_DIM],
           hessian[STATE_DIM * STATE_DIM],
           prediction[MEASUREMENT_DIM],
-          innovation[MEASUREMENT_DIM],
           measurement_covariance[MEASUREMENT_DIM * MEASUREMENT_DIM],
           measurement_covariance_temp[MEASUREMENT_DIM * MEASUREMENT_DIM],
           kalman_gain[STATE_DIM * MEASUREMENT_DIM],
@@ -227,12 +226,12 @@ StateEstimator::update_state_estimate(
                     c_ * v_ab_v[1];
 
     /* Calculate innovation */
-    innovation[0] = i_ab_a[0] - prediction[0];
-    innovation[1] = i_ab_a[1] - prediction[1];
+    innovation_[0] = i_ab_a[0] - prediction[0];
+    innovation_[1] = i_ab_a[1] - prediction[1];
 
     /* Update the estimate */
-    update[0] = K(0,0) * innovation[0] + K(1,0) * innovation[1];
-    update[1] = K(0,1) * innovation[0] + K(1,1) * innovation[1];
+    update[0] = K(0,0) * innovation_[0] + K(1,0) * innovation_[1];
+    update[1] = K(0,1) * innovation_[0] + K(1,1) * innovation_[1];
 
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
     state_estimate_.angle_rad += update[1] * std::max(0.5f, 1.0f - hfi_weight);

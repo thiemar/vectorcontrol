@@ -185,29 +185,29 @@ _bitarray_write(
 }
 
 
-static uint64_t _get_data_type_signature(uint16_t data_type_id) {
-    uint64_t signature;
+static uint16_t _get_data_type_base_crc(uint16_t data_type_id) {
+    uint16_t base;
     switch (data_type_id) {
         case UAVCAN_RAWCOMMAND:
-            signature = UAVCAN_RAWCOMMAND_SIGNATURE;
+            base = UAVCAN_RAWCOMMAND_BASE_CRC;
             break;
         case UAVCAN_RPMCOMMAND:
-            signature = UAVCAN_RPMCOMMAND_SIGNATURE;
+            base = UAVCAN_RPMCOMMAND_BASE_CRC;
             break;
         case UAVCAN_ESCSTATUS:
-            signature = UAVCAN_ESCSTATUS_SIGNATURE;
+            base = UAVCAN_ESCSTATUS_BASE_CRC;
             break;
         case UAVCAN_GETNODEINFO:
-            signature = UAVCAN_GETNODEINFO_SIGNATURE;
+            base = UAVCAN_GETNODEINFO_BASE_CRC;
             break;
         case UAVCAN_GETSET:
-            signature = UAVCAN_GETSET_SIGNATURE;
+            base = UAVCAN_GETSET_BASE_CRC;
             break;
         default:
-            signature = 0;
+            base = 0;
             break;
     }
-    return signature;
+    return base;
 }
 
 
@@ -229,12 +229,13 @@ void UAVCANServer::serialize_node_status(
     out_message.set_source_node_id(config_local_node_id_);
     out_message.set_transfer_type(UAVCAN_TRANSFER_MESSAGE_BROADCAST);
     out_message.set_data_type_id(UAVCAN_NODESTATUS);
-    out_message.set_length(4);
+    out_message.set_length(6);
     out_message[0] = (uint8_t)((uptime_s >> 0u) & 0xFFu);
     out_message[1] = (uint8_t)((uptime_s >> 8u) & 0xFFu);
     out_message[2] = (uint8_t)((uptime_s >> 16u) & 0xFFu);
     out_message[3] = (uint8_t)
         ((((uptime_s >> 24u) & 0x0Fu) << 4u) | (status & 0x0Fu));
+    out_message[4] = out_message[5] = 0u;
 }
 
 
@@ -272,38 +273,45 @@ void UAVCANServer::serialize_restartnode_reply(bool ok) {
 }
 
 
-bool UAVCANServer::parse_saveerase_request(
-    enum uavcan_saveerase_opcode_t &out_opcode
+bool UAVCANServer::parse_executeopcode_request(
+    enum uavcan_executeopcode_t &out_opcode
 ) {
     /*
-    598.SaveErase
+    598.ExecuteOpcode
 
-    uint2 opcode
+    uint8 opcode
+    int48 argument
     ---
+    int48 argument
     bool ok
     */
-    out_opcode = (enum uavcan_saveerase_opcode_t)(rx_transfer_bytes_[0] >> 6u);
+    out_opcode = (enum uavcan_executeopcode_t)(rx_transfer_bytes_[0]);
     return true;
 }
 
 
-void UAVCANServer::serialize_saveerase_reply(bool ok) {
+void UAVCANServer::serialize_executeopcode_reply(bool ok) {
     /*
-    598.SaveErase
+    598.ExecuteOpcode
 
-    uint2 opcode
+    uint8 opcode
+    int48 argument
     ---
+    int48 argument
     bool ok
     */
     tx_transfer_transfer_type_transfer_id_ = (uint8_t)
         ((UAVCAN_TRANSFER_SERVICE_RESPONSE << 4u) |
          rx_transfer_.get_transfer_id());
     tx_transfer_dest_node_id_ = rx_transfer_.get_source_node_id();
-    tx_transfer_data_type_id_ = UAVCAN_SAVEERASE;
-    tx_transfer_bytes_[0] = (uint8_t)(ok ? 0x80u : 0);
-    tx_transfer_length_ = 1u;
-    tx_transfer_index_ = 0;
-    tx_transfer_frame_index_ = 0;
+    tx_transfer_data_type_id_ = UAVCAN_EXECUTEOPCODE;
+    tx_transfer_bytes_[0] = tx_transfer_bytes_[1] = tx_transfer_bytes_[2] =
+        tx_transfer_bytes_[3] = tx_transfer_bytes_[4] = tx_transfer_bytes_[5] =
+        0u;
+    tx_transfer_bytes_[6] = (uint8_t)(ok ? 0x80u : 0u);
+    tx_transfer_length_ = 7u;
+    tx_transfer_index_ = 0u;
+    tx_transfer_frame_index_ = 0u;
     tx_transfer_done_ = false;
 }
 
@@ -627,7 +635,7 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
         if (tx_transfer_index_ == 0 && tx_transfer_length_ > 8u - i) {
             /* Generate CRC */
             crc = compute_crc(
-                _get_data_type_signature(tx_transfer_data_type_id_),
+                _get_data_type_base_crc(tx_transfer_data_type_id_),
                 tx_transfer_bytes_,
                 tx_transfer_length_
             );
@@ -659,7 +667,7 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
         if (status_transfer_index_ == 0) {
             /* Generate CRC */
             crc = compute_crc(
-                UAVCAN_ESCSTATUS_SIGNATURE,
+                UAVCAN_ESCSTATUS_BASE_CRC,
                 status_transfer_bytes_,
                 status_transfer_length_
             );
@@ -696,7 +704,6 @@ bool UAVCANServer::process_tx(UAVCANMessage& out_message) {
 
 
 void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
-    uint64_t signature;
     size_t i;
     uint16_t data_type_id;
     uint8_t dest_node_id;
@@ -734,9 +741,9 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
             process the transfer.
             */
             if (in_message.get_last_frame()) {
-                signature = _get_data_type_signature(data_type_id);
                 if (rx_transfer_frame_index_ == 1 ||
-                        compute_crc(signature, rx_transfer_bytes_,
+                        compute_crc(_get_data_type_base_crc(data_type_id),
+                                    rx_transfer_bytes_,
                                     rx_transfer_length_) == rx_transfer_crc_) {
                     process_transfer();
                 }
@@ -756,7 +763,7 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
     } else if (((data_type_id == UAVCAN_RAWCOMMAND ||
                  data_type_id == UAVCAN_RPMCOMMAND) && dest_node_id == 0xFFu) ||
                ((data_type_id == UAVCAN_RESTARTNODE ||
-                 data_type_id == UAVCAN_SAVEERASE ||
+                 data_type_id == UAVCAN_EXECUTEOPCODE ||
                  data_type_id == UAVCAN_GETSET ||
                  data_type_id == UAVCAN_GETNODEINFO) && dest_node_id == config_local_node_id_)) {
         received_partial_frame_ = true;
@@ -803,7 +810,7 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
 
 void UAVCANServer::process_transfer() {
     float result;
-    enum uavcan_saveerase_opcode_t saveerase_opcode;
+    enum uavcan_executeopcode_t execute_opcode;
     struct param_t param;
     enum uavcan_data_type_id_t data_type_id;
     size_t i;
@@ -832,10 +839,10 @@ void UAVCANServer::process_transfer() {
             }
             serialize_restartnode_reply(valid);
             break;
-        case UAVCAN_SAVEERASE:
-            valid = parse_saveerase_request(saveerase_opcode);
+        case UAVCAN_EXECUTEOPCODE:
+            valid = parse_executeopcode_request(execute_opcode);
             if (valid) {
-                if (saveerase_opcode == UAVCAN_SAVEERASE_OPCODE_ERASE) {
+                if (execute_opcode == UAVCAN_EXECUTEOPCODE_ERASE) {
                     /* Reset parameters to their default values */
                     for (i = 0; i < NUM_PARAMS; i++) {
                         configuration_->get_param_by_index(param, (uint8_t)i);
@@ -849,7 +856,7 @@ void UAVCANServer::process_transfer() {
                     valid = flash_save_request_cb_();
                 }
             }
-            serialize_saveerase_reply(valid);
+            serialize_executeopcode_reply(valid);
             break;
         case UAVCAN_GETSET:
             valid = parse_getset_request(result, index, name);
@@ -885,7 +892,7 @@ void UAVCANServer::process_transfer() {
 
 
 uint16_t UAVCANServer::compute_crc(
-    uint64_t data_type_signature,
+    uint16_t initial,
     const volatile uint8_t* payload,
     size_t length
 ) {
@@ -925,16 +932,10 @@ uint16_t UAVCANServer::compute_crc(
     };
 
     uint16_t result, i;
-    uint8_t signature_bytes[8];
 
-    memcpy(signature_bytes, &data_type_signature, 8);
-
-    result = 0xFFFFu;
+    result = initial;
 
 #define CRC_STEP(r, x) (uint16_t)((((r) << 8u) ^ crc[((r) >> 8u) ^ (x)]) & 0xFFFFu)
-    for (i = 0; i < 8; i++) {
-        result = CRC_STEP(result, signature_bytes[i]);
-    }
     for (i = 0; i < length; i++) {
         result = CRC_STEP(result, payload[i]);
     }
