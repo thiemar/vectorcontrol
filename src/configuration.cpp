@@ -35,7 +35,7 @@ flash_app_descriptor = {
     .vcs_commit = 0L,
     .major_version = 0u,
     .minor_version = 1u,
-    .padding = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu}
+    .reserved = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu}
 };
 
 

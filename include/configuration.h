@@ -44,7 +44,7 @@ struct bootloader_app_descriptor {
     uint32_t vcs_commit;
     uint8_t major_version;
     uint8_t minor_version;
-    uint8_t padding[6];
+    uint8_t reserved[6];
 } __attribute__((packed));
 
 

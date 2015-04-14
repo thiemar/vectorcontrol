@@ -322,7 +322,7 @@ void systick_cb(void) {
     if (g_valid_can) {
         needs_tx = g_uavcan_server.process_tx(out_message);
         if (needs_tx) {
-            (void)hal_transmit_can_message(out_message);
+            //(void)hal_transmit_can_message(out_message);
         }
     }
 
@@ -401,21 +401,6 @@ bool can_esc_command_cb(enum uavcan_data_type_id_t type, float value) {
 }
 
 
-void can_rx_cb(const CANMessage& message) {
-    UAVCANMessage m(message);
-
-    /* Enable transmission */
-    g_valid_can = true;
-    hal_enable_can_transmit();
-    g_valid_pwm = 0;
-
-    if (message.has_extended_id()) {
-        /* UAVCAN message */
-        g_uavcan_server.process_rx(m);
-    }
-}
-
-
 void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
     struct pwm_params_t params;
     float setpoint, scale_factor, sign;
@@ -486,6 +471,30 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
             /* PWM pulse width controls torque */
             g_current_controller_setpoint = setpoint * sign;
         }
+    }
+}
+
+
+void idle(void) {
+    size_t message_length;
+    uint32_t message_id;
+    uint8_t message[8];
+    uint8_t filter_id;
+    enum hal_status_t status;
+
+    /* Check for service requests (FIFO 0) */
+    status = hal_receive_can_message(0u, &filter_id, &message_id,
+                                     &message_length, message);
+
+    /* Check for commands and NodeStatus messages (FIFO 1) */
+    status = hal_receive_can_message(1u, &filter_id, &message_id,
+                                     &message_length, message);
+
+    if (status == HAL_STATUS_OK) {
+        /* Enable transmission */
+        g_valid_can = true;
+        hal_enable_can_transmit();
+        g_valid_pwm = 0;
     }
 }
 
@@ -605,12 +614,13 @@ int __attribute__ ((externally_visible)) main(void) {
     g_current_controller and g_speed_controller, since they're updated from
     the ISRs and not declared volatile.
     */
-    hal_set_can_receive_callback(can_rx_cb);
     hal_set_high_frequency_callback(control_cb);
     hal_set_low_frequency_callback(systick_cb);
     hal_set_rc_pwm_callback(rc_pwm_cb);
 
-    for (volatile bool cond = true; cond;);
+    while (true) {
+        idle();
+    }
 
-    return 0;
+    return 0u;
 }

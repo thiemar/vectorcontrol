@@ -32,6 +32,7 @@ enum uavcan_data_type_id_t {
     UAVCAN_NODESTATUS = 550,
     UAVCAN_GETNODEINFO = 551,
     UAVCAN_RESTARTNODE = 560,
+    UAVCAN_BEGINFIRMWAREUPDATE = 580,
     UAVCAN_EXECUTEOPCODE = 598,
     UAVCAN_GETSET = 599,
     UAVCAN_PENDING = 0xFFFF
@@ -251,6 +252,7 @@ public:
 
 typedef bool (*uavcan_flash_save_callback_t)(void);
 typedef bool (*uavcan_restart_request_callback_t)(void);
+typedef bool (*uavcan_bootloader_request_callback_t)(void);
 typedef bool (*uavcan_esc_command_callback_t)(enum uavcan_data_type_id_t, float);
 
 
@@ -268,7 +270,7 @@ class UAVCANServer {
     May only be accessed from process_rx (receive interrupt context)
     */
     UAVCANMessage rx_transfer_;
-    uint8_t rx_transfer_bytes_[64];
+    uint8_t rx_transfer_bytes_[256];
     size_t rx_transfer_crc_;
     size_t rx_transfer_length_;
     size_t rx_transfer_frame_index_;
@@ -278,7 +280,7 @@ class UAVCANServer {
     May be accessed from process_rx (receive interrupt context) or
     tick/process_tx (timer interrupt context)
     */
-    volatile uint8_t tx_transfer_bytes_[64];
+    volatile uint8_t tx_transfer_bytes_[256];
     volatile size_t tx_transfer_length_;
     volatile size_t tx_transfer_index_;
     volatile size_t tx_transfer_frame_index_;
@@ -300,7 +302,7 @@ class UAVCANServer {
     uint32_t last_esc_command_received_time_ms_;
     uint32_t last_partial_frame_received_time_ms_;
 
-    /* 0 = node status, 1 = ESC status */
+    /* 0 = node status, 1 = ESC status, 2 = custom status */
     uint8_t broadcast_transfer_ids_[4];
 
     /*
@@ -308,6 +310,7 @@ class UAVCANServer {
     */
     uavcan_flash_save_callback_t flash_save_request_cb_;
     uavcan_restart_request_callback_t restart_request_cb_;
+    uavcan_bootloader_request_callback_t bootloader_request_cb_;
     uavcan_esc_command_callback_t esc_command_cb_;
 
     /* May be called from any context */
@@ -328,10 +331,17 @@ class UAVCANServer {
         uint8_t& out_param_index,
         char *out_param_name
     );
-    void serialize_getset_reply(const struct param_t& in_param, float value);
+    void serialize_getset_reply(
+        bool valid,
+        const struct param_t& in_param,
+        float value
+    );
 
     bool parse_restartnode_request();
     void serialize_restartnode_reply(bool ok);
+
+    void serialize_nodeinfo_reply();
+    void serialize_beginfirmwareupdate_reply();
 
     float get_esccommand_value();
 
@@ -385,6 +395,7 @@ public:
         last_partial_frame_received_time_ms_(0),
         flash_save_request_cb_(NULL),
         restart_request_cb_(NULL),
+        bootloader_request_cb_(NULL),
         esc_command_cb_(NULL)
     {
         broadcast_transfer_ids_[0] = broadcast_transfer_ids_[1] =
@@ -403,6 +414,10 @@ public:
 
     void set_restart_request_callback(uavcan_restart_request_callback_t cb) {
         restart_request_cb_ = cb;
+    }
+
+    void set_bootloader_request_callback(uavcan_bootloader_request_callback_t cb) {
+        bootloader_request_cb_ = cb;
     }
 
     void set_esc_command_callback(uavcan_esc_command_callback_t cb) {

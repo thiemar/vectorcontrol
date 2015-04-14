@@ -326,18 +326,26 @@ bool UAVCANServer::parse_getset_request(
 
     Value value
     uint8 index
-    uint8[<=40] name
+    uint8[<=92] name
     ---
     Value value
     Value default_value
-    Value max_value
-    Value min_value
-    uint8[<=40] name
+    NumericValue max_value
+    NumericValue min_value
+    uint8[<=92] name
 
     Value
     bool[<=1] value_bool
     int64[<=1] value_int
     float32[<=1] value_float
+    String[<=1] value_string
+
+    NumericValue
+    int64[<=1] value_int
+    float32[<=1] value_float
+
+    String
+    uint8[<=127] value
     */
     int64_t bits;
     uint32_t temp;
@@ -381,6 +389,7 @@ bool UAVCANServer::parse_getset_request(
     _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 1u);
     bit_index++;
     if (bits) {
+        /* Float value */
         bits = 0;
         _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 32u);
         bit_index += 32u;
@@ -390,13 +399,25 @@ bool UAVCANServer::parse_getset_request(
         }
     }
 
+    bits = 0;
+    _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 1u);
+    bit_index++;
+    if (bits) {
+        /* String value -- unsupported, so skip it */
+        bits = 0;
+        _bitarray_read(&bits, rx_transfer_bytes_, bit_index, 7u);
+        bit_index += 7u;
+
+        bit_index += (uint8_t)bits * 8u;
+    }
+
     /* Extract the parameter index */
     _bitarray_read(&out_param_index, rx_transfer_bytes_, bit_index, 8u);
     bit_index += 8u;
 
     /* Extract the name -- uses tail array optimization */
     name_bytes = (transfer_bits - bit_index) >> 3u;
-    if (name_bytes < 27u) {
+    if (name_bytes < 45u) {
         _bitarray_read(out_param_name, rx_transfer_bytes_, bit_index,
                        transfer_bits - bit_index);
         out_param_name[name_bytes] = 0;
@@ -408,6 +429,7 @@ bool UAVCANServer::parse_getset_request(
 
 
 void UAVCANServer::serialize_getset_reply(
+    bool valid,
     const struct param_t &in_param,
     float value
 ) {
@@ -416,46 +438,77 @@ void UAVCANServer::serialize_getset_reply(
 
     Value value
     uint8 index
-    uint8[<=40] name
+    uint8[<=92] name
     ---
     Value value
     Value default_value
-    Value max_value
-    Value min_value
-    uint8[<=40] name
+    NumericValue max_value
+    NumericValue min_value
+    uint8[<=92] name
 
     Value
     bool[<=1] value_bool
     int64[<=1] value_int
     float32[<=1] value_float
+    String[<=1] value_string
+
+    NumericValue
+    int64[<=1] value_int
+    float32[<=1] value_float
+
+    String
+    uint8[<=127] value
     */
     size_t bit_index, pad_bits, length, name_bits;
     uint8_t value_type;
 
     bit_index = 0;
 
+    if (!valid) {
+        tx_transfer_bytes_[0] = tx_transfer_bytes_[1] = 0u;
+        /*
+        4 bits * 2 for empty value and default_value; 2 bits * 2 for empty
+        max_value and min_value
+        */
+        bit_index = 12u;
+    } else if (in_param.public_type == PARAM_TYPE_FLOAT) {
 #define SERIALIZE_FLOAT_VALUE(x) {                                           \
-        if (!std::isnan(x)) {                                                \
             value_type = 0x20u;                                              \
             _bitarray_write(tx_transfer_bytes_, bit_index, 3u, &value_type); \
             bit_index += 3u;                                                 \
             _bitarray_write(tx_transfer_bytes_, bit_index, 32u, &x);         \
             bit_index += 32u;                                                \
-        } else {                                                             \
-            value_type = 0;                                                  \
-            _bitarray_write(tx_transfer_bytes_, bit_index, 3u, &value_type); \
-            bit_index += 3u;                                                 \
-        }                                                                    \
+            value_type = 0u;                                                 \
+            _bitarray_write(tx_transfer_bytes_, bit_index, 1u, &value_type); \
+            bit_index += 1u;                                                 \
+        }
+
+        SERIALIZE_FLOAT_VALUE(value);
+        SERIALIZE_FLOAT_VALUE(in_param.default_value);
+        SERIALIZE_FLOAT_VALUE(in_param.max_value);
+        SERIALIZE_FLOAT_VALUE(in_param.min_value);
+#undef SERIALIZE_FLOAT_VALUE
+    } else if (in_param.public_type == PARAM_TYPE_INT) {
+#define SERIALIZE_INT_VALUE(x) {                                             \
+            int64_t int_x = (int64_t)x;                                      \
+            value_type = 0x40u;                                              \
+            _bitarray_write(tx_transfer_bytes_, bit_index, 2u, &value_type); \
+            bit_index += 2u;                                                 \
+            _bitarray_write(tx_transfer_bytes_, bit_index, 64u, &int_x);     \
+            bit_index += 64u;                                                \
+            value_type = 0u;                                                 \
+            _bitarray_write(tx_transfer_bytes_, bit_index, 2u, &value_type); \
+            bit_index += 2u;                                                 \
+        }
+
+        SERIALIZE_INT_VALUE(value);
+        SERIALIZE_INT_VALUE(in_param.default_value);
+        SERIALIZE_INT_VALUE(in_param.max_value);
+        SERIALIZE_INT_VALUE(in_param.min_value);
+#undef SERIALIZE_INT_VALUE
     }
 
-    SERIALIZE_FLOAT_VALUE(value);
-    SERIALIZE_FLOAT_VALUE(in_param.default_value);
-    SERIALIZE_FLOAT_VALUE(in_param.max_value);
-    SERIALIZE_FLOAT_VALUE(in_param.min_value);
-
-#undef SERIALIZE_FLOAT_VALUE
-
-    name_bits = (strnlen(in_param.name, 27u) << 3u);
+    name_bits = (strnlen(in_param.name, 45u) << 3u);
     _bitarray_write(tx_transfer_bytes_, bit_index, name_bits, in_param.name);
     bit_index += name_bits;
 
@@ -581,6 +634,16 @@ void UAVCANServer::serialize_esc_status(
     status_transfer_frame_index_ = 0;
 
     broadcast_transfer_ids_[1]++;
+}
+
+
+void UAVCANServer::serialize_nodeinfo_reply() {
+
+}
+
+
+void UAVCANServer::serialize_beginfirmwareupdate_reply() {
+
 }
 
 
@@ -722,7 +785,8 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
                 dest_node_id == rx_transfer_.get_dest_node_id() &&
                 in_message.get_transfer_id() == rx_transfer_.get_transfer_id() &&
                 in_message.get_source_node_id() == rx_transfer_.get_source_node_id() &&
-                in_message.get_frame_index() == rx_transfer_frame_index_ + 1) {
+                in_message.get_frame_index() == rx_transfer_frame_index_ + 1u &&
+                rx_transfer_frame_index_ < 15u) {
             received_partial_frame_ = true;
 
             /* Skip the destination node ID */
@@ -798,8 +862,8 @@ void UAVCANServer::process_rx(const UAVCANMessage& in_message) {
         */
         if (in_message.get_last_frame()) {
             process_transfer();
-            rx_transfer_length_ = 0;
-            rx_transfer_frame_index_ = 0;
+            rx_transfer_length_ = 0u;
+            rx_transfer_frame_index_ = 0u;
             rx_transfer_reset_ = true;
         }
     } else {
@@ -830,7 +894,7 @@ void UAVCANServer::process_transfer() {
             }
             break;
         case UAVCAN_GETNODEINFO:
-            // serialize_nodeinfo_reply();
+            serialize_nodeinfo_reply();
             break;
         case UAVCAN_RESTARTNODE:
             valid = parse_restartnode_request();
@@ -838,6 +902,12 @@ void UAVCANServer::process_transfer() {
                 valid = restart_request_cb_();
             }
             serialize_restartnode_reply(valid);
+            break;
+        case UAVCAN_BEGINFIRMWAREUPDATE:
+            if (bootloader_request_cb_) {
+                valid = bootloader_request_cb_();
+            }
+            serialize_beginfirmwareupdate_reply();
             break;
         case UAVCAN_EXECUTEOPCODE:
             valid = parse_executeopcode_request(execute_opcode);
@@ -870,20 +940,14 @@ void UAVCANServer::process_transfer() {
                 }
             }
 
-            if (!valid) {
-                result = std::numeric_limits<float>::signaling_NaN();
-                param.default_value =
-                    std::numeric_limits<float>::signaling_NaN();
-                param.min_value = std::numeric_limits<float>::signaling_NaN();
-                param.max_value = std::numeric_limits<float>::signaling_NaN();
-                param.index = 0;
-                param.name[0] = 0;
-            } else {
+            if (valid) {
                 result =
                     configuration_->get_param_value_by_index(param.index);
+            } else {
+                param.name[0] = 0u;
             }
 
-            serialize_getset_reply(param, result);
+            serialize_getset_reply(valid, param, result);
             break;
         default:
             break;

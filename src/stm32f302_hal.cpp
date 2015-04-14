@@ -19,6 +19,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 #include <cstdlib>
 #include <cstdint>
 #include <cassert>
+#include <cstring>
 #include "stm32f30x.h"
 #include "hal.h"
 #include "svm.h"
@@ -261,8 +262,6 @@ static volatile enum hal_pwm_state_t pwm_state_;
 static volatile hal_callback_t low_frequency_task_;
 /* High-frequency (ADC update) control task callback */
 static volatile hal_control_callback_t high_frequency_task_;
-/* CAN message RX callback */
-static volatile hal_can_callback_t can_receive_task_;
 /* PWM pulse callback */
 static volatile hal_pwm_callback_t pwm_receive_task_;
 
@@ -284,8 +283,6 @@ static volatile float temp_degc_;
 
 extern "C" void SysTick_Handler(void);
 extern "C" void ADC1_2_IRQHandler(void);
-extern "C" void USB_LP_CAN1_RX0_IRQHandler(void);
-extern "C" void CAN1_RX1_IRQHandler(void);
 extern "C" void Fault_Handler(void);
 
 
@@ -294,7 +291,7 @@ static void hal_init_io_();
 static void hal_init_tim1_();
 static void hal_init_adc_();
 static void hal_init_dma_();
-static void hal_init_can_();
+static void hal_init_can_(uint32_t speed);
 static void hal_run_calibration_();
 static bool hal_read_last_vbus_temp_();
 
@@ -525,42 +522,6 @@ PERF_COUNT_START
 
     /* FIXME -- check return code for task deadline miss */
 PERF_COUNT_END
-}
-
-
-void USB_LP_CAN1_RX0_IRQHandler(void) {
-    uint8_t num_messages, i;
-    CANMessage message;
-    CanRxMsg rx_message;
-
-    num_messages = CAN_MessagePending(CAN1, 0);
-    for (i = 0; i < num_messages; i++) {
-        CAN_Receive(CAN1, 0, &rx_message);
-        message.set_id(rx_message.IDE == CAN_Id_Standard ?
-                       rx_message.StdId : rx_message.ExtId);
-        message.set_data(rx_message.DLC, rx_message.Data);
-        if (can_receive_task_) {
-            can_receive_task_(message);
-        }
-    }
-}
-
-
-void CAN1_RX1_IRQHandler(void) {
-    uint8_t num_messages, i;
-    CANMessage message;
-    CanRxMsg rx_message;
-
-    num_messages = CAN_MessagePending(CAN1, 1);
-    for (i = 0; i < num_messages; i++) {
-        CAN_Receive(CAN1, 1, &rx_message);
-        message.set_id(rx_message.IDE == CAN_Id_Standard ?
-                       rx_message.StdId : rx_message.ExtId);
-        message.set_data(rx_message.DLC, rx_message.Data);
-            if (can_receive_task_) {
-            can_receive_task_(message);
-        }
-    }
 }
 
 
@@ -842,7 +803,7 @@ static void hal_init_dma_() {
 }
 
 
-static void hal_init_can_() {
+static void hal_init_can_(uint32_t speed) {
     CAN_InitTypeDef config = {
         .CAN_Prescaler = 0,
         .CAN_Mode = CAN_Mode_Normal, /* Or CAN_Mode_LoopBack */
@@ -862,73 +823,31 @@ static void hal_init_can_() {
         .CAN_TXFP = ENABLE    /* Enable or disable the transmit FIFO
                                 priority. */
     };
-    CAN_FilterInitTypeDef filter_config = {
-        .CAN_FilterIdHigh = 0,         /* Specifies the filter identification
-                                          number (MSBs for a 32-bit
-                                          configuration, first one for a
-                                          16-bit configuration). */
-        .CAN_FilterIdLow = 0,          /* Specifies the filter identification
-                                          number (LSBs for a 32-bit
-                                          configuration, second one for a
-                                          16-bit configuration). */
-        .CAN_FilterMaskIdHigh = 0,     /* Specifies the filter mask number or
-                                          identification number, according to
-                                          the mode (MSBs for a 32-bit
-                                          configuration, first one for a
-                                          16-bit configuration). */
-        .CAN_FilterMaskIdLow = 0,      /* Specifies the filter mask number or
-                                          identification number, according to
-                                          the mode (LSBs for a 32-bit
-                                          configuration, second one for a
-                                          16-bit configuration).*/
-        .CAN_FilterFIFOAssignment = 0,
-        .CAN_FilterNumber = 0,          /* Specifies the filter which will be
-                                           initialized. It ranges from 0 to
-                                           13. */
-        .CAN_FilterMode = 0,            /* Specifies the filter mode to be
-                                           initialized. */
-        .CAN_FilterScale = 0,           /* Specifies the filter scale. */
-        .CAN_FilterActivation = ENABLE
-    };
-    NVIC_InitTypeDef nvic_config = {
-        .NVIC_IRQChannel = 0,
-        .NVIC_IRQChannelPreemptionPriority = CAN_RX_PRE_EMPTION_PRIORITY,
-        .NVIC_IRQChannelSubPriority = CAN_RX_SUB_PRIORITY,
-        .NVIC_IRQChannelCmd = ENABLE
-    };
 
-#if (HAL_CAN_RATE_BPS == 1000000)
-    /* 1 Mbaud from 72 MHz system clock */
-    config.CAN_Prescaler = 4;
-    config.CAN_BS1 = 6;
-    config.CAN_BS2 = 0;
-#elif (HAL_CAN_RATE_BPS == 500000)
-    /* 500 Kbaud from 72 MHz system clock */
-    config.CAN_Prescaler = 9;
-    config.CAN_BS1 = 5;
-    config.CAN_BS2 = 0;
-#elif (HAL_CAN_RATE_BPS == 250000)
-    /* 250 Kbaud from 72 MHz system clock */
-    config.CAN_Prescaler = 9;
-    config.CAN_BS1 = 12;
-    config.CAN_BS2 = 1;
-#else
-#pragma error("Invalid CAN_RATE_BPS")
-#endif
+    if (speed == 125000u) {
+        /* 125 Kbaud from 72 MHz system clock */
+        config.CAN_Prescaler = 32;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    } else if (speed == 250000u) {
+        /* 250 Kbaud from 72 MHz system clock */
+        config.CAN_Prescaler = 16;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    } else if (speed == 500000u) {
+        /* 500 Kbaud from 72 MHz system clock */
+        config.CAN_Prescaler = 8;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    } else /* if (speed == 1000000u) */ {
+        /* 1 Mbaud from 72 MHz system clock -- default */
+        config.CAN_Prescaler = 4;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    }
 
     CAN_DeInit(CAN1);
-
     CAN_Init(CAN1, &config);
-    CAN_FilterInit(&filter_config);
-
-    /* Configure interrupts for both RX FIFOs */
-    nvic_config.NVIC_IRQChannel = (uint8_t)USB_LP_CAN1_RX0_IRQn;
-    NVIC_Init(&nvic_config);
-    CAN_ITConfig(CAN1, CAN_IT_FMP0, ENABLE);
-
-    nvic_config.NVIC_IRQChannel = (uint8_t)CAN1_RX1_IRQn;
-    NVIC_Init(&nvic_config);
-    CAN_ITConfig(CAN1, CAN_IT_FMP1, ENABLE);
 }
 
 
@@ -1084,7 +1003,7 @@ void hal_reset(void) {
     hal_init_tim1_();
     hal_init_adc_();
     hal_init_dma_();
-    hal_init_can_();
+    hal_init_can_(1000000);
     hal_init_pwm_();
 
     /* Calibrate the current shunt sensor offsets */
@@ -1123,29 +1042,104 @@ void hal_set_pwm_state(enum hal_pwm_state_t state) {
 }
 
 
-enum hal_status_t hal_transmit_can_message(const CANMessage& message) {
-    CanTxMsg msg;
-    uint8_t result;
+enum hal_status_t hal_transmit_can_message(
+    uint8_t mailbox,
+    uint32_t message_id,
+    size_t length,
+    const uint8_t *message
+) {
+    uint32_t data[2], mask, i;
 
-    msg.RTR = CAN_RTR_Data;
-
-    if (message.has_extended_id()) {
-        msg.ExtId = message.get_id();
-        msg.IDE = CAN_Id_Extended;
-    } else {
-        msg.StdId = message.get_id();
-        msg.IDE = CAN_Id_Standard;
+    data[0] = data[1] = 0u;
+    for (i = 0u; i < length; i++) {
+        ((uint8_t*)data)[i] = message[i];
     }
 
-    msg.DLC = (uint8_t)message.get_data(msg.Data);
+    switch (mailbox) {
+        case 0u:
+            mask = CAN_TSR_TME0;
+            break;
+        case 1u:
+            mask = CAN_TSR_TME1;
+            break;
+        case 2u:
+        default:
+            mask = CAN_TSR_TME2;
+            break;
+    }
 
-    result = CAN_Transmit(CAN1, &msg);
-
-    if (result == CAN_TxStatus_NoMailBox) {
+    if (!(CAN1->TSR & mask)) {
         return HAL_STATUS_ERROR;
-    } else {
-        return HAL_STATUS_OK;
     }
+
+    CAN1->sTxMailBox[mailbox].TIR = 0;
+    CAN1->sTxMailBox[mailbox].TIR |= (message_id << 3u) | 0x4u;
+    CAN1->sTxMailBox[mailbox].TDTR = length;
+    CAN1->sTxMailBox[mailbox].TDLR = data[0];
+    CAN1->sTxMailBox[mailbox].TDHR = data[1];
+    CAN1->sTxMailBox[mailbox].TIR |= 1u;
+
+    return HAL_STATUS_OK;
+}
+
+
+enum hal_status_t hal_receive_can_message(
+    uint8_t fifo,
+    uint8_t *filter_id,
+    uint32_t *message_id,
+    size_t *length,
+    uint8_t *message
+) {
+    uint32_t data[2], i;
+
+    /* Check if a message is pending */
+    if (fifo == 0u && !(CAN1->RF0R & 3u)) {
+        return HAL_STATUS_ERROR;
+    } else if (fifo == 1u && !(CAN1->RF1R & 3u)) {
+        return HAL_STATUS_ERROR;
+    } else if (fifo > 1u) {
+        return HAL_STATUS_ERROR;
+    }
+
+    /* If so, process it */
+    *message_id = CAN1->sFIFOMailBox[fifo].RIR >> 3u;
+    *length = CAN1->sFIFOMailBox[fifo].RDTR & 0xFu;
+    *filter_id = (CAN1->sFIFOMailBox[fifo].RDTR >> 16u) & 0xFFu;
+    data[0] = CAN1->sFIFOMailBox[fifo].RDLR;
+    data[1] = CAN1->sFIFOMailBox[fifo].RDHR;
+
+    /* Release the message from the receive FIFO */
+    if (fifo == 0u) {
+        CAN1->RF0R |= CAN_RF0R_RFOM0;
+    } else {
+        CAN1->RF1R |= CAN_RF1R_RFOM1;
+    }
+
+    for (i = 0u; i < *length; i++) {
+        message[i] = ((uint8_t*)data)[i];
+    }
+
+    return HAL_STATUS_OK;
+}
+
+
+void hal_set_can_dtid_filter(uint8_t fifo, uint8_t filter_id, uint16_t dtid) {
+    uint32_t mask;
+    mask = (1u << filter_id);
+
+    CAN1->FMR |= 1u; /* Start init mode */
+    CAN1->FA1R &= ~mask; /* Disable the filter */
+    CAN1->FS1R |= mask; /* Enable 32-bit mode */
+    CAN1->sFilterRegister[filter_id].FR1 = dtid << 22u;
+    CAN1->sFilterRegister[filter_id].FR2 = 0xFFC00000u; /* Only DTID */
+    CAN1->FM1R &= ~mask; /* Set to mask mode */
+    if (fifo) {
+        CAN1->FFA1R |= mask; /* FIFO 1 */
+    } else {
+        CAN1->FFA1R &= ~mask; /* FIFO 0 */
+    }
+    CAN1->FA1R |= mask; /* Enable the filter */
+    CAN1->FMR &= ~1u; /* Leave init mode */
 }
 
 
@@ -1165,13 +1159,6 @@ void hal_set_high_frequency_callback(hal_control_callback_t callback) {
     esc_assert(!callback || !high_frequency_task_);
 
     high_frequency_task_ = callback;
-}
-
-
-void hal_set_can_receive_callback(hal_can_callback_t callback) {
-    esc_assert(!callback || !can_receive_task_);
-
-    can_receive_task_ = callback;
 }
 
 

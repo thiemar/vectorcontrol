@@ -18,7 +18,6 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "can.h"
 #include "fixed.h"
 
 
@@ -39,7 +38,6 @@ typedef void (*hal_callback_t)(void);
 /* Called with output Vab, last output Vab, last Iab, and Vbus */
 typedef void (*hal_control_callback_t)(float*, const float*,
                                        const float*, float);
-typedef void (*hal_can_callback_t)(const CANMessage&);
 typedef void (*hal_pwm_callback_t)(uint32_t, uint32_t);
 
 
@@ -53,13 +51,25 @@ extern const float hal_control_t_s;
 /* Public interface */
 void hal_reset(void);
 void hal_set_pwm_state(enum hal_pwm_state_t state);
-enum hal_status_t hal_transmit_can_message(const CANMessage& message);
+enum hal_status_t hal_transmit_can_message(
+    uint8_t mailbox,
+    uint32_t message_id,
+    size_t length,
+    const uint8_t *message
+);
+enum hal_status_t hal_receive_can_message(
+    uint8_t fifo,
+    uint8_t *filter_id,
+    uint32_t *message_id,
+    size_t *length,
+    uint8_t *message
+);
+void hal_set_can_dtid_filter(uint8_t fifo, uint8_t filter_id, uint16_t dtid);
 void hal_disable_can_transmit(void);
 void hal_enable_can_transmit(void);
 float hal_get_temperature_degc(void);
 void hal_set_low_frequency_callback(hal_callback_t callback);
 void hal_set_high_frequency_callback(hal_control_callback_t callback);
-void hal_set_can_receive_callback(hal_can_callback_t callback);
 void hal_set_rc_pwm_callback(hal_pwm_callback_t callback);
 void hal_flash_protect(bool readonly);
 void hal_flash_erase(uint8_t *addr, size_t len);

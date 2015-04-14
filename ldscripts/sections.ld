@@ -46,20 +46,6 @@ ENTRY(_start)
 SECTIONS
 {
     /*
-    Bootloader stub for JTAG/SWD debuggigng -- remap interrupt vector to
-    application image location and jump to the application's reset handler
-    */
-    .bootloader_vector :
-    {
-        . = ALIGN(4);
-        KEEP(*(.bootloader_vector))
-        . = ALIGN(4);
-
-        FILL(0xDEADC0DE);
-        . = 0x2000;
-    } > FLASH
-
-    /*
      * For Cortex-M devices, the beginning of the startup code is stored in
      * the .isr_vector section, which goes to FLASH
      */
@@ -195,14 +181,6 @@ SECTIONS
      * initialise the .data section.
      */
     _sidata = _etext;
-
-    /* MEMORY_ARRAY */
-    /*
-    .ROarraySection :
-    {
-     	*(.ROarraySection .ROarraySection.*)
-    } > MEMORY_ARRAY
-    */
 
     /*
      * The initialised data section.
