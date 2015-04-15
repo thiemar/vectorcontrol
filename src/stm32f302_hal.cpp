@@ -1092,6 +1092,10 @@ enum hal_status_t hal_receive_can_message(
 ) {
     uint32_t data[2], i;
 
+    *message_id = 0u;
+    *length = 0u;
+    *filter_id = 0xFFu;
+
     /* Check if a message is pending */
     if (fifo == 0u && !(CAN1->RF0R & 3u)) {
         return HAL_STATUS_ERROR;

@@ -131,11 +131,6 @@ struct param_t flash_params[NUM_PARAMS] = {
     {PARAM_CONTROL_ACCEL_TIME, PARAM_TYPE_FLOAT, "control_accel_time",
         0.1f, 0.01f, 1.0f},
 
-    /* Data type ID of the custom ESC status message. */
-    {PARAM_CUSTOM_ESCCOMMAND_ID, PARAM_TYPE_INT,
-        "uavcan.dtid-thiemar.equipment.esc.Command",
-        700, 1, 2047},
-
     /*
     Interval in microseconds at which custom ESC status messages should be
     sent. Zero disables publication.
@@ -147,7 +142,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     /* Data type ID of the custom ESC status message. */
     {PARAM_CUSTOM_ESCSTATUS_ID, PARAM_TYPE_INT,
         "uavcan.dtid-thiemar.equipment.esc.Status",
-        700, 1, 2047},
+        768, 1, 1023},
 
     /*
     Interval in microseconds at which UAVCAN standard ESC status messages
@@ -226,7 +221,7 @@ struct param_t flash_params[NUM_PARAMS] = {
 
 
 inline static float _rad_per_s_from_rpm(float rpm, uint32_t num_poles) {
-    return rpm * 60.0f / (2.0f * (float)M_PI * (float)(num_poles >> 1u));
+    return rpm * (2.0f * (float)M_PI * (float)(num_poles >> 1u)) / 60.0f;
 }
 
 

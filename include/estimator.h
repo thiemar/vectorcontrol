@@ -18,6 +18,8 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+
+#include <cstring>
 #include "fixed.h"
 #include "park.h"
 #include "esc_assert.h"

@@ -1,0 +1,21 @@
+#
+# Thiemar ESC status.
+#
+
+float16[2] i_dq              # Ampere
+float16 i_setpoint           # Ampere
+
+float16[2] v_dq              # Volt
+float16[2] hfi_dq            # Ampere
+
+float16 consistency          # Normalized
+
+float16 vbus                 # Volt
+float16 temperature          # Kelvin
+
+float16 angle                # Normalized [0,1)
+
+int18 rpm
+int18 rpm_setpoint
+
+uint5 esc_index
