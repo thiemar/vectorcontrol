@@ -1,0 +1,7 @@
+#
+# Generic named parameter (key/value pair).
+#
+
+uint8[<=92] key
+
+uavcan.protocol.param.Value value

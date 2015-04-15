@@ -64,7 +64,12 @@ enum hal_status_t hal_receive_can_message(
     size_t *length,
     uint8_t *message
 );
-void hal_set_can_dtid_filter(uint8_t fifo, uint8_t filter_id, uint16_t dtid);
+void hal_set_can_dtid_filter(
+    uint8_t fifo,
+    uint8_t filter_id,
+    uint8_t transfer_type,
+    uint16_t dtid
+);
 void hal_disable_can_transmit(void);
 void hal_enable_can_transmit(void);
 float hal_get_temperature_degc(void);

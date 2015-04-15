@@ -1127,15 +1127,22 @@ enum hal_status_t hal_receive_can_message(
 }
 
 
-void hal_set_can_dtid_filter(uint8_t fifo, uint8_t filter_id, uint16_t dtid) {
+void hal_set_can_dtid_filter(
+    uint8_t fifo,
+    uint8_t filter_id,
+    uint8_t transfer_type,
+    uint16_t dtid
+) {
     uint32_t mask;
     mask = (1u << filter_id);
 
     CAN1->FMR |= 1u; /* Start init mode */
     CAN1->FA1R &= ~mask; /* Disable the filter */
     CAN1->FS1R |= mask; /* Enable 32-bit mode */
-    CAN1->sFilterRegister[filter_id].FR1 = dtid << 22u;
-    CAN1->sFilterRegister[filter_id].FR2 = 0xFFC00000u; /* Only DTID */
+    CAN1->sFilterRegister[filter_id].FR1 = (dtid << 22u) |
+                                           (transfer_type << 20u);
+    /* Mask matches only DTID and transfer type */
+    CAN1->sFilterRegister[filter_id].FR2 = 0xFFF00000u;
     CAN1->FM1R &= ~mask; /* Set to mask mode */
     if (fifo) {
         CAN1->FFA1R |= mask; /* FIFO 1 */

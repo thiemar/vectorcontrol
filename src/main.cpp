@@ -333,26 +333,26 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
 
 static void node_init(void) {
     hal_set_can_dtid_filter(
-        0u, UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
+        0u, UAVCAN_EQUIPMENT_ESC_RAWCOMMAND, MESSAGE_BROADCAST,
         uavcan::equipment::esc::RawCommand::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        0u, UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
+        0u, UAVCAN_EQUIPMENT_ESC_RPMCOMMAND, MESSAGE_BROADCAST,
         uavcan::equipment::esc::RPMCommand::DefaultDataTypeID);
 
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE,
+        1u, UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE, SERVICE_REQUEST,
         uavcan::protocol::param::ExecuteOpcode::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_PARAM_GETSET,
+        1u, UAVCAN_PROTOCOL_PARAM_GETSET, SERVICE_REQUEST,
         uavcan::protocol::param::GetSet::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE,
+        1u, UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE, SERVICE_REQUEST,
         uavcan::protocol::file::BeginFirmwareUpdate::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_GETNODEINFO,
+        1u, UAVCAN_PROTOCOL_GETNODEINFO, SERVICE_REQUEST,
         uavcan::protocol::GetNodeInfo::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_RESTARTNODE,
+        1u, UAVCAN_PROTOCOL_RESTARTNODE, SERVICE_REQUEST,
         uavcan::protocol::RestartNode::DefaultDataTypeID);
 }
 
