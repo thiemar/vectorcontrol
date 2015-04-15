@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014 - 2015 by Thiemar Pty Ltd
+Copyright (c) 2014 - 2015 Thiemar Pty Ltd
 
 This file is part of vectorcontrol.
 
