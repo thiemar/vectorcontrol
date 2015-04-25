@@ -97,6 +97,11 @@ public:
         StaticAssert<sizeof(uint8_t) == 1>::check();
     }
 
+    void reset() {
+        bit_offset_ = 0;
+        byte_cache_ = 0;
+    }
+
     /**
      * Write/read calls interpret bytes as bit arrays, 8 bits per byte, where the most
      * significant bits have lower index, i.e.:

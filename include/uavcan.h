@@ -77,8 +77,6 @@ class UAVCANTransferManager {
 
     void start_tx_(void) {
         tx_in_progress_ = true;
-        tx_offset_ = 0u;
-        tx_message_id_ = 0u;
     }
 
     uint8_t source_node_id_(uint32_t id) {
@@ -102,7 +100,8 @@ class UAVCANTransferManager {
     }
 
     uint32_t broadcast_message_id_(uint8_t transfer_id, uint16_t dtid) {
-        return (dtid << 19u) | (transfer_id & 0x7u);
+        return (dtid << 19u) | (MESSAGE_BROADCAST << 17u) |
+               (transfer_id & 0x7u);
     }
 
     uint32_t response_message_id_(uint32_t request_id) {
@@ -154,14 +153,16 @@ public:
                     frame_index_(id) == frame_index_(rx_message_id_) + 1u &&
                     transfer_id_(id) == transfer_id_(rx_message_id_)) {
                 offset = transfer_type_(id) == MESSAGE_BROADCAST ? 1u : 0u;
-                rx_buffer_.write(rx_buffer_.getSize(), &data[offset],
-                                 length - offset);
+                if (length > offset) {
+                    rx_buffer_.write(rx_buffer_.getMaxWritePos(),
+                                     &data[offset], length - offset);
+                }
                 rx_message_id_ = id;
 
                 if (last_frame_(id)) {
                     /* Validate the frame CRC; if invalid, clear the flag */
                     message_crc.add(rx_buffer_.getRawPtr(),
-                                    rx_buffer_.getSize());
+                                    rx_buffer_.getMaxWritePos());
 
                     if (message_crc.get() != rx_crc_) {
                         rx_message_id_ = 0u;
@@ -181,8 +182,11 @@ public:
                 rx_in_progress_ = true;
             }
             rx_buffer_.reset();
-            rx_buffer_.write(rx_buffer_.getSize(), &data[offset],
-                             length - offset);
+            rx_bitstream_.reset();
+            if (length > offset) {
+                rx_buffer_.write(rx_buffer_.getMaxWritePos(), &data[offset],
+                                 length - offset);
+            }
             rx_message_id_ = id;
         }
     }
@@ -205,7 +209,7 @@ public:
             }
 
             if (frame_index_(tx_message_id_) == 0u &&
-                    tx_buffer_.getSize() > 8u - offset) {
+                    tx_buffer_.getMaxWritePos() > 8u - offset) {
                 data[offset++] = (uint8_t)message_crc.get();
                 data[offset++] = (uint8_t)(message_crc.get() >> 8u);
             }
@@ -215,11 +219,14 @@ public:
             tx_offset_ += length;
             length += offset;
 
-            if (tx_offset_ == tx_buffer_.getSize()) {
-                /* Set last frame flag and reset the buffer */
+            if (tx_offset_ >= tx_buffer_.getMaxWritePos()) {
+                /* Set last frame flag */
                 id |= 8u;
                 tx_in_progress_ = false;
+                tx_offset_ = 0u;
+                tx_message_id_ = 0u;
                 tx_buffer_.reset();
+                tx_bitstream_.reset();
             } else {
                 /* Increment the frame index */
                 tx_message_id_ += 0x10u;
@@ -239,8 +246,8 @@ public:
         uint8_t transfer_id,
         const uavcan::protocol::NodeStatus& msg
     ) {
-        uavcan::protocol::NodeStatus::encode(msg, tx_codec_);
         start_tx_();
+        uavcan::protocol::NodeStatus::encode(msg, tx_codec_);
         tx_message_id_ = broadcast_message_id_(
             transfer_id, msg.DefaultDataTypeID);
     }
@@ -249,8 +256,8 @@ public:
         uint8_t transfer_id,
         const uavcan::equipment::esc::Status& msg
     ) {
-        uavcan::equipment::esc::Status::encode(msg, tx_codec_);
         start_tx_();
+        uavcan::equipment::esc::Status::encode(msg, tx_codec_);
         tx_message_id_ = broadcast_message_id_(
             transfer_id, msg.DefaultDataTypeID);
     }
@@ -260,50 +267,50 @@ public:
         uint16_t dtid,
         const thiemar::equipment::esc::Status& msg
     ) {
-        thiemar::equipment::esc::Status::encode(msg, tx_codec_);
         start_tx_();
+        thiemar::equipment::esc::Status::encode(msg, tx_codec_);
         tx_message_id_ = broadcast_message_id_(transfer_id, dtid);
     }
 
     void encode_executeopcode_response(
         const uavcan::protocol::param::ExecuteOpcode::Response& msg
     ) {
+        start_tx_();
         uavcan::protocol::param::ExecuteOpcode::Response::encode(
             msg, tx_codec_);
-        start_tx_();
         tx_message_id_ = response_message_id_(rx_message_id_);
     }
 
     void encode_getset_response(
         const uavcan::protocol::param::GetSet::Response& msg
     ) {
-        uavcan::protocol::param::GetSet::Response::encode(msg, tx_codec_);
         start_tx_();
+        uavcan::protocol::param::GetSet::Response::encode(msg, tx_codec_);
         tx_message_id_ = response_message_id_(rx_message_id_);
     }
 
     void encode_beginfirmwareupdate_response(
         const uavcan::protocol::file::BeginFirmwareUpdate::Response& msg
     ) {
+        start_tx_();
         uavcan::protocol::file::BeginFirmwareUpdate::Response::encode(
             msg, tx_codec_);
-        start_tx_();
         tx_message_id_ = response_message_id_(rx_message_id_);
     }
 
     void encode_getnodeinfo_response(
         const uavcan::protocol::GetNodeInfo::Response& msg
     ) {
-        uavcan::protocol::GetNodeInfo::Response::encode(msg, tx_codec_);
         start_tx_();
+        uavcan::protocol::GetNodeInfo::Response::encode(msg, tx_codec_);
         tx_message_id_ = response_message_id_(rx_message_id_);
     }
 
     void encode_restartnode_response(
         const uavcan::protocol::RestartNode::Response& msg
     ) {
-        uavcan::protocol::RestartNode::Response::encode(msg, tx_codec_);
         start_tx_();
+        uavcan::protocol::RestartNode::Response::encode(msg, tx_codec_);
         tx_message_id_ = response_message_id_(rx_message_id_);
     }
 

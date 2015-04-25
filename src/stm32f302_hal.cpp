@@ -54,7 +54,7 @@ PIN   PORT   NUMBER    FUNCTION
  22      A       12    CAN_TX
  23      A       13    SWDIO - debug access
  24      A       14    SWCLK - debug access
- 25      A       15    -
+ 25      A       15    TIM2_CH1 - CAN RX timer
  26      B        3    TRACESWO - debug access
  27      B        4    -
  28      B        5    -

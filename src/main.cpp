@@ -382,6 +382,8 @@ static void __attribute__((noreturn)) node_run(
 
     custom_status_time = node_status_time = esc_status_time = 0u;
 
+    wants_bootloader_restart = false;
+
     esc_index = (uint8_t)
         configuration.get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
     custom_status_dtid = (uint16_t)
@@ -832,16 +834,16 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     }
 
     /* Start PWM */
-    hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
+    //hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
 
     /*
     After starting the ISR tasks we are no longer able to access g_estimator,
     g_current_controller and g_speed_controller, since they're updated from
     the ISRs and not declared volatile.
     */
-    hal_set_high_frequency_callback(control_cb);
+    //hal_set_high_frequency_callback(control_cb);
     hal_set_low_frequency_callback(systick_cb);
-    hal_set_rc_pwm_callback(rc_pwm_cb);
+    //hal_set_rc_pwm_callback(rc_pwm_cb);
 
     node_init();
 
