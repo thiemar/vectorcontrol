@@ -18,19 +18,18 @@
 # vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import can
 import cgi
+import sys
+import code
 import json
 import stat
 import time
 import math
-import flash
 import struct
 import datetime
 import functools
 import tornado.web
 import collections
-import ConfigParser
 import logging as log
 import tornado.ioloop
 import tornado.netutil
@@ -41,15 +40,12 @@ import tornado.httpserver
 from optparse import OptionParser, OptionGroup
 
 
-NODE_STATUS_TRANSFER_ID = 0
-UAVCAN_NODESTATUS_ID = 550
+sys.path.insert(0, "/Users/bendyer/Projects/pyuavcan/")
 
 
-CAN_COMMAND_SETPOINT_ID = 0x740
-CAN_STATUS_CONTROLLER_ID = 0x730
-CAN_STATUS_MEASUREMENT_ID = 0x731
-CAN_STATUS_VOLTAGE_ID = 0x733
-CAN_STATUS_HFI_ID = 0x734
+import uavcan
+import uavcan.node
+import uavcan.handlers
 
 
 NOTIFY_SOCKETS = set()
@@ -67,36 +63,6 @@ UAVCAN_NODE_HFI_QUEUE = collections.defaultdict(collections.deque)
 
 
 SETPOINT_SCHEDULE_TIMER = 0
-
-
-@tornado.gen.coroutine
-def read_node_configuration(conn, node_id):
-    "Send a configuration read message for each parameter, 0.01 s apart."
-    param_indexes = list(v for s in flash.CAN_CONFIG_INDEXES.itervalues()
-                           for k, v in s.iteritems())
-    for index in param_indexes:
-        command = struct.pack("<BBBBf", node_id, index, 0, 0, 0)
-        conn.send(flash.CAN_COMMAND_CONFIG_ID, command)
-        yield tornado.gen.Task(tornado.ioloop.IOLoop.instance().call_later,
-                               0.01)
-
-
-def param_index_from_param_name(name):
-    """Obtain a parameter index given a parameter name in the format
-    <section>_<param>."""
-    section, _, name = name.partition("_")
-    return flash.CAN_CONFIG_INDEXES[section][name]
-
-
-def param_name_from_param_index(index):
-    """Obtain a parameter name in the format <section>_<param> given a
-    parameter index."""
-    for section_name, params in flash.CAN_CONFIG_INDEXES.iteritems():
-        for param_name, param_index in params.iteritems():
-            if param_index == index:
-                return section_name + "_" + param_name
-
-    raise KeyError("Unknown parameter index " + str(index))
 
 
 def send_all(message):
@@ -194,14 +160,6 @@ def handle_can_message(conn, message):
             queue[node_id].clear()
 
 
-def send_node_status(conn):
-    global NODE_STATUS_TRANSFER_ID
-    message_id = can.uavcan_broadcast_id(NODE_STATUS_TRANSFER_ID,
-                                         UAVCAN_NODESTATUS_ID)
-    conn.send(message_id, "\x00\x00\x00\x00", True)
-    NODE_STATUS_TRANSFER_ID += 1
-
-
 def handle_timer(conn):
     """Send setpoint update messages for each connected node based on the
     timer interval."""
@@ -230,14 +188,24 @@ def handle_timer(conn):
 
         # log.debug("handle_timer(): node {0} setpoint {1}".format(node_id, setpoint))
 
-        message = struct.pack("<BBhh", node_id, int(mode), int(setpoint),
-                              int(setpoint))
-        conn.send(CAN_COMMAND_SETPOINT_ID, message)
+        #message = struct.pack("<BBhh", node_id, int(mode), int(setpoint),
+        #                      int(setpoint))
+        #conn.send(CAN_COMMAND_SETPOINT_ID, message)
+
+
+class MessageRelayHandler(uavcan.node.MessageHandler):
+    def on_message(self, message):
+        send_all({
+            "datatype": message.type.get_normalized_definition(),
+            "node_id": self.transfer.source_node_id,
+            "payload": message
+        })
 
 
 class CANHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, *args, **kwargs):
         self.can = kwargs.pop("can", None)
+        self.node = kwargs.pop("node", None)
         super(CANHandler, self).__init__(*args, **kwargs)
 
     def check_origin(self, origin):
@@ -341,9 +309,9 @@ if __name__ == "__main__":
     log.basicConfig(format="%(asctime)-15s %(message)s", level=log.DEBUG)
 
     parser = OptionParser(
-        usage="usage: %prog [options] [CAN_DEVICE]",
+        usage="usage: %prog [options] CAN_DEVICE",
         version="%prog 1.0", add_help_option=False,
-        description="S2740VC management UI server")
+        description="UAVCAN management UI server")
 
     parser.add_option("--help", action="help",
                       help="show this help message and exit")
@@ -352,49 +320,63 @@ if __name__ == "__main__":
     parser.add_option("--debug", action="store_true", dest="debug",
                       help="run in debug mode (restart on code changes)")
 
-    cmd_group = OptionGroup(parser, "Network Options")
+    cmd_group = OptionGroup(parser, "Network options")
     cmd_group.add_option("-p", "--port", type="int", dest="port", default=80,
                          help="listen for HTTP requests on PORT")
 
+    cmd_group = OptionGroup(parser, "CAN options")
+    cmd_group.add_option("-n", "--node-id", dest="node_id", default=127,
+                         help="run master with NODE_ID",
+                         metavar="NODE_ID")
+    cmd_group.add_option("-s", "--bus-speed", dest="bus_speed",
+                         default=1000000, help="set CAN bus speed",
+                         metavar="NODE_ID")
+
+    cmd_group = OptionGroup(parser, "UAVCAN options")
+    cmd_group.add_option("--dsdl", dest="dsdl_path", action="append",
+                         metavar="PATH", help="load DSDL files from PATH")
+
     options, args = parser.parse_args()
 
-    asset_dir = "assets" #pkg_resources.resource_filename("ui", "assets")
+    uavcan.load_dsdl(options.dsdl_path)
 
-    if len(args):
-        can_dev = can.CAN(args[0])
-        can_dev.open()
-    else:
-        # Stub out the CAN device
-        class DummyCAN(object):
-            def __init__(self):
-                pass
-
-            def send(self, *args, **kwargs):
-                pass
-
-            def add_to_ioloop(self, *args, **kwargs):
-                pass
-
-        can_dev = DummyCAN()
-
-    app = tornado.web.Application([
-            (r"/can", CANHandler, {"can": can_dev}),
-            (r"/", UI, {"environment": None}),
-        ],
-        debug=options.debug, gzip=True, template_path=asset_dir,
-        static_path=asset_dir)
-    http_server = tornado.httpserver.HTTPServer(app)
-    http_server.listen(options.port)
     ioloop = tornado.ioloop.IOLoop.instance()
 
-    can_dev.add_to_ioloop(ioloop, callback=handle_can_message)
-    can_node_status_timer = tornado.ioloop.PeriodicCallback(
-        functools.partial(send_node_status, can_dev),
-        500, io_loop=ioloop)
-    can_node_status_timer.start()
-    can_setpoint_schedule_timer = tornado.ioloop.PeriodicCallback(
-        functools.partial(handle_timer, can_dev),
-        10, io_loop=ioloop)
-    can_setpoint_schedule_timer.start()
+    if len(args):
+        node = uavcan.node.Node([
+            # Server implementation
+            (uavcan.protocol.NodeStatus, uavcan.handlers.NodeStatusHandler,
+                {"new_node_callback": None}),
+            (uavcan.protocol.dynamic_node_id.Allocation,
+                uavcan.handlers.DynamicNodeIDAllocationHandler,
+                {"dynamic_id_range": (50, 100)}),
+            (uavcan.protocol.file.GetInfo,
+                uavcan.handlers.FileGetInfoHandler),
+            (uavcan.protocol.file.Read, uavcan.handlers.FileReadHandler),
+            (uavcan.protocol.debug.LogMessage,
+                uavcan.handlers.DebugLogMessageHandler),
+            # CAN<->WebSocket bridge
+            (uavcan.protocol.NodeStatus, MessageRelayHandler),
+            (uavcan.equipment.esc.Status, MessageRelayHandler),
+            (uavcan.thirdparty.thiemar.equipment.esc.Status,
+                    MessageRelayHandler)
+        ], node_id=int(options.node_id))
+        node.listen(args[0], baudrate=int(options.bus_speed))
+        #can_setpoint_schedule_timer = tornado.ioloop.PeriodicCallback(
+        #    functools.partial(handle_timer, can_dev),
+        #    10, io_loop=ioloop)
+        #can_setpoint_schedule_timer.start()
+    else:
+        log.info("No CAN device specified; starting interface only")
+        node = None
+
+    app = tornado.web.Application([
+            (r"/can", CANHandler, {"node": node}),
+            (r"/", UI, {"environment": None}),
+        ],
+        debug=options.debug, gzip=True, template_path="assets",
+        static_path="assets")
+    http_server = tornado.httpserver.HTTPServer(app)
+    http_server.listen(options.port)
 
     ioloop.start()

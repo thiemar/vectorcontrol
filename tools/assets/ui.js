@@ -20,10 +20,9 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 NodeList.prototype.forEach = Array.prototype.forEach;
 HTMLCollection.prototype.forEach = Array.prototype.forEach;
 
-var ws, deviceCurrentData = {}, deviceSpeedData = {}, deviceHFIData = {},
-    deviceOutputVoltageData = {},
-    deviceCurrentCharts = {}, deviceSpeedCharts = {}, deviceHFICharts = {},
-    deviceVoltageTempCharts = {}, deviceOutputVoltageCharts = {},
+var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
+    deviceHFICharts = {}, deviceVoltageTempCharts = {},
+    deviceOutputVoltageCharts = {},
     lastUpdate = null;
 
 function connect() {
@@ -63,83 +62,55 @@ function connect() {
         }
 
         /* Process message data */
-        if (message.uptime) {
-            /* Node status (UAVCAN) -- display the new uptime */
-            nodeUi.querySelector("span.node-uptime").textContent = message.uptime;
-        } else if (message.param_name) {
+        if (message.datatype == "uavcan.protocol.NodeStatus") {
+            /* Node status -- display the new uptime and status code */
+            nodeUi.querySelector("span.node-uptime").textContent =
+                message.payload.uptime_sec;
+            nodeUi.querySelector("span.node-status").textContent = {
+                0: "OK",
+                1: "initializing",
+                2: "warning",
+                3: "critical",
+                15: "offline"
+            }[message.payload.status_code];
+        } else if (message.datatype == "uavcan.protocol.param.GetSet") {
             /*
             Parameter value update -- set the corresponding input to the new
             value, and update the chart scaling if necessary.
             */
-            if (message.param_name == "pwm_ctl_mode") {
-                nodeUi.querySelector("select[name=" + message.param_name + "]"
-                    ).selectedIndex = message.value;
+            if (message.payload.name == "pwm_ctl_mode") {
+                nodeUi.querySelector("select[name=" + message.payload.name + "]"
+                    ).selectedIndex = message.payload.value;
             } else {
-                nodeUi.querySelector("input[name=" + message.param_name + "]"
-                    ).value = parseFloat(message.value).toPrecision(4);
+                nodeUi.querySelector("input[name=" + message.payload.name + "]"
+                    ).value = parseFloat(message.payload.value).toPrecision(4);
             }
 
-            updateCurrentChart(nodeUi, deviceCurrentData[message.node_id] || []);
-            updateSpeedChart(nodeUi, deviceSpeedData[message.node_id] || []);
-            updateOutputVoltageChart(nodeUi, deviceOutputVoltageData[message.node_id] || []);
-        } else if (message.current) {
+            updateCurrentChart(nodeUi, deviceData[message.node_id] || []);
+            updateSpeedChart(nodeUi, deviceData[message.node_id] || []);
+            updateOutputVoltageChart(nodeUi,
+                                     deviceData[message.node_id] || []);
+        } else if (message.datatype == "thiemar.equipment.esc.Status") {
             /*
-            Current measurement data -- add it to the measurement array,
-            removing old data if the total length is more than 1500 samples
-            (30 seconds * 50 Hz). Update the current chart once done.
+            Measurement data -- add it to the measurement array, removing old
+            data if the total length is more than 1500 samples
+            (30 seconds * 50 Hz). Update the charts once done.
             */
-            if (!deviceCurrentData[message.node_id]) {
-                deviceCurrentData[message.node_id] = [];
+            if (!deviceData[message.node_id]) {
+                deviceData[message.node_id] = [];
             }
-            Array.prototype.push.apply(deviceCurrentData[message.node_id],
-                                       message.current);
-            if (deviceCurrentData[message.node_id].length > 1500) {
-                deviceCurrentData[message.node_id] =
-                    deviceCurrentData[message.node_id].slice(
-                        deviceCurrentData[message.node_id].length - 1500);
+            Array.prototype.push.apply(deviceData[message.node_id],
+                                       message.payload);
+            if (deviceData[message.node_id].length > 1500) {
+                deviceData[message.node_id] =
+                    deviceData[message.node_id].slice(
+                        deviceData[message.node_id].length - 1500);
             }
-            updateCurrentChart(nodeUi, deviceCurrentData[message.node_id]);
-        } else if (message.speed) {
-            /* Speed measurement data -- same deal as for current data */
-            if (!deviceSpeedData[message.node_id]) {
-                deviceSpeedData[message.node_id] = [];
-            }
-            Array.prototype.push.apply(deviceSpeedData[message.node_id],
-                                       message.speed);
-            if (deviceSpeedData[message.node_id].length > 1500) {
-                deviceSpeedData[message.node_id] =
-                    deviceSpeedData[message.node_id].slice(
-                        deviceSpeedData[message.node_id].length - 1500);
-            }
-            updateSpeedChart(nodeUi, deviceSpeedData[message.node_id]);
-            updateVoltageTempChart(nodeUi, deviceSpeedData[message.node_id]);
-        } else if (message.hfi) {
-            /* HFI measurement data */
-            if (!deviceHFIData[message.node_id]) {
-                deviceHFIData[message.node_id] = [];
-            }
-            Array.prototype.push.apply(deviceHFIData[message.node_id],
-                                       message.hfi);
-            if (deviceHFIData[message.node_id].length > 1500) {
-                deviceHFIData[message.node_id] =
-                    deviceHFIData[message.node_id].slice(
-                        deviceHFIData[message.node_id].length - 1500);
-            }
-            updateHFIChart(nodeUi, deviceHFIData[message.node_id]);
-        } else if (message.voltage) {
-            /* Output voltage and estimator consistency data */
-            if (!deviceOutputVoltageData[message.node_id]) {
-                deviceOutputVoltageData[message.node_id] = [];
-            }
-            Array.prototype.push.apply(deviceOutputVoltageData[message.node_id],
-                                       message.voltage);
-            if (deviceOutputVoltageData[message.node_id].length > 1500) {
-                deviceOutputVoltageData[message.node_id] =
-                    deviceOutputVoltageData[message.node_id].slice(
-                        deviceOutputVoltageData[message.node_id].length - 1500);
-            }
-            updateOutputVoltageChart(
-                nodeUi, deviceOutputVoltageData[message.node_id]);
+            updateCurrentChart(nodeUi, deviceData[message.node_id]);
+            updateSpeedChart(nodeUi, deviceData[message.node_id]);
+            updateVoltageTempChart(nodeUi, deviceData[message.node_id]);
+            updateHFIChart(nodeUi, deviceData[message.node_id]);
+            updateOutputVoltageChart(nodeUi, deviceData[message.node_id]);
         }
     }
 
@@ -582,7 +553,7 @@ function updateVoltageTempChart(device, data) {
     /* Temperature line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y1(d.temperature); });
+        .y(function(d) { return chart.y1(d.temperature - 273.15); });
 
     chart.chart.select(".temperature")
         .datum(data)
@@ -612,7 +583,7 @@ function updateCurrentChart(device, data) {
     /* Id line */
     current = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(d.i_d); });
+        .y(function(d) { return chart.y(d.i_dq[0]); });
 
     chart.chart.select(".current-id")
         .datum(data)
@@ -621,7 +592,7 @@ function updateCurrentChart(device, data) {
     /* Iq line */
     current = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y(d.i_q); });
+        .y(function(d) { return chart.y(d.i_dq[1]); });
 
     chart.chart.select(".current-iq")
         .datum(data)
@@ -669,7 +640,7 @@ function updateHFIChart(device, data) {
     /* D current line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_d)); });
+        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_dq[0])); });
 
     chart.chart.select(".hfi-d")
         .datum(data)
@@ -678,7 +649,7 @@ function updateHFIChart(device, data) {
     /* Q current line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_q)); });
+        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_dq[1])); });
 
     chart.chart.select(".hfi-q")
         .datum(data)
@@ -718,7 +689,7 @@ function updateOutputVoltageChart(device, data) {
     /* Vd line */
     voltage = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y0(d.v_d); });
+        .y(function(d) { return chart.y0(d.v_dq[0]); });
 
     chart.chart.select(".voltage-vd")
         .datum(data)
@@ -727,7 +698,7 @@ function updateOutputVoltageChart(device, data) {
     /* Vq line */
     voltage = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 50.0); })
-        .y(function(d) { return chart.y0(d.v_q); });
+        .y(function(d) { return chart.y0(d.v_dq[1]); });
 
     chart.chart.select(".voltage-vq")
         .datum(data)
@@ -816,11 +787,25 @@ function updateSetpointSchedule(device) {
     }));
 }
 
+function selectAncestor(elem, selector) {
+    elem = elem.parentNode;
+    while (elem.parentNode != document) {
+        if (elem.matches(selector)) {
+            return elem;
+        } else {
+            elem = elem.parentNode;
+        }
+    }
+    return null;
+}
+
 function setupEventListeners() {
-    var content, nodeUi;
+    var content;
 
     content = document.getElementById("content");
     content.addEventListener("change", function(event) {
+        var nodeUi;
+
         if (event.target.classList.contains("configuration")) {
             nodeUi = event.target.parentElement.parentElement.parentElement
                                  .parentElement.parentElement;
@@ -858,6 +843,8 @@ function setupEventListeners() {
     });
 
     content.addEventListener("click", function(event) {
+        var nodeUi;
+
         if (event.target.classList.contains("apply-configuration")) {
             nodeUi = event.target.parentElement.parentElement.parentElement
                                  .parentElement;
@@ -865,7 +852,7 @@ function setupEventListeners() {
                 param_apply: true,
                 node_id: parseInt(nodeUi.id.split("-")[1], 10)
             }));
-        } else if (event.target.classList.contains("motor-start")) {
+        } else if (event.target.classList.contains("esc-start")) {
             nodeUi = event.target.parentElement.parentElement.parentElement
                                  .parentElement;
             nodeUi.querySelectorAll("input, select").forEach(function(elem) {
@@ -880,7 +867,7 @@ function setupEventListeners() {
                 motor_running: true,
                 node_id: parseInt(nodeUi.id.split("-")[1], 10)
             }));
-        } else if (event.target.classList.contains("motor-stop")) {
+        } else if (event.target.classList.contains("esc-stop")) {
             nodeUi = event.target.parentElement.parentElement.parentElement
                                  .parentElement;
             nodeUi.querySelectorAll("input, select").forEach(function(elem) {
@@ -895,6 +882,10 @@ function setupEventListeners() {
                 motor_running: false,
                 node_id: parseInt(nodeUi.id.split("-")[1], 10)
             }));
+        } else if (nodeUi = selectAncestor(event.target, ".device-header")) {
+            nodeUi.classList.toggle("collapsed");
+            nodeUi.parentElement.querySelector(".device-detail")
+                  .classList.toggle("hidden");
         }
     });
 }
