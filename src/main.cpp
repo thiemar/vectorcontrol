@@ -481,7 +481,7 @@ void can_rx_cb(const CANMessage& message) {
     } debug_message;
     UAVCANMessage m(message);
     CANMessage reply;
-    float temp;
+    float temp, min_speed;
     uint8_t param_index;
 
     /* Enable transmission */
@@ -512,11 +512,18 @@ void can_rx_cb(const CANMessage& message) {
                             break;
                         case CONTROLLER_SPEED:
                             temp = (float)debug_message.setpoint.rpm_setpoint;
-                            if (temp < 0.0f || temp > 0.0f) {
-                                g_controller_mode = CONTROLLER_SPEED;
+                            if (std::abs(temp) > 100.0f) {
+                                min_speed =
+                                    0.5f / g_motor_params.phi_v_s_per_rad;
                                 temp *= (1.0f / 60.0f) *
-                                        (float)g_motor_params.num_poles *
-                                        (float)M_PI;
+                                    (float)g_motor_params.num_poles *
+                                    (float)M_PI;
+                                if (temp > 0.0f && temp < min_speed) {
+                                    temp = min_speed;
+                                } else if (temp < 0.0f && temp > -min_speed) {
+                                    temp = -min_speed;
+                                }
+                                g_controller_mode = CONTROLLER_SPEED;
                                 g_speed_controller_setpoint = temp;
                                 g_input_source = INPUT_CAN;
                                 g_last_can = g_time;

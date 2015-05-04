@@ -19,6 +19,5 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 MEMORY
 {
   RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 16K
-  CCMRAM (xrw) : ORIGIN = 0x10000000, LENGTH = 0K
   FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 64K
 }

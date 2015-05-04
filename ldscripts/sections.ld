@@ -279,11 +279,6 @@ SECTIONS
 	    . = ALIGN(4);
     } > RAM
 
-	.bss_CCMRAM : ALIGN(4)
-	{
-		*(.bss.CCMRAM .bss.CCMRAM.*)
-	} > CCMRAM
-
     .fill _sidata + (_edata - _sdata) :
     {
         FILL(0xDEADC0DE);
@@ -296,7 +291,8 @@ SECTIONS
     {
         . = ALIGN(4);
         *(.paramflash .paramflash.*)
-        . = ALIGN(4);
+        FILL(0x00000000);
+        . = ALIGN(4096);
     } > FLASH
 
     /* Bootloader code section */

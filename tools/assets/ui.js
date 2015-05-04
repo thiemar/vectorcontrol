@@ -68,7 +68,8 @@ function connect() {
             Parameter value update -- set the corresponding input to the new
             value, and update the chart scaling if necessary.
             */
-            if (message.param_name == "pwm_ctl_mode") {
+            if (message.param_name == "pwm_control_mode" ||
+                    message.param_name == "pwm_control_curve") {
                 nodeUi.querySelector("select[name=" + message.param_name + "]"
                     ).selectedIndex = message.value;
             } else {

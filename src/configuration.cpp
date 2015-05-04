@@ -42,7 +42,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_CURRENT_LIMIT, "motor_current_limit",
-        1.0f, 10.0f, 1.0f, 40.0f},
+        2.0f, 10.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -75,7 +75,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     accuracy will help control performance but a 20% error is fine.
     */
     {PARAM_MOTOR_KV, "motor_kv",
-        850.0f, 850.0f, 100.0f, 5000.0f},
+        935.0f, 935.0f, 100.0f, 5000.0f},
 
     /*
     Acceleration torque limit in amps. Determines the maximum difference
@@ -88,7 +88,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     control_accel_gain.
     */
     {PARAM_CONTROL_ACCEL_TORQUE_MAX, "control_accel_torque_max",
-        2.0f, 2.0f, 0.1f, 40.0f},
+        3.0f, 3.0f, 0.1f, 40.0f},
 
     /*
     Load torque in amps. This is a target value for torque at full throttle,
@@ -113,7 +113,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     the overall current limits and load inertia.
     */
     {PARAM_CONTROL_ACCEL_TIME, "control_accel_time",
-        0.1f, 0.1f, 0.01f, 1.0f},
+        0.01f, 0.01f, 0.001f, 1.0f},
 
     /*
     Interval in seconds at which the UAVCAN standard ESC status message should
@@ -181,20 +181,20 @@ struct param_t flash_params[NUM_PARAMS] = {
     setpoint being proportional to the square of the throttle.
     */
     {PARAM_PWM_CONTROL_CURVE, "pwm_control_curve",
-        1.0f, 1.0f, 0.5f, 2.0f},
+        2.0f, 1.0f, 0.5f, 2.0f},
 
     /* Determines the setpoint for the minimum valid throttle value. */
     {PARAM_PWM_CONTROL_MIN, "pwm_control_min",
-        0.0f, 0.0f, 0.0f, 40000.0f},
+        1000.0f, 0.0f, 0.0f, 40000.0f},
 
     /* Determines the setpoint for the maximum valid throttle value. */
     {PARAM_PWM_CONTROL_MAX, "pwm_control_max",
-        0.0f, 0.0f, 0.0f, 40000.0f},
+        10000.0f, 0.0f, 0.0f, 40000.0f},
 };
 
 
 inline static float _rad_per_s_from_rpm(float rpm, uint32_t num_poles) {
-    return rpm * 60.0f / (2.0f * (float)M_PI * (float)(num_poles >> 1u));
+    return rpm / 60.0f * (2.0f * (float)M_PI * (float)(num_poles >> 1u));
 }
 
 
@@ -214,8 +214,8 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
 
     params.rs_r = params_[PARAM_MOTOR_RS].value;
     params.ls_h = params_[PARAM_MOTOR_LS].value;
-    params.phi_v_s_per_rad =
-        _rad_per_s_from_rpm(1.0f / params_[PARAM_MOTOR_KV].value,
+    params.phi_v_s_per_rad = 1.0f /
+        _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV].value,
                             params.num_poles);
 }
 
