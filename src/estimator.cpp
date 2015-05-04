@@ -33,7 +33,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 
 const float g_process_noise[2] = { 20.0f, 1e-5f };
-const float g_measurement_noise[2] = { 0.005f, 0.005f };
+const float g_measurement_noise[2] = { 0.02f, 0.02f };
 
 
 void __attribute__((optimize("O3")))

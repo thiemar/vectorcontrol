@@ -243,8 +243,8 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
 
     params.rs_r = params_[PARAM_MOTOR_RS];
     params.ls_h = params_[PARAM_MOTOR_LS];
-    params.phi_v_s_per_rad =
-        _rad_per_s_from_rpm(1.0f / params_[PARAM_MOTOR_KV], params.num_poles);
+    params.phi_v_s_per_rad = 1.0f /
+        _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV], params.num_poles);
 }
 
 
