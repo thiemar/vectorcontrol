@@ -186,7 +186,7 @@ control_cb(
     float vbus_v
 ) {
     float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
-          v_ab_v[2];
+          v_ab_v[2], min_speed, max_speed;
     struct motor_state_t motor_state;
     enum controller_mode_t controller_mode;
 
@@ -217,24 +217,51 @@ control_cb(
         readings[0] = readings[1] = 0.0f;
     } else if (g_estimator.is_converged()) {
         /* Update the speed controller setpoint */
-        if (controller_mode == CONTROLLER_TORQUE ||
-                controller_mode == CONTROLLER_STOPPING) {
+        if (controller_mode == CONTROLLER_TORQUE) {
+            /*
+            In torque control mode, the torque input is used to limit the
+            speed controller's output, and the speed controller setpoint
+            always requests acceleration or deceleration in the direction of
+            the requested torque.
+            */
+            min_speed = g_motor_params.min_speed_rad_per_s;
+            max_speed = g_motor_params.max_speed_rad_per_s;
+            speed_setpoint = motor_state.angular_velocity_rad_per_s +
+                             (g_current_controller_setpoint > 0.0f ?
+                                min_speed : -min_speed);
+            if (speed_setpoint > max_speed) {
+                speed_setpoint = max_speed;
+            } else if (speed_setpoint < -max_speed) {
+                speed_setpoint = -max_speed;
+            }
+            g_speed_controller_setpoint = speed_setpoint;
+            g_speed_controller.set_current_limit_a(
+                std::abs(motor_state.angular_velocity_rad_per_s) > min_speed ?
+                    std::abs(g_current_controller_setpoint) :
+                    g_motor_params.max_current_a);
+        } else if (controller_mode == CONTROLLER_STOPPING) {
+            /*
+            When stopping, the speed controller setpoint tracks the current
+            angular velocity
+            */
             speed_setpoint = motor_state.angular_velocity_rad_per_s;
             g_speed_controller_setpoint = speed_setpoint;
+            g_speed_controller.set_current_limit_a(g_motor_params.max_current_a);
         } else {
             speed_setpoint = g_speed_controller_setpoint;
+            g_speed_controller.set_current_limit_a(g_motor_params.max_current_a);
         }
         g_speed_controller.set_setpoint(speed_setpoint);
 
         /*
         Update the current controller with the output of the speed controller
-        when in speed control mode.
+        when in speed control mode, or a constant opposing torque when
+        stopping.
         */
         current_setpoint = g_speed_controller.update(motor_state);
-        if (controller_mode == CONTROLLER_TORQUE ||
-                controller_mode == CONTROLLER_STOPPING) {
+        if (controller_mode == CONTROLLER_STOPPING) {
             current_setpoint = g_current_controller_setpoint;
-        } else {
+        } else if (controller_mode == CONTROLLER_SPEED) {
             g_current_controller_setpoint = current_setpoint;
         }
 
@@ -451,6 +478,8 @@ bool can_write_flash_command_cb(void) {
 
 
 bool can_esc_command_cb(enum uavcan_data_type_id_t type, float value) {
+    float speed, max_speed;
+
     if (value < 0.0f || value > 0.0f) {
         if (type == UAVCAN_RAWCOMMAND) {
             g_controller_mode = CONTROLLER_TORQUE;
@@ -458,9 +487,16 @@ bool can_esc_command_cb(enum uavcan_data_type_id_t type, float value) {
                 g_motor_params.max_current_a * value * (1.0f / 8192.0f);
         } else if (type == UAVCAN_RPMCOMMAND) {
             g_controller_mode = CONTROLLER_SPEED;
-            g_speed_controller_setpoint =
-                value * (1.0f / 60.0f) * (float)g_motor_params.num_poles *
-                (float)M_PI;
+            speed = value * (1.0f / 60.0f) * (float)g_motor_params.num_poles *
+                    (float)M_PI;
+            max_speed = g_motor_params.max_speed_rad_per_s;
+            if (speed > 0.0f && speed > max_speed) {
+                g_speed_controller_setpoint = max_speed;
+            } else if (speed < 0.0f && speed < -max_speed) {
+                g_speed_controller_setpoint = -max_speed;
+            } else {
+                g_speed_controller_setpoint = speed;
+            }
         }
 
         g_input_source = INPUT_UAVCAN;
@@ -481,7 +517,7 @@ void can_rx_cb(const CANMessage& message) {
     } debug_message;
     UAVCANMessage m(message);
     CANMessage reply;
-    float temp, min_speed;
+    float temp, min_speed, max_speed;
     uint8_t param_index;
 
     /* Enable transmission */
@@ -514,14 +550,24 @@ void can_rx_cb(const CANMessage& message) {
                             temp = (float)debug_message.setpoint.rpm_setpoint;
                             if (std::abs(temp) > 100.0f) {
                                 min_speed =
-                                    0.5f / g_motor_params.phi_v_s_per_rad;
+                                    g_motor_params.min_speed_rad_per_s;
+                                max_speed =
+                                    g_motor_params.max_speed_rad_per_s;
                                 temp *= (1.0f / 60.0f) *
                                     (float)g_motor_params.num_poles *
                                     (float)M_PI;
-                                if (temp > 0.0f && temp < min_speed) {
-                                    temp = min_speed;
-                                } else if (temp < 0.0f && temp > -min_speed) {
-                                    temp = -min_speed;
+                                if (temp > 0.0f) {
+                                    if (temp < min_speed) {
+                                        temp = min_speed;
+                                    } else if (temp > max_speed) {
+                                        temp = max_speed;
+                                    }
+                                } else if (temp < 0.0f) {
+                                    if (temp < -max_speed) {
+                                        temp = -max_speed;
+                                    } else if (temp > -min_speed) {
+                                        temp = -min_speed;
+                                    }
                                 }
                                 g_controller_mode = CONTROLLER_SPEED;
                                 g_speed_controller_setpoint = temp;
@@ -739,12 +785,18 @@ int __attribute__ ((externally_visible)) main(void) {
         motor_params.max_speed_rad_per_s = limit_speed;
     }
 
+    /* Determine minimum viable speed -- half the Kv rating */
+    motor_params.min_speed_rad_per_s =
+        std::min(0.5f / motor_params.phi_v_s_per_rad,
+                 motor_params.max_speed_rad_per_s);
+
     g_motor_params.rs_r = motor_params.rs_r;
     g_motor_params.ls_h = motor_params.ls_h;
     g_motor_params.phi_v_s_per_rad = motor_params.phi_v_s_per_rad;
     g_motor_params.max_voltage_v = motor_params.max_voltage_v;
     g_motor_params.max_current_a = motor_params.max_current_a;
     g_motor_params.max_speed_rad_per_s = motor_params.max_speed_rad_per_s;
+    g_motor_params.min_speed_rad_per_s = motor_params.min_speed_rad_per_s;
     g_motor_params.num_poles = motor_params.num_poles;
 
     g_pwm_params.control_offset = pwm_params.control_offset;

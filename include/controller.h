@@ -153,6 +153,10 @@ public:
         setpoint_rad_per_s_ = setpoint;
     }
 
+    void set_current_limit_a(float limit) {
+        current_limit_a_ = limit;
+    }
+
     void set_params(
         const struct motor_params_t& motor_params,
         const struct control_params_t& control_params,
