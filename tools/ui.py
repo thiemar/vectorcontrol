@@ -26,7 +26,9 @@ import stat
 import time
 import math
 import struct
+import binascii
 import datetime
+import cStringIO
 import functools
 import tornado.web
 import collections
@@ -40,7 +42,7 @@ import tornado.httpserver
 from optparse import OptionParser, OptionGroup
 
 
-sys.path.insert(0, "/Users/bendyer/Projects/pyuavcan/")
+sys.path.insert(0, "/Users/bendyer/Projects/ARM/workspace/pyuavcan/")
 
 
 import uavcan
@@ -305,6 +307,206 @@ class UI(tornado.web.RequestHandler):
         self.render("ui.html", environment=self.environment)
 
 
+class AppDescriptor(object):
+    """
+    UAVCAN firmware image descriptor format:
+    uint64_t signature (bytes [7:0] set to 'APDesc00' by linker script)
+    uint64_t image_crc (set to 0 by linker script)
+    uint32_t image_size (set to 0 by linker script)
+    uint32_t vcs_commit (set to 0 by linker script)
+    uint8_t version_major (set in source)
+    uint8_t version_minor (set in source)
+    uint8_t reserved[6] (set to 0xFF by linker script)
+    """
+
+    LENGTH = 8 + 8 + 4 + 4 + 1 + 1 + 6
+    SIGNATURE = b"APDesc00"
+    RESERVED =  b"\xFF" * 6
+
+    def __init__(self, bytes=None):
+        self.signature = AppDescriptor.SIGNATURE
+        self.image_crc = 0
+        self.image_size = 0
+        self.vcs_commit = 0
+        self.version_major = 0
+        self.version_minor = 0
+        self.reserved = AppDescriptor.RESERVED
+
+        if bytes:
+            try:
+                self.unpack(bytes)
+            except Exception:
+                raise ValueError("Invalid AppDescriptor: {0}".format(
+                                 binascii.b2a_hex(bytes)))
+
+    def pack(self):
+        return struct.pack("<8sQLLBB6s", self.signature, self.image_crc,
+                           self.image_size, self.vcs_commit,
+                           self.version_major, self.version_minor,
+                           self.reserved)
+
+    def unpack(self, bytes):
+        (self.signature, self.image_crc, self.image_size, self.vcs_commit,
+            self.version_major, self.version_minor, self.reserved) = \
+            struct.unpack("<8sQLLBB6s", bytes)
+
+        if not self.empty and not self.valid:
+            raise ValueError()
+
+    @property
+    def empty(self):
+        return (self.signature == AppDescriptor.SIGNATURE and
+                self.image_crc == 0 and self.image_size == 0 and
+                self.vcs_commit == 0 and
+                self.reserved == AppDescriptor.RESERVED)
+
+    @property
+    def valid(self):
+        return (self.signature == AppDescriptor.SIGNATURE and
+                self.image_crc != 0 and self.image_size > 0 and
+                self.reserved == AppDescriptor.RESERVED)
+
+
+class FirmwareImage(object):
+    def __init__(self, path_or_file, mode="r"):
+        if getattr(path_or_file, "read", None):
+            self._file = path_or_file
+            self._do_close = False
+        else:
+            self._file = open(path_or_file, mode + "b")
+            self._do_close = True
+
+        if "r" in mode:
+            self._contents = cStringIO.StringIO(self._file.read())
+        else:
+            self._contents = cStringIO.StringIO()
+        self._do_write = False
+
+        self._length = None
+        self._descriptor_offset = None
+        self._descriptor_bytes = None
+        self._descriptor = None
+
+    def __enter__(self):
+        return self
+
+    def __getattr__(self, attr):
+        if attr == "write":
+            self._do_write = True
+        return getattr(self._contents, attr)
+
+    def __iter__(self):
+        return iter(self._contents)
+
+    def __exit__(self, *args):
+        if self._do_write:
+            if getattr(self._file, "seek", None):
+                self._file.seek(0)
+            self._file.write(self._contents.getvalue())
+
+        if self._do_close:
+            self._file.close()
+
+    def _write_descriptor_raw(self):
+        # Seek to the appropriate location, write the serialized
+        # descriptor, and seek back.
+        prev_offset = self._contents.tell()
+        self._contents.seek(self._descriptor_offset)
+        self._contents.write(self._descriptor.pack())
+        self._contents.seek(prev_offset)
+
+    def write_descriptor(self):
+        # Set the descriptor's length and CRC to the values required for
+        # CRC computation
+        self.app_descriptor.image_size = self.length
+        self.app_descriptor.image_crc = 0
+
+        self._write_descriptor_raw()
+
+        # Update the descriptor's CRC based on the computed value and write
+        # it out again
+        self.app_descriptor.image_crc = self.crc
+
+        self._write_descriptor_raw()
+
+    @property
+    def crc(self):
+        MASK = 0xFFFFFFFFFFFFFFFF
+        POLY = 0x42F0E1EBA9EA3693
+
+        # Calculate the image CRC with the image_crc field in the app
+        # descriptor zeroed out.
+        crc_offset = self.app_descriptor_offset + len(AppDescriptor.SIGNATURE)
+        content = bytearray(self._contents.getvalue())
+        content[crc_offset:crc_offset + 8] = bytearray("\x00" * 8)
+
+        val = MASK
+        for byte in content:
+            val ^= (byte << 56) & MASK
+            for bit in range(8):
+                if val & (1 << 63):
+                    val = ((val << 1) & MASK) ^ POLY
+                else:
+                    val <<= 1
+
+        return (val & MASK) ^ MASK
+
+    @property
+    def length(self):
+        if not self._length:
+            # Find the length of the file by seeking to the end and getting
+            # the offset
+            prev_offset = self._contents.tell()
+            self._contents.seek(0, os.SEEK_END)
+            self._length = self._contents.tell()
+            self._contents.seek(prev_offset)
+
+        return self._length
+
+    @property
+    def app_descriptor_offset(self):
+        if not self._descriptor_offset:
+            # Save the current position
+            prev_offset = self._contents.tell()
+            # Check each byte in the file to see if a valid descriptor starts
+            # at that location. Slow, but not slow enough to matter.
+            offset = 0
+            while offset < self.length - AppDescriptor.LENGTH:
+                self._contents.seek(offset)
+                try:
+                    # If this throws an exception, there isn't a valid
+                    # descriptor at this offset
+                    AppDescriptor(self._contents.read(AppDescriptor.LENGTH))
+                except Exception:
+                    offset += 1
+                else:
+                    self._descriptor_offset = offset
+                    break
+            # Go back to the previous position
+            self._contents.seek(prev_offset)
+
+        return self._descriptor_offset
+
+    @property
+    def app_descriptor(self):
+        if not self._descriptor:
+            # Save the current position
+            prev_offset = self._contents.tell()
+            # Jump to the descriptor adn parse it
+            self._contents.seek(self.app_descriptor_offset)
+            self._descriptor_bytes = self._contents.read(AppDescriptor.LENGTH)
+            self._descriptor = AppDescriptor(self._descriptor_bytes)
+            # Go back to the previous offset
+            self._contents.seek(prev_offset)
+
+        return self._descriptor
+
+    @app_descriptor.setter
+    def app_descriptor(self, value):
+        self._descriptor = value
+
+
+
 if __name__ == "__main__":
     log.basicConfig(format="%(asctime)-15s %(message)s", level=log.DEBUG)
 
@@ -335,6 +537,8 @@ if __name__ == "__main__":
     cmd_group = OptionGroup(parser, "UAVCAN options")
     cmd_group.add_option("--dsdl", dest="dsdl_path", action="append",
                          metavar="PATH", help="load DSDL files from PATH")
+    cmd_group.add_option("--firmware", dest="firmware", metavar="PATH",
+                         help="use firmware images in PATH to update nodes")
 
     options, args = parser.parse_args()
 
@@ -342,17 +546,63 @@ if __name__ == "__main__":
 
     ioloop = tornado.ioloop.IOLoop.instance()
 
+    if options.firmware:
+        firmware_dir = os.path.dirname(options.firmware)
+    else:
+        firmware_dir = None
+
+    @gen.coroutine
+    def update_device_firmware(this_node, node_id, response):
+        log.debug("update_device_firmware({}, {!r})".format(node_id,
+                                                            response))
+        if not firmware_dir:
+            log.debug("update_device_firmware(): no firmware path specified")
+            return
+
+        # If the device is in the config file, make sure it has the
+        # software version listed for it in that file. If not, send a
+        # BeginFirmwareUpdate with the appropriate path.
+        firmware_filename = "{!s}.bin".format(response.name.decode())
+        firmware_path = os.path.join(firmware_dir, firmware_filename)
+        if os.path.exists(firmware_path):
+            with FirmwareImage(firmware_path, "rb") as f:
+                descriptor = f.app_descriptor
+                if f.app_descriptor.image_crc != \
+                        response.software_version.image_crc:
+                    # Version mismatch, update now.
+                    request = uavcan.protocol.file.BeginFirmwareUpdate(
+                        mode="request")
+                    request.source_node_id = this_node.node_id
+                    request.image_file_remote_path.path.encode(
+                        firmware_filename)
+                    response, response_transfer = \
+                        yield this_node.send_request(request, node_id)
+
+                    if response.error != response.ERROR_OK:
+                        msg = ("[MASTER] #{0:03d} rejected "
+                               "uavcan.protocol.file.BeginFirmwareUpdate " +
+                               "with error {1:d}: {2!s}").format(
+                               node_id, response.error,
+                               response.optional_error_message.encode())
+                        logging.error(msg)
+                else:
+                    log.debug("update_device_firmware(): device up to date")
+        else:
+            log.debug(("update_device_firmware(): no file for device " +
+                       "{!s}").format(response.name.decode()))
+
     if len(args):
         node = uavcan.node.Node([
             # Server implementation
             (uavcan.protocol.NodeStatus, uavcan.handlers.NodeStatusHandler,
-                {"new_node_callback": None}),
+                {"new_node_callback": update_device_firmware}),
             (uavcan.protocol.dynamic_node_id.Allocation,
                 uavcan.handlers.DynamicNodeIDAllocationHandler,
-                {"dynamic_id_range": (50, 100)}),
-            (uavcan.protocol.file.GetInfo,
-                uavcan.handlers.FileGetInfoHandler),
-            (uavcan.protocol.file.Read, uavcan.handlers.FileReadHandler),
+                {"dynamic_id_range": (2, 125)}),
+            (uavcan.protocol.file.GetInfo, uavcan.handlers.FileGetInfoHandler,
+                {"path": firmware_dir}),
+            (uavcan.protocol.file.Read, uavcan.handlers.FileReadHandler,
+                {"path": firmware_dir}),
             (uavcan.protocol.debug.LogMessage,
                 uavcan.handlers.DebugLogMessageHandler),
             # CAN<->WebSocket bridge
