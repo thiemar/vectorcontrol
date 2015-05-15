@@ -18,6 +18,7 @@
 # vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import re
 import cgi
 import sys
 import code
@@ -506,6 +507,28 @@ class FirmwareImage(object):
         self._descriptor = value
 
 
+def firmware_files_for_device(firmware_dir, device_name):
+    filename_regex = re.compile(
+        "^{!s}-([0-9]+).([0-9]+).([0-9a-fA-F]+).uavcan.bin$".format(
+        re.escape(device_name)))
+
+    available_files = []
+
+    for firmware_filename in os.listdir(firmware_dir):
+        match = filename_regex.match(firmware_filename)
+        if not match:
+            continue
+
+        sw_major, sw_minor = map(int, match.groups()[0:2])
+
+        firmware_path = os.path.join(firmware_dir, firmware_filename)
+        mtime = os.path.getmtime(firmware_path)
+        # Sort order is sw_major, sw_minor, mtime
+        available_files.append((sw_major, sw_minor, mtime, firmware_path))
+
+    # Sort descending
+    return sorted(available_files, reverse=True)
+
 
 if __name__ == "__main__":
     log.basicConfig(format="%(asctime)-15s %(message)s", level=log.DEBUG)
@@ -559,40 +582,45 @@ if __name__ == "__main__":
             log.debug("update_device_firmware(): no firmware path specified")
             return
 
-        # If the device is in the config file, make sure it has the
-        # software version listed for it in that file. If not, send a
-        # BeginFirmwareUpdate with the appropriate path.
-        firmware_filename = "{!s}".format(response.name.decode())
-        for file in os.listdir(firmware_dir):
-            if file.startswith(firmware_filename) and file.endswith("uavcan.bin"):
-                firmware_filename = file 
-                firmware_path = os.path.join(firmware_dir, firmware_filename)
-                if os.path.exists(firmware_path):
-                    with FirmwareImage(firmware_path, "rb") as f:
-                        descriptor = f.app_descriptor
-                        if f.app_descriptor.image_crc != \
-                                response.software_version.image_crc:
-                            # Version mismatch, update now.
-                            request = uavcan.protocol.file.BeginFirmwareUpdate(
-                                mode="request")
-                            request.source_node_id = this_node.node_id
-                            request.image_file_remote_path.path.encode(
-                                firmware_filename)
-                            response, response_transfer = \
-                                yield this_node.send_request(request, node_id)
-        
-                            if response.error != response.ERROR_OK:
-                                msg = ("[MASTER] #{0:03d} rejected "
-                                       "uavcan.protocol.file.BeginFirmwareUpdate " +
-                                       "with error {1:d}: {2!s}").format(
-                                       node_id, response.error,
-                                       response.optional_error_message.encode())
-                                logging.error(msg)
-                        else:
-                            log.debug("update_device_firmware(): device up to date")
+        # Search for firmware suitable for this device
+        device_name = response.name.decode()
+        available_files = firmware_files_for_device(firmware_dir, device_name)
+
+
+        log.debug(("update_device_firmware(): found {:d} firmware file(s) " +
+                   "for device '{!s}'").format(
+                   len(available_files), device_name))
+        for f in available_files:
+            log.debug(("update_device_firmware():        {!s} " +
+                       "(modified {:%Y-%m-%dT%H:%M:%S})").format(
+                       f[-1], datetime.datetime.fromtimestamp(f[-2])))
+
+        # If there are files available, check the CRC of the latest version
+        # against the CRC of the firmware on the node.
+        if available_files:
+            firmware_path = available_files[0][-1]
+            with FirmwareImage(firmware_path, "rb") as f:
+                if f.app_descriptor.image_crc != \
+                        response.software_version.image_crc:
+                    # Version mismatch, send a BeginFirmwareUpdate with the
+                    # appropriate path.
+                    request = uavcan.protocol.file.BeginFirmwareUpdate(
+                        mode="request")
+                    request.source_node_id = this_node.node_id
+                    request.image_file_remote_path.path.encode(
+                        os.path.basename(firmware_path))
+                    response, response_transfer = \
+                        yield this_node.send_request(request, node_id)
+
+                    if response.error != response.ERROR_OK:
+                        msg = ("[MASTER] #{0:03d} rejected "
+                               "uavcan.protocol.file.BeginFirmwareUpdate " +
+                               "with error {1:d}: {2!s}").format(
+                               node_id, response.error,
+                               response.optional_error_message.encode())
+                        logging.error(msg)
                 else:
-                    log.debug(("update_device_firmware(): no file for device " +
-                               "{!s}").format(response.name.decode()))
+                    log.debug("update_device_firmware(): device up to date")
 
     if len(args):
         node = uavcan.node.Node([
