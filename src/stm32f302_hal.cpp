@@ -1,19 +1,23 @@
 /*
-Copyright (c) 2014 - 2015 Thiemar Pty Ltd
+Copyright (C) 2014-2015 Thiemar Pty Ltd
 
-This file is part of vectorcontrol.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-vectorcontrol is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 */
 
 #include <cstdlib>
@@ -1130,7 +1134,7 @@ enum hal_status_t hal_receive_can_message(
 void hal_set_can_dtid_filter(
     uint8_t fifo,
     uint8_t filter_id,
-    uint8_t transfer_type,
+    bool is_service,
     uint16_t dtid
 ) {
     uint32_t mask;
@@ -1139,10 +1143,20 @@ void hal_set_can_dtid_filter(
     CAN1->FMR |= 1u; /* Start init mode */
     CAN1->FA1R &= ~mask; /* Disable the filter */
     CAN1->FS1R |= mask; /* Enable 32-bit mode */
-    CAN1->sFilterRegister[filter_id].FR1 = (dtid << 22u) |
-                                           (transfer_type << 20u);
-    /* Mask matches only DTID and transfer type */
-    CAN1->sFilterRegister[filter_id].FR2 = 0xFFF00000u;
+    if (is_service) {
+        CAN1->sFilterRegister[filter_id].FR1 = (2u << 27u) |
+                                               (dtid << 17u);
+        /* Mask matches only priority and DTID */
+        if (dtid) {
+            CAN1->sFilterRegister[filter_id].FR2 = 0xDFF00000u;
+        } else {
+            CAN1->sFilterRegister[filter_id].FR2 = 0xC0000000u;
+        }
+    } else { /* Broadcast/unicast */
+        CAN1->sFilterRegister[filter_id].FR1 = (dtid << 16u);
+        /* Mask matches only DTID */
+        CAN1->sFilterRegister[filter_id].FR2 = 0x3FF80000u;
+    }
     CAN1->FM1R &= ~mask; /* Set to mask mode */
     if (fifo) {
         CAN1->FFA1R |= mask; /* FIFO 1 */

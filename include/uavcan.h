@@ -1,19 +1,23 @@
 /*
-Copyright (c) 2014 - 2015 Thiemar Pty Ltd
+Copyright (C) 2014-2015 Thiemar Pty Ltd
 
-This file is part of vectorcontrol.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-vectorcontrol is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 */
 
 #pragma once
@@ -34,21 +38,22 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
 
 enum uavcan_dtid_filter_id_t {
-    UAVCAN_EQUIPMENT_ESC_RAWCOMMAND = 0u,
-    UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
-    UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE,
+    UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE = 0u,
     UAVCAN_PROTOCOL_PARAM_GETSET,
     UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE,
     UAVCAN_PROTOCOL_GETNODEINFO,
-    UAVCAN_PROTOCOL_RESTARTNODE
+    UAVCAN_PROTOCOL_RESTARTNODE,
+    UAVCAN_CATCHALL_SERVICE_REQUEST,
+    UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
+    UAVCAN_EQUIPMENT_ESC_RPMCOMMAND
 };
 
 
-enum uavcan_transfertype_t {
-    SERVICE_RESPONSE = 0u,
-    SERVICE_REQUEST = 1u,
-    MESSAGE_BROADCAST = 2u,
-    MESSAGE_UNICAST = 3u
+enum uavcan_transferpriority_t {
+    PRIORITY_HIGH = 0,
+    PRIORITY_NORMAL = 1,
+    PRIORITY_SERVICE = 2,
+    PRIORITY_LOW = 3
 };
 
 
@@ -100,8 +105,7 @@ class UAVCANTransferManager {
     }
 
     uint32_t broadcast_message_id_(uint8_t transfer_id, uint16_t dtid) {
-        return (dtid << 19u) | (MESSAGE_BROADCAST << 17u) |
-               (transfer_id & 0x7u);
+        return (1u << 27u) | (dtid << 16u) | (transfer_id & 0x7u);
     }
 
     uint32_t response_message_id_(uint32_t request_id) {

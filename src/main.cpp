@@ -1,19 +1,23 @@
 /*
-Copyright (c) 2014 - 2015 Thiemar Pty Ltd
+Copyright (C) 2014-2015 Thiemar Pty Ltd
 
-This file is part of vectorcontrol.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-vectorcontrol is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 */
 
 #include <cstdlib>
@@ -333,27 +337,29 @@ void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
 
 static void node_init(void) {
     hal_set_can_dtid_filter(
-        0u, UAVCAN_EQUIPMENT_ESC_RAWCOMMAND, MESSAGE_BROADCAST,
-        uavcan::equipment::esc::RawCommand::DefaultDataTypeID);
-    hal_set_can_dtid_filter(
-        0u, UAVCAN_EQUIPMENT_ESC_RPMCOMMAND, MESSAGE_BROADCAST,
-        uavcan::equipment::esc::RPMCommand::DefaultDataTypeID);
-
-    hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE, SERVICE_REQUEST,
+        1u, UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE, true,
         uavcan::protocol::param::ExecuteOpcode::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_PARAM_GETSET, SERVICE_REQUEST,
+        1u, UAVCAN_PROTOCOL_PARAM_GETSET, true,
         uavcan::protocol::param::GetSet::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE, SERVICE_REQUEST,
+        1u, UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE, true,
         uavcan::protocol::file::BeginFirmwareUpdate::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_GETNODEINFO, SERVICE_REQUEST,
+        1u, UAVCAN_PROTOCOL_GETNODEINFO, true,
         uavcan::protocol::GetNodeInfo::DefaultDataTypeID);
     hal_set_can_dtid_filter(
-        1u, UAVCAN_PROTOCOL_RESTARTNODE, SERVICE_REQUEST,
+        1u, UAVCAN_PROTOCOL_RESTARTNODE, true,
         uavcan::protocol::RestartNode::DefaultDataTypeID);
+    hal_set_can_dtid_filter(
+        1u, UAVCAN_CATCHALL_SERVICE_REQUEST, true, 0u);
+
+    hal_set_can_dtid_filter(
+        0u, UAVCAN_EQUIPMENT_ESC_RAWCOMMAND, false,
+        uavcan::equipment::esc::RawCommand::DefaultDataTypeID);
+    hal_set_can_dtid_filter(
+        0u, UAVCAN_EQUIPMENT_ESC_RPMCOMMAND, false,
+        uavcan::equipment::esc::RPMCommand::DefaultDataTypeID);
 }
 
 
@@ -421,6 +427,7 @@ static void __attribute__((noreturn)) node_run(
         status = hal_receive_can_message(0u, &filter_id, &message_id,
                                          &length, message);
         if (status == HAL_STATUS_OK) {
+            hal_enable_can_transmit();
             broadcast_manager.receive_frame(current_time, message_id, length,
                                             message);
         }
@@ -448,6 +455,7 @@ static void __attribute__((noreturn)) node_run(
         status = hal_receive_can_message(1u, &filter_id, &message_id,
                                          &length, message);
         if (status == HAL_STATUS_OK && message[0] == node_id) {
+            hal_enable_can_transmit();
             service_manager.receive_frame(current_time, message_id, length,
                                           message);
         }
