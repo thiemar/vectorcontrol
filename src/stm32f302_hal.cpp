@@ -266,8 +266,6 @@ static volatile enum hal_pwm_state_t pwm_state_;
 static volatile hal_callback_t low_frequency_task_;
 /* High-frequency (ADC update) control task callback */
 static volatile hal_control_callback_t high_frequency_task_;
-/* PWM pulse callback */
-static volatile hal_pwm_callback_t pwm_receive_task_;
 
 
 /* ADC conversion result destination */
@@ -438,15 +436,6 @@ void SysTick_Handler(void) {
     */
     hal_read_last_vbus_temp_();
 
-    /* If we got a PWM pulse, call the PWM receive callback. */
-    if (TIM2->SR & TIM_SR_CC2IF) {
-        if (pwm_receive_task_) {
-            pwm_receive_task_(TIM2->CCR2, TIM2->CCR1);
-        }
-
-        TIM2->SR &= ~(TIM_SR_CC2IF | TIM_SR_CC1IF);
-    }
-
     /* Run the user task, if defined */
     if (low_frequency_task_) {
         low_frequency_task_();
@@ -546,7 +535,6 @@ static void hal_init_sys_() {
     /* APB1 peripherals (low-speed) */
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC, ENABLE);
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
     /* Configure the interrupt controller */
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
@@ -597,11 +585,6 @@ static void hal_init_io_() {
 
     /* Turn CAN on */
     GPIO_ResetBits(PORT_CAN_SILENT, (uint16_t)PIN_CAN_SILENT.GPIO_Pin);
-
-    /* Configure PWM alternate function -- TIM2_CH1 */
-    GPIO_PinAFConfig(PORT_PWM_INPUT, GPIO_PinSource15, GPIO_AF_1);
-    GPIO_Init(PORT_PWM_INPUT, &PIN_PWM_INPUT);
-    GPIO_PinLockConfig(PORT_PWM_INPUT, (uint16_t)PIN_PWM_INPUT.GPIO_Pin);
 }
 
 
@@ -671,38 +654,6 @@ static void hal_init_tim1_() {
 
     /* Stop TIM1 when execution is paused */
     DBGMCU_Config(DBGMCU_TIM1_STOP, ENABLE);
-}
-
-
-static void hal_init_pwm_() {
-    TIM_TimeBaseInitTypeDef tim2_config = {
-        .TIM_Prescaler = 72u - 1u, /* 1 us resolution -- TIM2 is on APB1,
-                                      which runs at 36 MHz */
-        .TIM_CounterMode = TIM_CounterMode_Up,
-        .TIM_Period = 65535u, /* 0.065 s maximum period */
-        .TIM_ClockDivision = TIM_CKD_DIV1,
-        .TIM_RepetitionCounter = 0
-    };
-    TIM_ICInitTypeDef capture_config = {
-        .TIM_Channel = TIM_Channel_1,
-        .TIM_ICPolarity = TIM_ICPolarity_Falling,
-        .TIM_ICSelection = TIM_ICSelection_DirectTI,
-        .TIM_ICPrescaler = TIM_ICPSC_DIV1,
-        .TIM_ICFilter = 0
-    };
-
-    TIM_DeInit(TIM2);
-    TIM_TimeBaseInit(TIM2, &tim2_config);
-
-    TIM_SelectInputTrigger(TIM2, TIM_TS_TI1FP1);
-    TIM_SelectSlaveMode(TIM2, TIM_SlaveMode_Reset);
-    TIM_SelectMasterSlaveMode(TIM2, TIM_MasterSlaveMode_Enable);
-
-    TIM_PWMIConfig(TIM2, &capture_config);
-
-    TIM2->SR &= ~(TIM_SR_CC2IF | TIM_SR_CC1IF);
-
-    TIM_Cmd(TIM2, ENABLE);
 }
 
 
@@ -1008,7 +959,6 @@ void hal_reset(void) {
     hal_init_adc_();
     hal_init_dma_();
     hal_init_can_(1000000);
-    hal_init_pwm_();
 
     /* Calibrate the current shunt sensor offsets */
     hal_run_calibration_();
@@ -1187,12 +1137,6 @@ void hal_set_high_frequency_callback(hal_control_callback_t callback) {
 }
 
 
-void hal_set_rc_pwm_callback(hal_pwm_callback_t callback) {
-    esc_assert(!callback || !pwm_receive_task_);
-
-    pwm_receive_task_ = callback;
-}
-
 void hal_flash_protect(bool __attribute__((unused)) readonly) {
     /* TODO */
 }
@@ -1247,6 +1191,7 @@ void hal_flash_write(uint8_t *addr, size_t len, const uint8_t *data) {
     }
     FLASH_Lock();
 }
+
 
 void hal_disable_can_transmit(void) {
     GPIO_SetBits(PORT_CAN_SILENT, (uint16_t)PIN_CAN_SILENT.GPIO_Pin);

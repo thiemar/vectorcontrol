@@ -73,9 +73,6 @@ it's only used for reporting).
 volatile static struct controller_state_t g_controller_state;
 volatile static struct motor_state_t g_motor_state;
 
-volatile static uint32_t g_pwm_width_us, g_pwm_period_us;
-volatile static bool g_pwm_updated;
-
 volatile static float g_vbus_v;
 volatile static float g_v_dq_v[2];
 
@@ -99,14 +96,6 @@ extern volatile struct bootloader_app_descriptor flash_app_descriptor;
 #define HARD_CURRENT_LIMIT_A 60.0f
 
 
-/* RC PWM minimum and maximum limits */
-#define RC_PWM_ARM_PULSES 10u
-#define RC_PWM_MIN_WIDTH_US 950u
-#define RC_PWM_MAX_WIDTH_US 2100u
-#define RC_PWM_MIN_PERIOD_US 2000u
-#define RC_PWM_MAX_PERIOD_US 50000u
-
-
 extern "C" int main(void);
 extern "C" void identification_cb(
     float out_v_ab_v[2],
@@ -123,17 +112,12 @@ extern "C" void control_cb(
 extern "C" void systick_cb(void);
 extern "C" bool can_restart_command_cb(void);
 extern "C" bool can_write_flash_command_cb(void);
-extern "C" void rc_pwm_cb(uint32_t width_us, uint32_t period_us);
+
 
 static void node_init(void);
 static void node_run(
     Configuration& configuration,
-    const struct motor_params_t& motor_params,
-    const struct pwm_params_t& pwm_params
-);
-static float pwm_calculate_setpoint(
-    const struct pwm_params_t& params,
-    uint32_t width_us
+    const struct motor_params_t& motor_params
 );
 
 
@@ -187,7 +171,7 @@ control_cb(
     float vbus_v
 ) {
     float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
-          v_ab_v[2];
+          v_ab_v[2], min_speed, max_speed;
     struct motor_state_t motor_state;
     enum controller_mode_t controller_mode;
 
@@ -219,25 +203,54 @@ control_cb(
         readings[0] = readings[1] = 0.0f;
     } else if (g_estimator.is_converged()) {
         /* Update the speed controller setpoint */
-        if (controller_mode == CONTROLLER_TORQUE ||
-                controller_mode == CONTROLLER_STOPPING) {
+        if (controller_mode == CONTROLLER_TORQUE) {
+            /*
+            In torque control mode, the torque input is used to limit the
+            speed controller's output, and the speed controller setpoint
+            always requests acceleration or deceleration in the direction of
+            the requested torque.
+            */
+            min_speed = g_motor_params.min_speed_rad_per_s;
+            max_speed = g_motor_params.max_speed_rad_per_s;
+            speed_setpoint = motor_state.angular_velocity_rad_per_s +
+                             (g_current_controller_setpoint > 0.0f ?
+                                min_speed : -min_speed);
+            if (speed_setpoint > max_speed) {
+                speed_setpoint = max_speed;
+            } else if (speed_setpoint < -max_speed) {
+                speed_setpoint = -max_speed;
+            }
+            g_speed_controller_setpoint = speed_setpoint;
+            g_speed_controller.set_current_limit_a(
+                std::abs(motor_state.angular_velocity_rad_per_s) > min_speed ?
+                    std::abs(g_current_controller_setpoint) :
+                    g_motor_params.max_current_a);
+        } else if (controller_mode == CONTROLLER_STOPPING) {
+            /*
+            When stopping, the speed controller setpoint tracks the current
+            angular velocity
+            */
             speed_setpoint = motor_state.angular_velocity_rad_per_s;
-            g_controller_state.speed_setpoint = speed_setpoint;
+
+            g_speed_controller_setpoint = speed_setpoint;
+            g_speed_controller.set_current_limit_a(g_motor_params.max_current_a);
         } else {
-            speed_setpoint = g_controller_state.speed_setpoint;
+            speed_setpoint = g_speed_controller_setpoint;
+            g_speed_controller.set_current_limit_a(g_motor_params.max_current_a);
         }
         g_speed_controller.set_setpoint(speed_setpoint);
 
         /*
         Update the current controller with the output of the speed controller
-        when in speed control mode.
+        when in speed control mode, or a constant opposing torque when
+        stopping.
         */
         current_setpoint = g_speed_controller.update(motor_state);
-        if (controller_mode == CONTROLLER_TORQUE ||
-                controller_mode == CONTROLLER_STOPPING) {
-            current_setpoint = g_controller_state.current_setpoint;
-        } else {
-            g_controller_state.current_setpoint = current_setpoint;
+
+        if (controller_mode == CONTROLLER_STOPPING) {
+            current_setpoint = g_current_controller_setpoint;
+        } else if (controller_mode == CONTROLLER_SPEED) {
+            g_current_controller_setpoint = current_setpoint;
         }
 
         /* Update the stator current controller setpoint. */
@@ -325,13 +338,6 @@ void systick_cb(void) {
     }
 
     g_controller_state.time = state.time;
-}
-
-
-void rc_pwm_cb(uint32_t width_us, uint32_t period_us) {
-    g_pwm_width_us = width_us;
-    g_pwm_period_us = period_us;
-    g_pwm_updated = true;
 }
 
 
@@ -661,36 +667,6 @@ static void __attribute__((noreturn)) node_run(
             (void)hal_transmit_can_message(1u, message_id, length, message);
         }
 
-        /* Check for PWM input */
-        if (g_pwm_updated) {
-            width_us = g_pwm_width_us;
-            period_us = g_pwm_period_us;
-
-            /* PWM arm/disarm logic */
-            if (width_us > RC_PWM_MIN_WIDTH_US &&
-                    width_us < RC_PWM_MAX_WIDTH_US &&
-                    period_us > RC_PWM_MIN_PERIOD_US &&
-                    period_us < RC_PWM_MAX_PERIOD_US) {
-
-                if (valid_pwm_pulses >= RC_PWM_ARM_PULSES &&
-                        width_us > pwm_params.throttle_pulse_min_us) {
-                    got_setpoint = true;
-                    mode = pwm_params.use_speed_controller ?
-                            CONTROLLER_SPEED : CONTROLLER_TORQUE;
-                    setpoint = pwm_calculate_setpoint(pwm_params, width_us);
-                } else {
-                    valid_pwm_pulses++;
-                }
-
-                /* Disable CAN if we have valid PWM */
-                hal_disable_can_transmit();
-            } else if (valid_pwm_pulses > 0u) {
-                valid_pwm_pulses--;
-            }
-
-            g_pwm_updated = false;
-        }
-
         /* Update the controller mode and setpoint */
         if (!g_controller_state.fault && got_setpoint) {
             if (mode == CONTROLLER_SPEED) {
@@ -717,53 +693,10 @@ static void __attribute__((noreturn)) node_run(
 }
 
 
-static float pwm_calculate_setpoint(
-    const struct pwm_params_t &params,
-    uint32_t width_us
-) {
-    float setpoint, scale_factor, sign;
-
-    /* Constrain the PWM signal to full scale */
-    width_us = std::min((uint32_t)params.throttle_pulse_max_us,
-                        (uint32_t)width_us);
-
-    scale_factor = 1.0f / (float)(params.throttle_pulse_max_us -
-                                  params.throttle_pulse_min_us);
-    setpoint = (float)(width_us - params.throttle_pulse_min_us) *
-               scale_factor;
-    setpoint -= params.control_offset;
-    if (std::abs(setpoint) <=
-            (float)params.throttle_deadband_us * scale_factor) {
-        setpoint = 0.0f;
-        sign = 1.0f;
-    } else if (setpoint < 0.0f) {
-        sign = -1.0f;
-    } else {
-        sign = 1.0f;
-    }
-
-    switch (params.control_curve) {
-        case pwm_params_t::SQRT:
-            setpoint = __VSQRTF(std::abs(setpoint));
-            break;
-        case pwm_params_t::QUADRATIC:
-            setpoint *= setpoint;
-            break;
-        default:
-            break;
-    }
-    setpoint = params.control_min +
-               setpoint * (params.control_max - params.control_min);
-
-    return setpoint * sign;
-}
-
-
 int __attribute__((externally_visible,noreturn)) main(void) {
     Configuration configuration;
     struct control_params_t control_params;
     struct motor_params_t motor_params;
-    struct pwm_params_t pwm_params;
     uint32_t i;
     float i_samples[4], v_samples[4], rs_r, ls_h, limit_speed;
 
@@ -773,7 +706,6 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     /* Read parameters from flash */
     configuration.read_motor_params(motor_params);
     configuration.read_control_params(control_params);
-    configuration.read_pwm_params(pwm_params);
 
     /* Estimate motor parameters */
     g_parameter_estimator_done = false;
@@ -851,9 +783,7 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     */
     //hal_set_high_frequency_callback(control_cb);
     hal_set_low_frequency_callback(systick_cb);
-    //hal_set_rc_pwm_callback(rc_pwm_cb);
 
     node_init();
-
-    node_run(configuration, motor_params, pwm_params);
+    node_run(configuration, motor_params);
 }

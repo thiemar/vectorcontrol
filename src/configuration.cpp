@@ -62,7 +62,7 @@ struct param_t flash_params[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_CURRENT_LIMIT, PARAM_TYPE_FLOAT, "motor_current_limit",
-        10.0f, 1.0f, 40.0f},
+        2.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -160,72 +160,11 @@ struct param_t flash_params[NUM_PARAMS] = {
     {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT,
         "uavcan.id-uavcan.equipment.esc-esc_index",
         0.0f, 0.0f, 15.0f},
-
-    /*
-    If 0, the PWM signal is used as the input to the speed controller, with
-    input pulse width proportional to the square of the speed controller
-    setpoint. If 1, the PWM signal is used as the input to the torque
-    controller (the speed controller is bypassed), and the input pulse width
-    is proportional to torque controller setpoint.
-    */
-    {PARAM_PWM_CONTROL_MODE, PARAM_TYPE_INT, "pwm_control_mode",
-        0.0f, 0.0f, 1.0f},
-
-    /*
-    Sets the pulse width (in us) at which the controller is activated and the
-    output setpoint takes its minimum value.
-    */
-    {PARAM_PWM_THROTTLE_MIN, PARAM_TYPE_INT, "pwm_throttle_min",
-        1100.0f, 1000.0f, 2000.0f},
-
-    /*
-    Sets the pulse width (in us) at which the output setpoint takes its
-    maximum value.
-    */
-    {PARAM_PWM_THROTTLE_MAX, PARAM_TYPE_INT, "pwm_throttle_max",
-        1900.0f, 1000.0f, 2000.0f},
-
-    /*
-    Sets the range of pulse widths (in us) either side of the zero throttle
-    point within which the output setpoint should be pwm_control_min.
-    */
-    {PARAM_PWM_THROTTLE_DEADBAND, PARAM_TYPE_INT, "pwm_throttle_deadband",
-        10.0f, 0.0f, 1000.0f},
-
-    /*
-    Offsets the range of output setpoint values.
-
-    If the value of this parameter is 0.5, the range of setpoints output from
-    [pwm_throttle_min, pwm_throttle_max] is [-pwm_control_max, pwm_control_max].
-
-    If the value is 0.0, the range of setpoints output from
-    [pwm_throttle_min, pwm_throttle_max] is [pwm_control_min, pwm_control_max].
-    */
-    {PARAM_PWM_CONTROL_OFFSET, PARAM_TYPE_FLOAT, "pwm_control_offset",
-        0.0f, -1.0f, 1.0f},
-
-    /*
-    Determines the relationship between input throttle and output setpoint.
-    Valide values are 0.5, which results in the setpoint being proportional
-    to the square root of the throttle; 1.0, which results in a linear
-    relationship between setpoint and throttle; and 2.0, which results in the
-    setpoint being proportional to the square of the throttle.
-    */
-    {PARAM_PWM_CONTROL_CURVE, PARAM_TYPE_FLOAT, "pwm_control_curve",
-        1.0f, 0.5f, 2.0f},
-
-    /* Determines the setpoint for the minimum valid throttle value. */
-    {PARAM_PWM_CONTROL_MIN, PARAM_TYPE_FLOAT, "pwm_control_min",
-        0.0f, 0.0f, 40000.0f},
-
-    /* Determines the setpoint for the maximum valid throttle value. */
-    {PARAM_PWM_CONTROL_MAX, PARAM_TYPE_FLOAT, "pwm_control_max",
-        0.0f, 0.0f, 40000.0f},
 };
 
 
 inline static float _rad_per_s_from_rpm(float rpm, uint32_t num_poles) {
-    return rpm * (2.0f * (float)M_PI * (float)(num_poles >> 1u)) / 60.0f;
+    return rpm / 60.0f * (2.0f * (float)M_PI * (float)(num_poles >> 1u));
 }
 
 
@@ -260,33 +199,6 @@ void Configuration::read_control_params(
     params.load_torque_a = params_[PARAM_CONTROL_LOAD_TORQUE];
     params.accel_gain = params_[PARAM_CONTROL_ACCEL_GAIN];
     params.accel_time_s = params_[PARAM_CONTROL_ACCEL_TIME];
-}
-
-
-void Configuration::read_pwm_params(struct pwm_params_t& params) {
-    params.use_speed_controller =
-        params_[PARAM_PWM_CONTROL_MODE] > 0.0f ? false : true;
-    params.throttle_pulse_min_us = (uint16_t)params_[PARAM_PWM_THROTTLE_MIN];
-    params.throttle_pulse_max_us = (uint16_t)params_[PARAM_PWM_THROTTLE_MAX];
-    params.throttle_deadband_us =
-        (uint16_t)params_[PARAM_PWM_THROTTLE_DEADBAND];
-    params.control_offset = params_[PARAM_PWM_CONTROL_OFFSET];
-    params.control_min = params_[PARAM_PWM_CONTROL_MIN];
-    params.control_max = params_[PARAM_PWM_CONTROL_MAX];
-    switch ((uint8_t)params_[PARAM_PWM_CONTROL_CURVE]) {
-        case 0:
-            params.control_curve = pwm_params_t::SQRT;
-            break;
-        case 1:
-            params.control_curve = pwm_params_t::LINEAR;
-            break;
-        case 2:
-            params.control_curve = pwm_params_t::QUADRATIC;
-            break;
-        default:
-            params.control_curve = pwm_params_t::LINEAR;
-            break;
-    }
 }
 
 

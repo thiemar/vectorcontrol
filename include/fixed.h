@@ -49,7 +49,10 @@ struct motor_params_t {
     /* Operating limits */
     float max_voltage_v; /* RMS voltage limit in volts */
     float max_current_a; /* RMS current limit in amps */
-    float max_speed_rad_per_s; /* Electrical angular velocity limit in rad/s */
+    float max_speed_rad_per_s; /* Electrical angular velocity limit in
+                                  rad/s */
+    float min_speed_rad_per_s; /* Minimum controllable electrical angular
+                                  velocity in rad/s */
 
     uint32_t num_poles; /* number of poles */
 };
