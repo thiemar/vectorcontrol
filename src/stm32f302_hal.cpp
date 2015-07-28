@@ -247,17 +247,6 @@ static GPIO_InitTypeDef PIN_CAN_SILENT = {
 };
 
 
-/* PWM input -- tied to CAN RX but times pulse widths to detect PWM signals */
-#define PORT_PWM_INPUT GPIOA
-static GPIO_InitTypeDef PIN_PWM_INPUT = {
-    GPIO_Pin_15,
-    GPIO_Mode_AF,
-    GPIO_Speed_Level_1,
-    GPIO_OType_PP,
-    GPIO_PuPd_NOPULL
-};
-
-
 /* Hardware states */
 static volatile enum hal_pwm_state_t pwm_state_;
 
@@ -1085,7 +1074,8 @@ void hal_set_can_dtid_filter(
     uint8_t fifo,
     uint8_t filter_id,
     bool is_service,
-    uint16_t dtid
+    uint16_t dtid,
+    uint8_t node_id
 ) {
     uint32_t mask;
     mask = (1u << filter_id);
@@ -1093,20 +1083,18 @@ void hal_set_can_dtid_filter(
     CAN1->FMR |= 1u; /* Start init mode */
     CAN1->FA1R &= ~mask; /* Disable the filter */
     CAN1->FS1R |= mask; /* Enable 32-bit mode */
-    if (is_service) {
-        CAN1->sFilterRegister[filter_id].FR1 = (2u << 27u) |
-                                               (dtid << 17u);
-        /* Mask matches only priority and DTID */
-        if (dtid) {
-            CAN1->sFilterRegister[filter_id].FR2 = 0xDFF00000u;
-        } else {
-            CAN1->sFilterRegister[filter_id].FR2 = 0xC0000000u;
-        }
-    } else { /* Broadcast/unicast */
-        CAN1->sFilterRegister[filter_id].FR1 = (dtid << 16u);
-        /* Mask matches only DTID */
-        CAN1->sFilterRegister[filter_id].FR2 = 0x3FF80000u;
+    if (is_service) { /* Service request */
+        CAN1->sFilterRegister[filter_id].FR1 =
+            ((dtid << 16u) | 0x8000u | (node_id << 0x8u) | 0x80u) << 3u;
+    } else { /* Message */
+        CAN1->sFilterRegister[filter_id].FR1 = dtid << 8u;
     }
+    /*
+    For messages, this mask matches DTID and "service not message" flag.
+    For service requests, it matches DTID, "request not response" flag,
+    destination node ID, and "service not message" flags.
+    */
+    CAN1->sFilterRegister[filter_id].FR2 = 0x00FFFF80u;
     CAN1->FM1R &= ~mask; /* Set to mask mode */
     if (fifo) {
         CAN1->FFA1R |= mask; /* FIFO 1 */

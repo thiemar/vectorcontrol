@@ -82,14 +82,8 @@ function connect() {
             Parameter value update -- set the corresponding input to the new
             value, and update the chart scaling if necessary.
             */
-            if (message.payload.name == "pwm_control_mode" ||
-                    message.payload.name == "pwm_control_curve") {
-                nodeUi.querySelector("select[name=" + message.payload.name + "]"
-                    ).selectedIndex = message.payload.value;
-            } else {
-                nodeUi.querySelector("input[name=" + message.payload.name + "]"
+            nodeUi.querySelector("input[name=" + message.payload.name + "]"
                     ).value = parseFloat(message.payload.value).toPrecision(4);
-            }
 
             updateCurrentChart(nodeUi, deviceData[message.node_id] || []);
             updateSpeedChart(nodeUi, deviceData[message.node_id] || []);
@@ -816,9 +810,7 @@ function setupEventListeners() {
                                  .parentElement.parentElement;
             ws.send(JSON.stringify({
                 param_name: event.target.name,
-                param_value: parseFloat(event.target.name !== "pwm_ctl_mode" ?
-                                            event.target.value :
-                                            event.target.selectedIndex),
+                param_value: parseFloat(event.target.value),
                 node_id: parseInt(nodeUi.id.split("-")[1], 10)
             }));
         } else if (event.target.name == "command") {

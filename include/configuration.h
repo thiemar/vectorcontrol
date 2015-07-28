@@ -65,26 +65,17 @@ enum param_index_t {
     PARAM_CONTROL_LOAD_TORQUE,
     PARAM_CONTROL_ACCEL_GAIN,
     PARAM_CONTROL_ACCEL_TIME,
-    PARAM_CUSTOM_ESCSTATUS_INTERVAL,
-    PARAM_CUSTOM_ESCSTATUS_ID,
+    PARAM_FOC_ESCSTATUS_INTERVAL,
+    PARAM_FOC_ESCSTATUS_ID,
     PARAM_UAVCAN_ESCSTATUS_INTERVAL,
     PARAM_UAVCAN_ESC_INDEX,
-    PARAM_PWM_CONTROL_MODE,
-    PARAM_PWM_THROTTLE_MIN,
-    PARAM_PWM_THROTTLE_MAX,
-    PARAM_PWM_THROTTLE_DEADBAND,
-    PARAM_PWM_CONTROL_OFFSET,
-    PARAM_PWM_CONTROL_CURVE,
-    PARAM_PWM_CONTROL_MIN,
-    PARAM_PWM_CONTROL_MAX,
     NUM_PARAMS
 };
 
 
 enum param_type_t {
     PARAM_TYPE_INT = 0,
-    PARAM_TYPE_FLOAT,
-    PARAM_TYPE_BOOL
+    PARAM_TYPE_FLOAT
 };
 
 struct param_t {
@@ -106,7 +97,6 @@ public:
 
     void read_motor_params(struct motor_params_t& params);
     void read_control_params(struct control_params_t& params);
-    void read_pwm_params(struct pwm_params_t& params);
 
     bool get_param_by_name(struct param_t& out_param, const char* name);
     bool get_param_by_index(struct param_t& out_param, uint8_t index);

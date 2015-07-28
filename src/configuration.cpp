@@ -136,16 +136,16 @@ struct param_t flash_params[NUM_PARAMS] = {
         0.1f, 0.01f, 1.0f},
 
     /*
-    Interval in microseconds at which custom ESC status messages should be
+    Interval in microseconds at which FOC ESC status messages should be
     sent. Zero disables publication.
     */
-    {PARAM_CUSTOM_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
-        "uavcan.pubp-thiemar.equipment.esc.Status",
+    {PARAM_FOC_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
+        "uavcan.pubp-uavcan.equipment.esc.FOCStatus",
         20e3, 0, 1e6f},
 
     /* Data type ID of the custom ESC status message. */
-    {PARAM_CUSTOM_ESCSTATUS_ID, PARAM_TYPE_INT,
-        "uavcan.dtid-thiemar.equipment.esc.Status",
+    {PARAM_FOC_ESCSTATUS_ID, PARAM_TYPE_INT,
+        "uavcan.dtid-uavcan.equipment.esc.FOCStatus",
         768, 1, 1023},
 
     /*

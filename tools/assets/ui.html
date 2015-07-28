@@ -525,45 +525,6 @@ SOFTWARE.
                         <span>Acceleration time (s)</span>
                         <input name="control_accel_time" class="configuration" type="number" min="0.01" max="1.0" step="0.01">
                     </label>
-                    <label>
-                        <span>PWM control mode</span>
-                        <select name="pwm_control_mode" class="configuration">
-                            <option value="0">speed</option>
-                            <option value="1">torque</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span>PWM min pulse width (µs)</span>
-                        <input name="pwm_throttle_min" class="configuration" type="number" min="1000.0" max="2000.0" step="1.0">
-                    </label>
-                    <label>
-                        <span>PWM max pulse width (µs)</span>
-                        <input name="pwm_throttle_max" class="configuration" type="number" min="1000.0" max="2000.0" step="1.0">
-                    </label>
-                    <label>
-                        <span>PWM deadband width (µs)</span>
-                        <input name="pwm_throttle_deadband" class="configuration" type="number" min="0.0" max="1000.0" step="1.0">
-                    </label>
-                    <label>
-                        <span>PWM control offset</span>
-                        <input name="pwm_control_offset" class="configuration" type="number" min="-1.0" max="1.0" step="0.01">
-                    </label>
-                    <label>
-                        <span>PWM control curve</span>
-                        <select name="pwm_control_curve" class="configuration">
-                            <option value="0.5">sqrt</option>
-                            <option value="1">linear</option>
-                            <option value="2">quadratic</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span>PWM control min</span>
-                        <input name="pwm_control_min" class="configuration" type="number" min="-40000.0" max="40000.0" step="100.0">
-                    </label>
-                    <label>
-                        <span>PWM control max</span>
-                        <input name="pwm_control_max" class="configuration" type="number" min="-40000.0" max="40000.0" step="100.0">
-                    </label>
 
                     <h3>UAVCAN parameters</h3>
                     <label>

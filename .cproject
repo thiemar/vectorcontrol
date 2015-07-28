@@ -72,8 +72,8 @@
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include"/>
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/cmsis"/>
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/stm32f3-stdperiph"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/uavcan/libuavcan/include/dsdlc_generated"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/uavcan/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include/dsdlc_generated"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.defs.574549894" name="Defined symbols (-D)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.defs" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="DEBUG"/>
@@ -92,8 +92,8 @@
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include"/>
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/cmsis"/>
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/stm32f3-stdperiph"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/uavcan/libuavcan/include/dsdlc_generated"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/uavcan/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include/dsdlc_generated"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.missingprototypes.1617046533" name="Warn if a global function has no prototype (-Wmissing-prototypes)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.missingprototypes" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.strictprototypes.2124327559" name="Warn if a function has no arg type (-Wstrict-prototypes)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.strictprototypes" useByScannerDiscovery="true" value="true" valueType="boolean"/>
@@ -115,8 +115,8 @@
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include"/>
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/cmsis"/>
 									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/stm32f3-stdperiph"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/uavcan/libuavcan/include/dsdlc_generated"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/uavcan/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include/dsdlc_generated"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.noexceptions.1871851977" name="Do not use exceptions (-fno-exceptions)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.noexceptions" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.nortti.1069822757" name="Do not use RTTI (-fno-rtti)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.nortti" useByScannerDiscovery="true" value="true" valueType="boolean"/>
@@ -192,14 +192,12 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="libuavcan"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="src"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/cmsis"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/cortexm"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/newlib"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/stm32f3-stdperiph"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="uavcan/libuavcan/dsdl_compiler"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="uavcan/libuavcan/include"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="uavcan/libuavcan/src"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -298,7 +296,6 @@
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.1285162560" name="Cross ARM C++ Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler">
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.include.paths.1236213333" name="Include paths (-I)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/cmsis&quot;"/>
@@ -371,14 +368,12 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="libuavcan"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="src"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/cmsis"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/cortexm"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/newlib"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="system/src/stm32f3-stdperiph"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="uavcan/libuavcan/dsdl_compiler"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="uavcan/libuavcan/include"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="uavcan/libuavcan/src"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

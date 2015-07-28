@@ -71,8 +71,9 @@ enum hal_status_t hal_receive_can_message(
 void hal_set_can_dtid_filter(
     uint8_t fifo,
     uint8_t filter_id,
-    uint8_t transfer_type,
-    uint16_t dtid
+    bool is_service,
+    uint16_t dtid,
+    uint8_t node_id
 );
 void hal_disable_can_transmit(void);
 void hal_enable_can_transmit(void);

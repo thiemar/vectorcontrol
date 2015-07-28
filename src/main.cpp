@@ -60,6 +60,9 @@ struct controller_state_t {
     uint32_t last_setpoint_update;
     float current_setpoint;
     float speed_setpoint;
+    float max_speed_rad_per_s;
+    float min_speed_rad_per_s;
+    float max_current_a;
     enum controller_mode_t mode;
     bool fault;
 };
@@ -114,8 +117,9 @@ extern "C" bool can_restart_command_cb(void);
 extern "C" bool can_write_flash_command_cb(void);
 
 
-static void node_init(void);
+static void node_init(uint8_t node_id);
 static void node_run(
+    uint8_t node_id,
     Configuration& configuration,
     const struct motor_params_t& motor_params
 );
@@ -210,21 +214,21 @@ control_cb(
             always requests acceleration or deceleration in the direction of
             the requested torque.
             */
-            min_speed = g_motor_params.min_speed_rad_per_s;
-            max_speed = g_motor_params.max_speed_rad_per_s;
+            min_speed = g_controller_state.min_speed_rad_per_s;
+            max_speed = g_controller_state.max_speed_rad_per_s;
             speed_setpoint = motor_state.angular_velocity_rad_per_s +
-                             (g_current_controller_setpoint > 0.0f ?
+                             (g_controller_state.current_setpoint > 0.0f ?
                                 min_speed : -min_speed);
             if (speed_setpoint > max_speed) {
                 speed_setpoint = max_speed;
             } else if (speed_setpoint < -max_speed) {
                 speed_setpoint = -max_speed;
             }
-            g_speed_controller_setpoint = speed_setpoint;
+            g_controller_state.speed_setpoint = speed_setpoint;
             g_speed_controller.set_current_limit_a(
                 std::abs(motor_state.angular_velocity_rad_per_s) > min_speed ?
-                    std::abs(g_current_controller_setpoint) :
-                    g_motor_params.max_current_a);
+                    std::abs(g_controller_state.current_setpoint) :
+                    g_controller_state.max_current_a);
         } else if (controller_mode == CONTROLLER_STOPPING) {
             /*
             When stopping, the speed controller setpoint tracks the current
@@ -232,11 +236,13 @@ control_cb(
             */
             speed_setpoint = motor_state.angular_velocity_rad_per_s;
 
-            g_speed_controller_setpoint = speed_setpoint;
-            g_speed_controller.set_current_limit_a(g_motor_params.max_current_a);
+            g_controller_state.speed_setpoint = speed_setpoint;
+            g_speed_controller.set_current_limit_a(
+                g_controller_state.max_current_a);
         } else {
-            speed_setpoint = g_speed_controller_setpoint;
-            g_speed_controller.set_current_limit_a(g_motor_params.max_current_a);
+            speed_setpoint = g_controller_state.speed_setpoint;
+            g_speed_controller.set_current_limit_a(
+                g_controller_state.max_current_a);
         }
         g_speed_controller.set_setpoint(speed_setpoint);
 
@@ -248,9 +254,9 @@ control_cb(
         current_setpoint = g_speed_controller.update(motor_state);
 
         if (controller_mode == CONTROLLER_STOPPING) {
-            current_setpoint = g_current_controller_setpoint;
+            current_setpoint = g_controller_state.current_setpoint;
         } else if (controller_mode == CONTROLLER_SPEED) {
-            g_current_controller_setpoint = current_setpoint;
+            g_controller_state.current_setpoint = current_setpoint;
         }
 
         /* Update the stator current controller setpoint. */
@@ -341,46 +347,50 @@ void systick_cb(void) {
 }
 
 
-static void node_init(void) {
+static void node_init(uint8_t node_id) {
     hal_set_can_dtid_filter(
         1u, UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE, true,
-        uavcan::protocol::param::ExecuteOpcode::DefaultDataTypeID);
+        uavcan::protocol::param::ExecuteOpcode::DefaultDataTypeID,
+        node_id);
     hal_set_can_dtid_filter(
         1u, UAVCAN_PROTOCOL_PARAM_GETSET, true,
-        uavcan::protocol::param::GetSet::DefaultDataTypeID);
+        uavcan::protocol::param::GetSet::DefaultDataTypeID,
+        node_id);
     hal_set_can_dtid_filter(
         1u, UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE, true,
-        uavcan::protocol::file::BeginFirmwareUpdate::DefaultDataTypeID);
+        uavcan::protocol::file::BeginFirmwareUpdate::DefaultDataTypeID,
+        node_id);
     hal_set_can_dtid_filter(
         1u, UAVCAN_PROTOCOL_GETNODEINFO, true,
-        uavcan::protocol::GetNodeInfo::DefaultDataTypeID);
+        uavcan::protocol::GetNodeInfo::DefaultDataTypeID,
+        node_id);
     hal_set_can_dtid_filter(
         1u, UAVCAN_PROTOCOL_RESTARTNODE, true,
-        uavcan::protocol::RestartNode::DefaultDataTypeID);
-    hal_set_can_dtid_filter(
-        1u, UAVCAN_CATCHALL_SERVICE_REQUEST, true, 0u);
+        uavcan::protocol::RestartNode::DefaultDataTypeID,
+        node_id);
 
     hal_set_can_dtid_filter(
         0u, UAVCAN_EQUIPMENT_ESC_RAWCOMMAND, false,
-        uavcan::equipment::esc::RawCommand::DefaultDataTypeID);
+        uavcan::equipment::esc::RawCommand::DefaultDataTypeID,
+        node_id);
     hal_set_can_dtid_filter(
         0u, UAVCAN_EQUIPMENT_ESC_RPMCOMMAND, false,
-        uavcan::equipment::esc::RPMCommand::DefaultDataTypeID);
+        uavcan::equipment::esc::RPMCommand::DefaultDataTypeID,
+        node_id);
 }
 
 
 static void __attribute__((noreturn)) node_run(
+    uint8_t node_id,
     Configuration& configuration,
-    const struct motor_params_t& motor_params,
-    const struct pwm_params_t& pwm_params
+    const struct motor_params_t& motor_params
 ) {
     size_t length, i;
-    uint32_t message_id, current_time, width_us, period_us, valid_pwm_pulses,
-             node_status_time, esc_status_time, custom_status_time,
-             node_status_interval, esc_status_interval,
+    uint32_t message_id, current_time, node_status_time, esc_status_time,
+             custom_status_time, node_status_interval, esc_status_interval,
              custom_status_interval;
     uint8_t filter_id, custom_status_transfer_id, node_status_transfer_id,
-            esc_status_transfer_id, node_id, esc_index, message[8];
+            esc_status_transfer_id, esc_index, message[8];
     enum hal_status_t status;
     enum controller_mode_t mode;
     float setpoint, value, is_a, vs_v, v_dq_v[2];
@@ -399,8 +409,7 @@ static void __attribute__((noreturn)) node_run(
     esc_index = (uint8_t)
         configuration.get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
     custom_status_dtid = (uint16_t)
-        configuration.get_param_value_by_index(PARAM_CUSTOM_ESCSTATUS_ID);
-    node_id = (uint8_t)(100u + esc_index); /* FIXME: load from bootloader/app common */
+        configuration.get_param_value_by_index(PARAM_FOC_ESCSTATUS_ID);
 
     UAVCANTransferManager broadcast_manager(node_id);
     UAVCANTransferManager service_manager(node_id);
@@ -415,9 +424,11 @@ static void __attribute__((noreturn)) node_run(
     esc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
         PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 0.001f);
     custom_status_interval = (uint32_t)(configuration.get_param_value_by_index(
-        PARAM_CUSTOM_ESCSTATUS_INTERVAL) * 0.001f);
+        PARAM_FOC_ESCSTATUS_INTERVAL) * 0.001f);
 
-    valid_pwm_pulses = 0u;
+    g_controller_state.min_speed_rad_per_s = motor_params.min_speed_rad_per_s;
+    g_controller_state.max_speed_rad_per_s = motor_params.max_speed_rad_per_s;
+    g_controller_state.max_current_a = motor_params.max_current_a;
 
     while (true) {
         current_time = g_controller_state.time;
@@ -506,18 +517,16 @@ static void __attribute__((noreturn)) node_run(
                         param, gs_req.name.c_str());
                 } else {
                     param_valid = configuration.get_param_by_index(
-                        param, gs_req.index);
+                        param, (uint8_t)gs_req.index);
                 }
 
                 if (param_valid) {
-                    if (param.public_type == PARAM_TYPE_FLOAT &&
-                            !gs_req.value.value_float.empty()) {
-                        value = gs_req.value.value_float[0];
+                    if (param.public_type == PARAM_TYPE_FLOAT) {
+                        value = gs_req.value.to<uavcan::protocol::param::Value::Tag::real_value>();
                         configuration.set_param_value_by_index(param.index,
                                                                value);
-                    } else if (param.public_type == PARAM_TYPE_INT &&
-                            !gs_req.value.value_int.empty()) {
-                        value = (float)gs_req.value.value_int[0];
+                    } else if (param.public_type == PARAM_TYPE_INT) {
+                        value = (float)gs_req.value.to<uavcan::protocol::param::Value::Tag::integer_value>();
                         configuration.set_param_value_by_index(param.index,
                                                                value);
                     }
@@ -527,19 +536,15 @@ static void __attribute__((noreturn)) node_run(
 
                     resp.name = gs_req.name;
                     if (param.public_type == PARAM_TYPE_FLOAT) {
-                        resp.value.value_float.push_back(value);
-                        resp.default_value.value_float.push_back(
-                            param.default_value);
-                        resp.min_value.value_float.push_back(param.min_value);
-                        resp.max_value.value_float.push_back(param.max_value);
+                        resp.value.to<uavcan::protocol::param::Value::Tag::real_value>() = value;
+                        resp.default_value.to<uavcan::protocol::param::Value::Tag::real_value>() = param.default_value;
+                        resp.min_value.to<uavcan::protocol::param::NumericValue::Tag::real_value>() = param.min_value;
+                        resp.max_value.to<uavcan::protocol::param::NumericValue::Tag::real_value>() = param.max_value;
                     } else if (param.public_type == PARAM_TYPE_INT) {
-                        resp.value.value_int.push_back((int64_t)value);
-                        resp.default_value.value_int.push_back(
-                            (int64_t)param.default_value);
-                        resp.min_value.value_int.push_back(
-                            (int64_t)param.min_value);
-                        resp.max_value.value_int.push_back(
-                            (int64_t)param.max_value);
+                        resp.value.to<uavcan::protocol::param::Value::Tag::integer_value>() = (int64_t)value;
+                        resp.default_value.to<uavcan::protocol::param::Value::Tag::integer_value>() = (int64_t)param.default_value;
+                        resp.min_value.to<uavcan::protocol::param::NumericValue::Tag::integer_value>() = (int64_t)param.min_value;
+                        resp.max_value.to<uavcan::protocol::param::NumericValue::Tag::integer_value>() = (int64_t)param.max_value;
                     }
                 }
 
@@ -564,15 +569,17 @@ static void __attribute__((noreturn)) node_run(
 
                 /* Empty request so don't need to decode */
                 resp.status.uptime_sec = current_time / 1000u;
-                resp.status.status_code = resp.status.STATUS_OK;
+                resp.status.health = resp.status.HEALTH_OK;
+                resp.status.mode = resp.status.MODE_OPERATIONAL;
+                resp.status.sub_mode = 0u;
                 resp.status.vendor_specific_status_code = 0u;
                 resp.software_version.major =
                     flash_app_descriptor.major_version;
                 resp.software_version.minor =
                     flash_app_descriptor.minor_version;
-                resp.software_version.optional_field_mask =
-                    resp.software_version.OPTIONAL_FIELD_MASK_VCS_COMMIT |
-                    resp.software_version.OPTIONAL_FIELD_MASK_IMAGE_CRC;
+                resp.software_version.optional_field_flags =
+                    resp.software_version.OPTIONAL_FIELD_FLAG_VCS_COMMIT |
+                    resp.software_version.OPTIONAL_FIELD_FLAG_IMAGE_CRC;
                 resp.software_version.vcs_commit =
                     flash_app_descriptor.vcs_commit;
                 resp.software_version.image_crc =
@@ -609,7 +616,7 @@ static void __attribute__((noreturn)) node_run(
 
             if (custom_status_interval && current_time - custom_status_time >=
                     custom_status_interval) {
-                thiemar::equipment::esc::Status msg;
+                uavcan::equipment::esc::FOCStatus msg;
 
                 msg.i_dq[0] = motor_state.i_dq_a[0];
                 msg.i_dq[1] = motor_state.i_dq_a[1];
@@ -618,16 +625,18 @@ static void __attribute__((noreturn)) node_run(
                 msg.v_dq[1] = v_dq_v[1];
                 msg.hfi_dq[0] = g_estimator_hfi[0];
                 msg.hfi_dq[1] = g_estimator_hfi[1];
-                msg.consistency = g_estimator_consistency;
+                msg.consistency = (uint8_t)
+                    (g_estimator_consistency * 255.0f);
                 msg.vbus = g_vbus_v;
                 msg.temperature = 273.15f + hal_get_temperature_degc();
-                msg.angle = motor_state.angle_rad;
-                msg.rpm = (int32_t)(g_motor_state.angular_velocity_rad_per_s *
+                msg.angle = (uint8_t)
+                    (motor_state.angle_rad * (0.5f / M_PI) * 255.0f);
+                msg.rpm = (g_motor_state.angular_velocity_rad_per_s *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles));
-                msg.rpm_setpoint = (int32_t)(g_controller_state.speed_setpoint *
+                msg.rpm_setpoint = (g_controller_state.speed_setpoint *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles));
                 msg.esc_index = esc_index;
-                broadcast_manager.encode_custom_status(
+                broadcast_manager.encode_foc_status(
                     custom_status_transfer_id++, custom_status_dtid, msg);
                 custom_status_time = current_time;
             } else if (esc_status_interval &&
@@ -650,7 +659,9 @@ static void __attribute__((noreturn)) node_run(
                 uavcan::protocol::NodeStatus msg;
 
                 msg.uptime_sec = current_time / 1000u;
-                msg.status_code = msg.STATUS_OK;
+                msg.health = msg.HEALTH_OK;
+                msg.mode = msg.MODE_OPERATIONAL;
+                msg.sub_mode = 0u;
                 msg.vendor_specific_status_code = 0u;
                 broadcast_manager.encode_nodestatus(
                     node_status_transfer_id++, msg);
@@ -699,6 +710,7 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     struct motor_params_t motor_params;
     uint32_t i;
     float i_samples[4], v_samples[4], rs_r, ls_h, limit_speed;
+    uint8_t node_id;
 
     hal_reset();
     hal_set_pwm_state(HAL_PWM_STATE_LOW);
@@ -774,16 +786,17 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     }
 
     /* Start PWM */
-    //hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
+    hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
 
     /*
     After starting the ISR tasks we are no longer able to access g_estimator,
     g_current_controller and g_speed_controller, since they're updated from
     the ISRs and not declared volatile.
     */
-    //hal_set_high_frequency_callback(control_cb);
+    hal_set_high_frequency_callback(control_cb);
     hal_set_low_frequency_callback(systick_cb);
 
-    node_init();
-    node_run(configuration, motor_params);
+    node_id = (uint8_t)(100u); /* FIXME: load from bootloader/app common */
+    node_init(node_id);
+    node_run(node_id, configuration, motor_params);
 }
