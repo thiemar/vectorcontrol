@@ -37,6 +37,9 @@ SOFTWARE.
 #define FLASH_READONLY_LENGTH  0x00000800
 
 
+#define FLASH_PARAM_VERSION 1u
+
+
 #include <algorithm>
 #include "fixed.h"
 

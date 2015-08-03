@@ -75,6 +75,7 @@ void hal_set_can_dtid_filter(
     uint16_t dtid,
     uint8_t node_id
 );
+uint8_t hal_get_can_node_id(void);
 void hal_disable_can_transmit(void);
 void hal_enable_can_transmit(void);
 float hal_get_temperature_degc(void);

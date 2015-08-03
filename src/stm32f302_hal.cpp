@@ -24,6 +24,7 @@ SOFTWARE.
 #include <cstdint>
 #include <cassert>
 #include <cstring>
+#include <uavcan/data_type.hpp>
 #include "stm32f30x.h"
 #include "hal.h"
 #include "svm.h"
@@ -133,6 +134,9 @@ extern const float hal_control_t_s =
 
 /* CAN bit rate in bits per second */
 #define HAL_CAN_RATE_BPS 1000000u
+
+/* CAN node ID */
+#define HAL_CAN_NODE_ID 100u
 
 
 /*
@@ -247,6 +251,21 @@ static GPIO_InitTypeDef PIN_CAN_SILENT = {
 };
 
 
+/* Bootloader communication */
+struct bootloader_app_shared_t {
+    union {
+        uint64_t ull;
+        uint32_t ul[2];
+    } crc;
+    uint32_t signature;
+    uint32_t bus_speed;
+    uint32_t node_id;
+} __attribute__ ((packed));
+
+#define BOOTLOADER_COMMON_APP_SIGNATURE         0xB0A04150u
+#define BOOTLOADER_COMMON_BOOTLOADER_SIGNATURE  0xB0A0424Cu
+
+
 /* Hardware states */
 static volatile enum hal_pwm_state_t pwm_state_;
 
@@ -255,6 +274,10 @@ static volatile enum hal_pwm_state_t pwm_state_;
 static volatile hal_callback_t low_frequency_task_;
 /* High-frequency (ADC update) control task callback */
 static volatile hal_control_callback_t high_frequency_task_;
+
+
+/* Bootloader parameters */
+static struct bootloader_app_shared_t bootloader_app_shared_;
 
 
 /* ADC conversion result destination */
@@ -275,6 +298,13 @@ static volatile float temp_degc_;
 extern "C" void SysTick_Handler(void);
 extern "C" void ADC1_2_IRQHandler(void);
 extern "C" void Fault_Handler(void);
+
+
+static uint64_t hal_calulate_signature_(
+    const bootloader_app_shared_t *pshared
+);
+static bool hal_bootloader_read_(bootloader_app_shared_t *shared);
+static void hal_bootloader_write_(const bootloader_app_shared_t *shared);
 
 
 static void hal_init_sys_();
@@ -504,6 +534,42 @@ PERF_COUNT_START
 
     /* FIXME -- check return code for task deadline miss */
 PERF_COUNT_END
+}
+
+
+static uint64_t hal_calulate_signature_(
+    const bootloader_app_shared_t *pshared
+) {
+    uavcan::DataTypeSignatureCRC crc;
+    crc.add((uint8_t*)(&pshared->signature), sizeof(uint32_t) * 3u);
+    return crc.get();
+}
+
+static bool hal_bootloader_read_(bootloader_app_shared_t *shared) {
+    shared->signature = CAN1->sFilterRegister[3].FR1;
+    shared->bus_speed = CAN1->sFilterRegister[3].FR2;
+    shared->node_id = CAN1->sFilterRegister[4].FR1;
+    shared->crc.ul[0] = CAN1->sFilterRegister[2].FR2;
+    shared->crc.ul[1] = CAN1->sFilterRegister[2].FR1;
+
+    if (shared->crc.ull == hal_calulate_signature_(shared)) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+static void hal_bootloader_write_(const bootloader_app_shared_t *shared) {
+    bootloader_app_shared_t working = *shared;
+
+    working.signature = BOOTLOADER_COMMON_APP_SIGNATURE;
+    working.crc.ull = hal_calulate_signature_(&working);
+
+    CAN1->sFilterRegister[3].FR1 = working.signature;
+    CAN1->sFilterRegister[3].FR2 = working.bus_speed;
+    CAN1->sFilterRegister[4].FR1 = working.node_id;
+    CAN1->sFilterRegister[2].FR2 = working.crc.ul[0];
+    CAN1->sFilterRegister[2].FR1 = working.crc.ul[1];
 }
 
 
@@ -927,6 +993,12 @@ static bool hal_read_last_vbus_temp_() {
 void hal_restart(void) {
     hal_set_pwm_state(HAL_PWM_STATE_OFF);
 
+    /*
+    Write the CAN bus speed and node ID to the bootloader/app shared registers
+    so the bootloader can maintain the same settings.
+    */
+    hal_bootloader_write_(&bootloader_app_shared_);
+
     /* NVIC_SystemReset(); */
     __DSB();
     SCB->AIRCR = ((0x5FA << SCB_AIRCR_VECTKEY_Pos) |
@@ -947,7 +1019,17 @@ void hal_reset(void) {
     hal_init_tim1_();
     hal_init_adc_();
     hal_init_dma_();
-    hal_init_can_(1000000);
+
+    /*
+    Read bootloader auto-baud and node ID values, then initialize the CAN
+    controller. If the bootloader read fails, use default node ID and bit
+    rate.
+    */
+    if (!hal_bootloader_read_(&bootloader_app_shared_)) {
+        bootloader_app_shared_.bus_speed = HAL_CAN_RATE_BPS;
+        bootloader_app_shared_.node_id = HAL_CAN_NODE_ID;
+    }
+    hal_init_can_(bootloader_app_shared_.bus_speed);
 
     /* Calibrate the current shunt sensor offsets */
     hal_run_calibration_();

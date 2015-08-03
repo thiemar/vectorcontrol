@@ -14,7 +14,7 @@
 				</extensions>
 			</storageModule>
 			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
-				<configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.debug,org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe" cleanCommand="${cross_rm} -rf" description="" id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.1737920465" name="Debug" parent="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug" preannouncebuildStep="Show toolchain version" prebuildStep="${cross_prefix}${cross_c}${cross_suffix} --version">
+				<configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.debug,org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe" cleanCommand="${cross_rm} -rf" description="" id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.1737920465" name="Debug" parent="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug" postannouncebuildStep="Make app descriptor and prepend bootloader." postbuildStep="${cross_prefix}${cross_objcopy}${cross_suffix} -O binary &quot;vectorcontrol.elf&quot; &quot;vectorcontrol.bin&quot;; /usr/bin/python ${ProjDirPath}/tools/make_can_boot_descriptor.py -g --bootloader-size 8192 --bootloader-image ${ProjDirPath}/tools/bootloader.bin ${ProjDirPath}/Debug/vectorcontrol.bin ${ProjDirPath}/Debug/vectorcontrol-fw.bin" preannouncebuildStep="Show toolchain version" prebuildStep="${cross_prefix}${cross_c}${cross_suffix} --version">
 					<folderInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.1737920465." name="/" resourcePath="">
 						<toolChain id="ilg.gnuarmeclipse.managedbuild.cross.toolchain.elf.debug.66614726" name="Cross ARM GCC" superClass="ilg.gnuarmeclipse.managedbuild.cross.toolchain.elf.debug">
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.level.1872352730" name="Optimization Level" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.level" value="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.level.debug" valueType="enumerated"/>
@@ -50,7 +50,7 @@
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.size.440810059" name="Size command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.size" value="size" valueType="string"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.make.1603254460" name="Build command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.make" value="make" valueType="string"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm.89740726" name="Remove command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm" value="rm" valueType="string"/>
-							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash.83302506" name="Create flash image" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash" value="true" valueType="boolean"/>
+							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash.83302506" name="Create flash image" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash" value="false" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.printsize.1872325157" name="Print size" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.printsize" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.abi.659413284" name="Float ABI" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.abi" value="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.abi.hard" valueType="enumerated"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.unit.460473901" name="FPU Type" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.unit" value="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.unit.fpv4spd16" valueType="enumerated"/>
@@ -68,12 +68,12 @@
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.2018287305" name="Cross ARM GNU Assembler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler">
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.usepreprocessor.1100441604" name="Use preprocessor" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.usepreprocessor" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.include.paths.494937373" name="Include paths (-I)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.include.paths" valueType="includePath">
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/cmsis"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/stm32f3-stdperiph"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include/dsdlc_generated"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include/cmsis"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include/stm32f3-stdperiph"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.defs.574549894" name="Defined symbols (-D)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.defs" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="DEBUG"/>
@@ -88,12 +88,12 @@
 							</tool>
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.1269551669" name="Cross ARM C Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler">
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.include.paths.1646226628" name="Include paths (-I)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.include.paths" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/cmsis"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/stm32f3-stdperiph"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include/dsdlc_generated"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include/cmsis"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include/stm32f3-stdperiph"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.missingprototypes.1617046533" name="Warn if a global function has no prototype (-Wmissing-prototypes)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.missingprototypes" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.strictprototypes.2124327559" name="Warn if a function has no arg type (-Wstrict-prototypes)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.strictprototypes" useByScannerDiscovery="true" value="true" valueType="boolean"/>
@@ -111,12 +111,12 @@
 							</tool>
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.1416881493" name="Cross ARM C++ Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler">
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.include.paths.486976268" name="Include paths (-I)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.include.paths" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/cmsis"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/system/include/stm32f3-stdperiph"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include"/>
-									<listOptionValue builtIn="false" value="/mnt/hgfs/workspace/vectorcontrol/libuavcan/include/dsdlc_generated"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include/cmsis"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/system/include/stm32f3-stdperiph"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/libuavcan/include"/>
+									<listOptionValue builtIn="false" value="${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.noexceptions.1871851977" name="Do not use exceptions (-fno-exceptions)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.noexceptions" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.nortti.1069822757" name="Do not use RTTI (-fno-rtti)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.nortti" useByScannerDiscovery="true" value="true" valueType="boolean"/>
@@ -216,7 +216,7 @@
 				</extensions>
 			</storageModule>
 			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
-				<configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.release,org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe" cleanCommand="${cross_rm} -rf" description="" id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1355400468" name="Release" parent="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release">
+				<configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.release,org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe" cleanCommand="${cross_rm} -rf" description="" id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1355400468" name="Release" parent="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release" postannouncebuildStep="Make app descriptor and prepend bootloader." postbuildStep="${cross_prefix}${cross_objcopy}${cross_suffix} -O binary &quot;vectorcontrol.elf&quot; &quot;vectorcontrol.bin&quot;; /usr/bin/python ${ProjDirPath}/tools/make_can_boot_descriptor.py -g --bootloader-size 8192 --bootloader-image ${ProjDirPath}/tools/bootloader.bin ${ProjDirPath}/Release/vectorcontrol.bin ${ProjDirPath}/Release/vectorcontrol-fw.bin">
 					<folderInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1355400468." name="/" resourcePath="">
 						<toolChain id="ilg.gnuarmeclipse.managedbuild.cross.toolchain.elf.release.79861980" name="Cross ARM GCC" superClass="ilg.gnuarmeclipse.managedbuild.cross.toolchain.elf.release">
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.level.1503044819" name="Optimization Level" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.level" value="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.level.most" valueType="enumerated"/>
@@ -234,10 +234,10 @@
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.missingdeclaration.1953523748" name="Warn on undeclared global function (-Wmissing-declaration)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.missingdeclaration" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.conversion.1157695362" name="Warn on implicit conversions (-Wconversion)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.conversion" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.pointerarith.531658770" name="Warn if pointer arithmetic (-Wpointer-arith)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.pointerarith" value="true" valueType="boolean"/>
-							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.padded.494857388" name="Warn if padding is included (-Wpadded)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.padded" value="true" valueType="boolean"/>
+							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.padded.494857388" name="Warn if padding is included (-Wpadded)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.padded" value="false" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.shadow.1526844763" name="Warn if shadowed variable (-Wshadow)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.shadow" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.logicalop.1687524712" name="Warn if suspicious logical ops (-Wlogical-op)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.logicalop" value="true" valueType="boolean"/>
-							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.agreggatereturn.1537368111" name="Warn if struct is returned (-Wagreggate-return)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.agreggatereturn" value="true" valueType="boolean"/>
+							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.agreggatereturn.1537368111" name="Warn if struct is returned (-Wagreggate-return)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.agreggatereturn" value="false" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.floatequal.985750828" name="Warn if floats are compared as equal (-Wfloat-equal)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.warnings.floatequal" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.freestanding.53490575" name="Assume freestanding environment (-ffreestanding)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.freestanding" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.toolchain.name.1231559103" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.toolchain.name" value="GNU Tools for ARM Embedded Processors" valueType="string"/>
@@ -252,11 +252,12 @@
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.size.1517447651" name="Size command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.size" value="size" valueType="string"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.make.1144309839" name="Build command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.make" value="make" valueType="string"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm.1282732208" name="Remove command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm" value="rm" valueType="string"/>
-							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash.323271035" name="Create flash image" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash" value="true" valueType="boolean"/>
+							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash.323271035" name="Create flash image" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.createflash" value="false" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.printsize.321666879" name="Print size" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.addtools.printsize" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.lto.1692865693" name="Link-time optimizer (-flto)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.lto" value="true" valueType="boolean"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.abi.1792222640" name="Float ABI" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.abi" value="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.abi.hard" valueType="enumerated"/>
 							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.unit.237890933" name="FPU Type" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.unit" value="ilg.gnuarmeclipse.managedbuild.cross.option.arm.target.fpu.unit.fpv4spd16" valueType="enumerated"/>
+							<option id="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.spconstant.1330875642" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.optimization.spconstant" value="false" valueType="boolean"/>
 							<targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="ilg.gnuarmeclipse.managedbuild.cross.targetPlatform.1413505957" isAbstract="false" osList="all" superClass="ilg.gnuarmeclipse.managedbuild.cross.targetPlatform"/>
 							<builder buildPath="&quot;${workspace_loc}/vectorcontrol/Release&quot;" id="ilg.gnuarmeclipse.managedbuild.cross.builder.1977168007" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="Gnu Make Builder" superClass="ilg.gnuarmeclipse.managedbuild.cross.builder"/>
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.1750341768" name="Cross ARM GNU Assembler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler">
@@ -266,6 +267,8 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/cmsis&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/stm32f3-stdperiph&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated&quot;"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.defs.1367672822" name="Defined symbols (-D)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.defs" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="OS_USE_TRACE_ITM"/>
@@ -281,6 +284,8 @@
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/cmsis&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/stm32f3-stdperiph&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated&quot;"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.missingprototypes.1395687808" name="Warn if a global function has no prototype (-Wmissing-prototypes)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.missingprototypes" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.strictprototypes.1631756858" name="Warn if a function has no arg type (-Wstrict-prototypes)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.warning.strictprototypes" useByScannerDiscovery="true" value="true" valueType="boolean"/>
@@ -296,10 +301,11 @@
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.1285162560" name="Cross ARM C++ Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler">
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.include.paths.1236213333" name="Include paths (-I)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/cmsis&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/system/include/stm32f3-stdperiph&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc}/vectorcontrol/libuavcan/include/dsdlc_generated&quot;"/>
 								</option>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.noexceptions.61913398" name="Do not use exceptions (-fno-exceptions)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.noexceptions" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.nortti.2052785404" name="Do not use RTTI (-fno-rtti)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.nortti" useByScannerDiscovery="true" value="true" valueType="boolean"/>
@@ -313,11 +319,15 @@
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.warning.signpromo.262095642" name="Warn on sign promotion (-Wsign-promo)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.warning.signpromo" useByScannerDiscovery="true" value="true" valueType="boolean"/>
 								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.defs.88974164" name="Defined symbols (-D)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.defs" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="OS_USE_TRACE_ITM"/>
+									<listOptionValue builtIn="false" value="UAVCAN_DEBUG=0"/>
+									<listOptionValue builtIn="false" value="UAVCAN_TINY=1"/>
+									<listOptionValue builtIn="false" value="UAVCAN_NO_ASSERTIONS=1"/>
 									<listOptionValue builtIn="false" value="STM32F30X"/>
 									<listOptionValue builtIn="false" value="USE_STDPERIPH_DRIVER"/>
 									<listOptionValue builtIn="false" value="HSE_VALUE=8000000"/>
 								</option>
-								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.warneffc.1822677300" name="Warn about Effective C++ violations (-Weffc++)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.warneffc" useByScannerDiscovery="true" value="true" valueType="boolean"/>
+								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.warneffc.1822677300" name="Warn about Effective C++ violations (-Weffc++)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.warneffc" useByScannerDiscovery="true" value="false" valueType="boolean"/>
+								<option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings.2007589772" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings" value="-Wno-ctor-dtor-privacy" valueType="string"/>
 								<inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input.2129251224" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input"/>
 							</tool>
 							<tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.c.linker.1851536869" name="Cross ARM C Linker" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.c.linker">

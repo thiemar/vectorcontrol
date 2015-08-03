@@ -51,7 +51,8 @@ sys.path.insert(0, "/Users/bendyer/Projects/ARM/workspace/pyuavcan/")
 
 import uavcan
 import uavcan.node
-import uavcan.handlers
+import uavcan.monitors
+import uavcan.services
 
 
 NOTIFY_SOCKETS = set()
@@ -75,95 +76,6 @@ def send_all(message):
     global NOTIFY_SOCKETS
     for socket in NOTIFY_SOCKETS:
         socket.write_message(message)
-
-
-def handle_can_message(conn, message):
-    """Process an incoming CAN message."""
-    global UAVCAN_NODES, UAVCAN_NODE_MEASUREMENT_QUEUE, \
-           UAVCAN_NODE_CONTROLLER_QUEUE, UAVCAN_NODE_UPTIME, \
-           UAVCAN_NODE_HFI_QUEUE
-
-    message_id = message[0]
-    message_data = message[1]
-    extended = message[2]
-
-    if extended:
-        data_type_id = can.uavcan_get_data_type_id(message_id)
-    else:
-        data_type_id = None
-
-    if data_type_id == UAVCAN_NODESTATUS_ID:
-        node_id = can.uavcan_get_node_id(message_id)
-        u0, u1, u2, status = struct.unpack("<4B", message_data)
-        uptime = u0 + (u1 << 8) + (u2 << 16)
-
-        if node_id not in UAVCAN_NODE_UPTIME or \
-                UAVCAN_NODE_UPTIME[node_id] > uptime:
-            # New node -- get configuration in the next IOLoop iteration
-            log.debug(("handle_can_message(): detected new/restarted " +
-                       "node ID {0}").format(node_id))
-            tornado.ioloop.IOLoop.instance().add_callback(
-                read_node_configuration, conn, node_id)
-
-        UAVCAN_NODE_UPTIME[node_id] = uptime
-
-        send_all({
-            "node_id": node_id,
-            "uptime": uptime
-        })
-    elif message_id == flash.CAN_STATUS_CONFIG_ID:
-        node_id, param_index, value = struct.unpack("<BBf", message_data)
-        param_name = param_name_from_param_index(param_index)
-        UAVCAN_NODE_CONFIG[node_id][param_name] = value
-
-        send_all({
-            "node_id": node_id,
-            "param_name": param_name,
-            "value": value
-        })
-    elif message_id in (CAN_STATUS_CONTROLLER_ID, CAN_STATUS_MEASUREMENT_ID,
-                        CAN_STATUS_VOLTAGE_ID, CAN_STATUS_HFI_ID):
-        queue = key = node_id = None
-        data = {}
-
-        if message_id == CAN_STATUS_CONTROLLER_ID:
-            node_id, i_d, i_q, i_setpoint = struct.unpack("<BHHH", message_data)
-            data["i_d"] = can.f32_from_f16(i_d)
-            data["i_q"] = can.f32_from_f16(i_q)
-            data["i_setpoint"] = can.f32_from_f16(i_setpoint)
-            queue = UAVCAN_NODE_CONTROLLER_QUEUE
-            key = "current"
-        elif message_id == CAN_STATUS_MEASUREMENT_ID:
-            node_id, temperature, rpm_setpoint, rpm, vbus = \
-                struct.unpack("<BbhhH", message_data)
-            data["temperature"] = temperature
-            data["rpm_setpoint"] = rpm_setpoint
-            data["rpm"] = rpm
-            data["vbus"] = can.f32_from_f16(vbus)
-            queue = UAVCAN_NODE_MEASUREMENT_QUEUE
-            key = "speed"
-        elif message_id == CAN_STATUS_VOLTAGE_ID:
-            node_id, v_d, v_q, consistency = struct.unpack("<BHHH", message_data)
-            data["v_d"] = can.f32_from_f16(v_d)
-            data["v_q"] = can.f32_from_f16(v_q)
-            data["consistency"] = can.f32_from_f16(consistency)
-            queue = UAVCAN_NODE_VOLTAGE_QUEUE
-            key = "voltage"
-        elif message_id == CAN_STATUS_HFI_ID:
-            node_id, hfi_d, hfi_q, angle = struct.unpack("<BHHH", message_data)
-            data["hfi_d"] = can.f32_from_f16(hfi_d)
-            data["hfi_q"] = can.f32_from_f16(hfi_q)
-            data["angle"] = can.f32_from_f16(angle)
-            queue = UAVCAN_NODE_HFI_QUEUE
-            key = "hfi"
-
-        queue[node_id].append(data)
-        if len(queue[node_id]) == 10:
-            send_all({
-                "node_id": node_id,
-                key: list(queue[node_id])
-            })
-            queue[node_id].clear()
 
 
 def handle_timer(conn):
@@ -199,7 +111,7 @@ def handle_timer(conn):
         #conn.send(CAN_COMMAND_SETPOINT_ID, message)
 
 
-class MessageRelayHandler(uavcan.node.MessageHandler):
+class MessageRelayMonitor(uavcan.node.Monitor):
     def on_message(self, message):
         send_all({
             "datatype": message.type.get_normalized_definition(),
@@ -628,24 +540,23 @@ if __name__ == "__main__":
     if len(args):
         node = uavcan.node.Node([
             # Server implementation
-            (uavcan.protocol.NodeStatus, uavcan.handlers.NodeStatusHandler,
+            (uavcan.protocol.NodeStatus, uavcan.monitors.NodeStatusMonitor,
                 {"new_node_callback": update_device_firmware}),
             (uavcan.protocol.dynamic_node_id.Allocation,
-                uavcan.handlers.DynamicNodeIDAllocationHandler,
+                uavcan.monitors.DynamicNodeIDServer,
                 {"dynamic_id_range": (2, 125)}),
-            (uavcan.protocol.file.GetInfo, uavcan.handlers.FileGetInfoHandler,
+            (uavcan.protocol.file.GetInfo, uavcan.servers.FileGetInfoServer,
                 {"path": firmware_dir}),
-            (uavcan.protocol.file.Read, uavcan.handlers.FileReadHandler,
+            (uavcan.protocol.file.Read, uavcan.servers.FileReadServer,
                 {"path": firmware_dir}),
             (uavcan.protocol.debug.LogMessage,
-                uavcan.handlers.DebugLogMessageHandler),
+                uavcan.monitors.DebugLogMessageMonitor),
             # CAN<->WebSocket bridge
-            (uavcan.protocol.NodeStatus, MessageRelayHandler),
-            (uavcan.equipment.esc.Status, MessageRelayHandler),
-            (uavcan.thirdparty.thiemar.equipment.esc.Status,
-                    MessageRelayHandler)
+            (uavcan.protocol.NodeStatus, MessageRelayMonitor),
+            (uavcan.equipment.esc.Status, MessageRelayMonitor),
+            (uavcan.equipment.esc.FOCStatus, MessageRelayMonitor)
         ], node_id=int(options.node_id))
-        node.listen(args[0], baudrate=int(options.bus_speed))
+        node.listen(args[0], baudrate=int(options.bus_speed), io_loop=ioloop)
         #can_setpoint_schedule_timer = tornado.ioloop.PeriodicCallback(
         #    functools.partial(handle_timer, can_dev),
         #    10, io_loop=ioloop)

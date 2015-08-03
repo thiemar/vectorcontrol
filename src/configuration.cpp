@@ -22,12 +22,21 @@ SOFTWARE.
 
 #include <cstdlib>
 #include <cstring>
+#include <uavcan/data_type.hpp>
 
 #include "configuration.h"
 #include "hal.h"
 
 
-volatile float *flash_param_values = (volatile float*)FLASH_PARAM_ADDRESS;
+struct flash_param_values_t {
+    uint64_t crc;
+    uint32_t version;
+    float values[64];
+};
+
+
+volatile flash_param_values_t *flash_param_values =
+    (volatile flash_param_values_t*)FLASH_PARAM_ADDRESS;
 
 
 __attribute__((section(".app_descriptor"),used))
@@ -43,7 +52,7 @@ flash_app_descriptor = {
 };
 
 
-struct param_t flash_params[NUM_PARAMS] = {
+static struct param_t param_config_[NUM_PARAMS] = {
     /*
     Index, type, name,
         default value, min value, max value
@@ -170,8 +179,24 @@ inline static float _rad_per_s_from_rpm(float rpm, uint32_t num_poles) {
 
 Configuration::Configuration(void) {
     size_t i;
-    for (i = 0; i < NUM_PARAMS; i++) {
-        params_[i] = flash_param_values[i];
+    uavcan::DataTypeSignatureCRC crc;
+    crc.add((uint8_t*)(FLASH_PARAM_ADDRESS + sizeof(uint64_t)),
+            sizeof(struct flash_param_values_t) - sizeof(uint64_t));
+
+    if (crc.get() == flash_param_values->crc &&
+            flash_param_values->version == FLASH_PARAM_VERSION) {
+        for (i = 0; i < NUM_PARAMS; i++) {
+            if (param_config_[i].min_value <= flash_param_values->values[i] &&
+                flash_param_values->values[i] <= param_config_[i].max_value) {
+                params_[i] = flash_param_values->values[i];
+            } else {
+                params_[i] = param_config_[i].default_value;
+            }
+        }
+    } else {
+        for (i = 0; i < NUM_PARAMS; i++) {
+            params_[i] = param_config_[i].default_value;
+        }
     }
 }
 
@@ -243,7 +268,7 @@ bool Configuration::get_param_by_name(
 ) {
     size_t idx;
 
-    idx = _find_param_index_by_name(name, flash_params, NUM_PARAMS);
+    idx = _find_param_index_by_name(name, param_config_, NUM_PARAMS);
     return get_param_by_index(out_param, (uint8_t)idx);
 }
 
@@ -256,7 +281,7 @@ bool Configuration::get_param_by_index(
         return false;
     }
 
-    memcpy(&out_param, &flash_params[index], sizeof(struct param_t));
+    memcpy(&out_param, &param_config_[index], sizeof(struct param_t));
     return true;
 }
 
@@ -264,7 +289,7 @@ bool Configuration::get_param_by_index(
 bool Configuration::set_param_value_by_name(const char* name, float value) {
     size_t idx;
 
-    idx = _find_param_index_by_name(name, flash_params, NUM_PARAMS);
+    idx = _find_param_index_by_name(name, param_config_, NUM_PARAMS);
     return set_param_value_by_index((uint8_t)idx, value);
 }
 
@@ -274,8 +299,8 @@ bool Configuration::set_param_value_by_index(uint8_t index, float value) {
         return false;
     }
 
-    if (flash_params[index].min_value <= value &&
-            value <= flash_params[index].max_value) {
+    if (param_config_[index].min_value <= value &&
+            value <= param_config_[index].max_value) {
         params_[index] = value;
         return true;
     } else {
@@ -288,9 +313,20 @@ void Configuration::write_params(void) {
     static_assert(!(sizeof(params_) & 0x3u),
                   "Size of params_ must be a multiple of 4");
 
+    struct flash_param_values_t new_flash_param_values;
+    uavcan::DataTypeSignatureCRC crc;
+
+    new_flash_param_values.version = FLASH_PARAM_VERSION;
+    memcpy(new_flash_param_values.values, params_, sizeof(params_));
+
+    crc.add((uint8_t*)(new_flash_param_values.version),
+            sizeof(struct flash_param_values_t) - sizeof(uint64_t));
+    new_flash_param_values.crc = crc.get();
+
     hal_flash_protect(false);
     hal_flash_erase((uint8_t*)flash_param_values, 2048u);
-    hal_flash_write((uint8_t*)flash_param_values, sizeof(params_),
-                    (uint8_t*)params_);
+    hal_flash_write((uint8_t*)flash_param_values,
+                    sizeof(struct flash_param_values_t),
+                    (uint8_t*)&new_flash_param_values);
     hal_flash_protect(true);
 }

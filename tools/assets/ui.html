@@ -386,7 +386,7 @@ SOFTWARE.
                     <label>
                         <span>Control mode</span>
                         <select name="mode">
-                            <option>torque</option>
+                            <option>dc (%)</option>
                             <option>rpm</option>
                         </select>
                     </label>
@@ -505,7 +505,7 @@ SOFTWARE.
                     </label>
                     <label>
                         <span>Kv (rpm / V)</span>
-                        <input name="motor_kv" class="configuration" type="number" min="200" max="4000" step="1">
+                        <input name="motor_kv" class="configuration" type="number" min="200" max="8000" step="1">
                     </label>
 
                     <h3>Control parameters</h3>
@@ -529,11 +529,11 @@ SOFTWARE.
                     <h3>UAVCAN parameters</h3>
                     <label>
                         <span>Extended status ID</span>
-                        <input name="uavcan.dtid-thiemar.equipment.esc.Status" class="configuration" type="number" min="1" max="1023" step="1">
+                        <input name="uavcan.dtid-uavcan.equipment.esc.FOCStatus" class="configuration" type="number" min="1" max="1023" step="1">
                     </label>
                     <label>
                         <span>Extended status interval (s)</span>
-                        <input name="uavcan.pubp-thiemar.equipment.esc.Status" class="configuration" type="number" min="0.01" max="0.1" step="0.01">
+                        <input name="uavcan.pubp-uavcan.equipment.esc.FOCStatus" class="configuration" type="number" min="0.01" max="0.1" step="0.01">
                     </label>
                     <label>
                         <span>ESC status interval (s)</span>

@@ -89,7 +89,7 @@ function connect() {
             updateSpeedChart(nodeUi, deviceData[message.node_id] || []);
             updateOutputVoltageChart(nodeUi,
                                      deviceData[message.node_id] || []);
-        } else if (message.datatype == "thiemar.equipment.esc.Status") {
+        } else if (message.datatype == "uavcan.equipment.esc.FOCStatus") {
             /*
             Measurement data -- add it to the measurement array, removing old
             data if the total length is more than 1500 samples
