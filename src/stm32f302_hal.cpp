@@ -826,7 +826,7 @@ static void hal_init_can_(uint32_t speed) {
                                 management. */
         .CAN_AWUM = ENABLE,  /* Enable or disable the automatic wake-up
                                 mode. */
-        .CAN_NART = ENABLE,  /* Enable or disable the no-automatic
+        .CAN_NART = DISABLE, /* Enable or disable the no-automatic
                                 retransmission mode. */
         .CAN_RFLM = DISABLE,  /* Enable or disable the Receive FIFO Locked
                                  mode. */
@@ -1067,18 +1067,13 @@ void hal_set_pwm_state(enum hal_pwm_state_t state) {
 }
 
 
-enum hal_status_t hal_transmit_can_message(
-    uint8_t mailbox,
-    uint32_t message_id,
-    size_t length,
-    const uint8_t *message
-) {
-    uint32_t data[2], mask, i;
+uint8_t hal_get_can_node_id(void) {
+    return (uint8_t)(bootloader_app_shared_.node_id & 0x7Fu);
+}
 
-    data[0] = data[1] = 0u;
-    for (i = 0u; i < length; i++) {
-        ((uint8_t*)data)[i] = message[i];
-    }
+
+bool hal_is_can_ready(uint8_t mailbox) {
+    uint32_t mask;
 
     switch (mailbox) {
         case 0u:
@@ -1093,18 +1088,36 @@ enum hal_status_t hal_transmit_can_message(
             break;
     }
 
-    if (!(CAN1->TSR & mask)) {
-        return HAL_STATUS_ERROR;
+    return CAN1->TSR & mask;
+}
+
+
+enum hal_status_t hal_transmit_can_message(
+    uint8_t mailbox,
+    uint32_t message_id,
+    size_t length,
+    const uint8_t *message
+) {
+    uint32_t data[2], i;
+
+    data[0] = data[1] = 0u;
+    for (i = 0u; i < length; i++) {
+        ((uint8_t*)data)[i] = message[i];
     }
 
-    CAN1->sTxMailBox[mailbox].TIR = 0;
-    CAN1->sTxMailBox[mailbox].TIR |= (message_id << 3u) | 0x4u;
-    CAN1->sTxMailBox[mailbox].TDTR = length;
-    CAN1->sTxMailBox[mailbox].TDLR = data[0];
-    CAN1->sTxMailBox[mailbox].TDHR = data[1];
-    CAN1->sTxMailBox[mailbox].TIR |= 1u;
+    /* Just block while waiting for the mailbox. */
+    if (hal_is_can_ready(mailbox)) {
+        CAN1->sTxMailBox[mailbox].TIR = 0;
+        CAN1->sTxMailBox[mailbox].TIR |= (message_id << 3u) | 0x4u;
+        CAN1->sTxMailBox[mailbox].TDTR = length;
+        CAN1->sTxMailBox[mailbox].TDLR = data[0];
+        CAN1->sTxMailBox[mailbox].TDHR = data[1];
+        CAN1->sTxMailBox[mailbox].TIR |= 1u;
 
-    return HAL_STATUS_OK;
+        return HAL_STATUS_OK;
+    } else {
+        return HAL_STATUS_ERROR;
+    }
 }
 
 
@@ -1133,7 +1146,7 @@ enum hal_status_t hal_receive_can_message(
     /* If so, process it */
     *message_id = CAN1->sFIFOMailBox[fifo].RIR >> 3u;
     *length = CAN1->sFIFOMailBox[fifo].RDTR & 0xFu;
-    *filter_id = (CAN1->sFIFOMailBox[fifo].RDTR >> 16u) & 0xFFu;
+    *filter_id = (CAN1->sFIFOMailBox[fifo].RDTR >> 8u) & 0xFFu;
     data[0] = CAN1->sFIFOMailBox[fifo].RDLR;
     data[1] = CAN1->sFIFOMailBox[fifo].RDHR;
 
@@ -1169,14 +1182,14 @@ void hal_set_can_dtid_filter(
         CAN1->sFilterRegister[filter_id].FR1 =
             ((dtid << 16u) | 0x8000u | (node_id << 0x8u) | 0x80u) << 3u;
     } else { /* Message */
-        CAN1->sFilterRegister[filter_id].FR1 = dtid << 8u;
+        CAN1->sFilterRegister[filter_id].FR1 = (dtid << 8u) << 3u;
     }
     /*
     For messages, this mask matches DTID and "service not message" flag.
     For service requests, it matches DTID, "request not response" flag,
     destination node ID, and "service not message" flags.
     */
-    CAN1->sFilterRegister[filter_id].FR2 = 0x00FFFF80u;
+    CAN1->sFilterRegister[filter_id].FR2 = 0x00FFFF80u << 3u;
     CAN1->FM1R &= ~mask; /* Set to mask mode */
     if (fifo) {
         CAN1->FFA1R |= mask; /* FIFO 1 */

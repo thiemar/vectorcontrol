@@ -40,6 +40,9 @@ SOFTWARE.
 #define FLASH_PARAM_VERSION 1u
 
 
+#define PARAM_NAME_MAX_LEN 46u
+
+
 #include <algorithm>
 #include "fixed.h"
 
@@ -81,10 +84,11 @@ enum param_type_t {
     PARAM_TYPE_FLOAT
 };
 
+
 struct param_t {
     uint8_t index;
     uint8_t public_type;
-    char name[46];
+    char name[PARAM_NAME_MAX_LEN];
     float default_value;
     float min_value;
     float max_value;

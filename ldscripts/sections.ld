@@ -137,9 +137,7 @@ SECTIONS
     {
         . = ALIGN(128);
 
-        *(.text._start)           /* Startup routine first */
-
-        *(.text .text.*)			/* all remaining code */
+        *(.text .text.*)			/* all code */
 
         *(.rodata .rodata.*) 		/* read-only data (constants) */
 

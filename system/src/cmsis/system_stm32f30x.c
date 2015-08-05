@@ -119,8 +119,8 @@
 /*!< Uncomment the following line if you need to relocate your vector Table in
      Internal SRAM. */
 /* #define VECT_TAB_SRAM */
-#define VECT_TAB_OFFSET  0 //0x2000 /*!< Vector Table base offset field.
-                          //         This value must be a multiple of 0x200. */
+#define VECT_TAB_OFFSET  0x2000 /*!< Vector Table base offset field.
+                                 This value must be a multiple of 0x200. */
 /**
   * @}
   */
@@ -207,6 +207,7 @@ void __attribute__((externally_visible)) SystemInit(void)
 #endif
 
   SCB->CPACR |= (0xF << 20);
+  __set_BASEPRI(0);
 }
 
 /**

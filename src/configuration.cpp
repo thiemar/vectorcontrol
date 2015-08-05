@@ -150,12 +150,12 @@ static struct param_t param_config_[NUM_PARAMS] = {
     */
     {PARAM_FOC_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
         "uavcan.pubp-uavcan.equipment.esc.FOCStatus",
-        20e3, 0, 1e6f},
+        50e3, 0, 1e6f},
 
     /* Data type ID of the custom ESC status message. */
     {PARAM_FOC_ESCSTATUS_ID, PARAM_TYPE_INT,
         "uavcan.dtid-uavcan.equipment.esc.FOCStatus",
-        768, 1, 1023},
+        1035, 1, 65535},
 
     /*
     Interval in microseconds at which UAVCAN standard ESC status messages
@@ -163,7 +163,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     */
     {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
         "uavcan.pubp-uavcan.equipment.esc.Status",
-        1e5f, 0, 1e6f},
+        200e3f, 0, 1e6f},
 
     /* Index of this ESC in throttle command messages. */
     {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT,
@@ -230,7 +230,7 @@ void Configuration::read_control_params(
 static size_t _get_param_name_len(const char* name) {
     size_t i;
 
-    for (i = 0; i < 27; i++) {
+    for (i = 0; i < PARAM_NAME_MAX_LEN; i++) {
         if (name[i] == 0) {
             return i + 1u;
         }
@@ -316,10 +316,12 @@ void Configuration::write_params(void) {
     struct flash_param_values_t new_flash_param_values;
     uavcan::DataTypeSignatureCRC crc;
 
-    new_flash_param_values.version = FLASH_PARAM_VERSION;
+    memset(&new_flash_param_values, 0xFFu,
+           sizeof(struct flash_param_values_t));
     memcpy(new_flash_param_values.values, params_, sizeof(params_));
+    new_flash_param_values.version = FLASH_PARAM_VERSION;
 
-    crc.add((uint8_t*)(new_flash_param_values.version),
+    crc.add((uint8_t*)(&new_flash_param_values.version),
             sizeof(struct flash_param_values_t) - sizeof(uint64_t));
     new_flash_param_values.crc = crc.get();
 

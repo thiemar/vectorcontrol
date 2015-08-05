@@ -177,14 +177,15 @@ control_cb(
     float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
           v_ab_v[2], min_speed, max_speed;
     struct motor_state_t motor_state;
-    enum controller_mode_t controller_mode;
+    struct controller_state_t controller_state;
 
-    controller_mode = g_controller_state.mode;
+    controller_state =
+        const_cast<struct controller_state_t&>(g_controller_state);
 
     /* Update the state estimate with those values */
     g_estimator.update_state_estimate(
         i_ab_a, last_v_ab_v,
-        g_controller_state.speed_setpoint > 0.0f ? 1.0 : -1.0f);
+        controller_state.speed_setpoint > 0.0f ? 1.0 : -1.0f);
     g_estimator.get_state_estimate(motor_state);
 
     /*
@@ -195,10 +196,10 @@ control_cb(
             HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A ||
             g_controller_state.fault) {
         g_controller_state.fault = true;
-        g_controller_state.mode = controller_mode = CONTROLLER_STOPPED;
+        g_controller_state.mode = controller_state.mode = CONTROLLER_STOPPED;
     }
 
-    if (controller_mode == CONTROLLER_STOPPED) {
+    if (controller_state.mode == CONTROLLER_STOPPED) {
         out_v_ab_v[0] = out_v_ab_v[1] = v_dq_v[0] = v_dq_v[1] = 0.0f;
         g_estimator.reset_state();
         g_current_controller.reset_state();
@@ -207,17 +208,17 @@ control_cb(
         readings[0] = readings[1] = 0.0f;
     } else if (g_estimator.is_converged()) {
         /* Update the speed controller setpoint */
-        if (controller_mode == CONTROLLER_TORQUE) {
+        if (controller_state.mode == CONTROLLER_TORQUE) {
             /*
             In torque control mode, the torque input is used to limit the
             speed controller's output, and the speed controller setpoint
             always requests acceleration or deceleration in the direction of
             the requested torque.
             */
-            min_speed = g_controller_state.min_speed_rad_per_s;
-            max_speed = g_controller_state.max_speed_rad_per_s;
+            min_speed = controller_state.min_speed_rad_per_s;
+            max_speed = controller_state.max_speed_rad_per_s;
             speed_setpoint = motor_state.angular_velocity_rad_per_s +
-                             (g_controller_state.current_setpoint > 0.0f ?
+                             (controller_state.current_setpoint > 0.0f ?
                                 min_speed : -min_speed);
             if (speed_setpoint > max_speed) {
                 speed_setpoint = max_speed;
@@ -225,25 +226,24 @@ control_cb(
                 speed_setpoint = -max_speed;
             }
             g_controller_state.speed_setpoint = speed_setpoint;
-            g_speed_controller.set_current_limit_a(
-                std::abs(motor_state.angular_velocity_rad_per_s) > min_speed ?
-                    std::abs(g_controller_state.current_setpoint) :
-                    g_controller_state.max_current_a);
-        } else if (controller_mode == CONTROLLER_STOPPING) {
+
+            if (std::abs(motor_state.angular_velocity_rad_per_s) > min_speed) {
+                controller_state.max_current_a =
+                    std::abs(controller_state.current_setpoint);
+            }
+        } else if (controller_state.mode == CONTROLLER_STOPPING) {
             /*
             When stopping, the speed controller setpoint tracks the current
             angular velocity
             */
-            speed_setpoint = motor_state.angular_velocity_rad_per_s;
-
-            g_controller_state.speed_setpoint = speed_setpoint;
-            g_speed_controller.set_current_limit_a(
-                g_controller_state.max_current_a);
+            g_controller_state.speed_setpoint = speed_setpoint =
+                motor_state.angular_velocity_rad_per_s;
         } else {
-            speed_setpoint = g_controller_state.speed_setpoint;
-            g_speed_controller.set_current_limit_a(
-                g_controller_state.max_current_a);
+            speed_setpoint = controller_state.speed_setpoint;
+
         }
+        g_speed_controller.set_current_limit_a(
+                controller_state.max_current_a);
         g_speed_controller.set_setpoint(speed_setpoint);
 
         /*
@@ -253,9 +253,9 @@ control_cb(
         */
         current_setpoint = g_speed_controller.update(motor_state);
 
-        if (controller_mode == CONTROLLER_STOPPING) {
-            current_setpoint = g_controller_state.current_setpoint;
-        } else if (controller_mode == CONTROLLER_SPEED) {
+        if (controller_state.mode == CONTROLLER_STOPPING) {
+            current_setpoint = controller_state.current_setpoint;
+        } else if (controller_state.mode == CONTROLLER_SPEED) {
             g_controller_state.current_setpoint = current_setpoint;
         }
 
@@ -315,27 +315,33 @@ control_cb(
 
 
 void systick_cb(void) {
-    struct controller_state_t state;
+    uint32_t state_time, state_last_setpoint_update;
+    float state_min_speed, motor_speed;
+    enum controller_mode_t state_mode;
 
-    state = const_cast<struct controller_state_t&>(g_controller_state);
-    state.time++;
+    state_mode = g_controller_state.mode;
+    state_min_speed = g_controller_state.min_speed_rad_per_s;
+    state_time = g_controller_state.time + 1u;
+    state_last_setpoint_update = g_controller_state.last_setpoint_update;
+    motor_speed = std::abs(g_motor_state.angular_velocity_rad_per_s);
 
-    /* Motor shutdown logic -- stop when back EMF drops below 0.05 V */
-    if (std::abs(g_v_dq_v[0]) < 0.05f && std::abs(g_v_dq_v[1]) < 0.05f &&
-            state.mode == CONTROLLER_STOPPING) {
+    /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
+    if (((std::abs(g_v_dq_v[0]) < 0.1f && std::abs(g_v_dq_v[1]) < 0.1f) ||
+            motor_speed < state_min_speed * 0.1f) &&
+            state_mode == CONTROLLER_STOPPING) {
         g_controller_state.mode = CONTROLLER_STOPPED;
         g_controller_state.speed_setpoint = 0.0f;
         g_controller_state.current_setpoint = 0.0f;
-    } else if (state.mode == CONTROLLER_STOPPING) {
+    } else if (state_mode == CONTROLLER_STOPPING) {
         /*
         Add a small amount of negative torque to ensure the motor actually
         shuts down.
         */
         g_controller_state.current_setpoint =
-            state.speed_setpoint > 0.0f ? -0.25f : 0.25f;
-    } else if ((state.mode == CONTROLLER_SPEED ||
-                state.mode == CONTROLLER_TORQUE) &&
-                state.time - state.last_setpoint_update > THROTTLE_TIMEOUT_MS) {
+            g_controller_state.speed_setpoint > 0.0f ? -0.1f : 0.1f;
+    } else if ((state_mode == CONTROLLER_SPEED ||
+                state_mode == CONTROLLER_TORQUE) &&
+                state_time - state_last_setpoint_update > THROTTLE_TIMEOUT_MS) {
         /*
         Stop gracefully if the present command mode doesn't provide an
         updated setpoint in the required period.
@@ -343,7 +349,7 @@ void systick_cb(void) {
         g_controller_state.mode = CONTROLLER_STOPPING;
     }
 
-    g_controller_state.time = state.time;
+    g_controller_state.time = state_time;
 }
 
 
@@ -388,7 +394,7 @@ static void __attribute__((noreturn)) node_run(
     size_t length, i;
     uint32_t message_id, current_time, node_status_time, esc_status_time,
              custom_status_time, node_status_interval, esc_status_interval,
-             custom_status_interval;
+             custom_status_interval, last_tx_time;
     uint8_t filter_id, custom_status_transfer_id, node_status_transfer_id,
             esc_status_transfer_id, esc_index, message[8];
     enum hal_status_t status;
@@ -402,7 +408,8 @@ static void __attribute__((noreturn)) node_run(
     custom_status_transfer_id = node_status_transfer_id =
         esc_status_transfer_id = 0u;
 
-    custom_status_time = node_status_time = esc_status_time = 0u;
+    custom_status_time = node_status_time = esc_status_time = last_tx_time =
+        0u;
 
     wants_bootloader_restart = false;
 
@@ -434,20 +441,30 @@ static void __attribute__((noreturn)) node_run(
         current_time = g_controller_state.time;
         got_setpoint = false;
 
-        motor_state = const_cast<struct motor_state_t&>(g_motor_state);
-        v_dq_v[0] = g_v_dq_v[0];
-        v_dq_v[1] = g_v_dq_v[1];
-
         /*
         Check for UAVCAN commands (FIFO 0) -- these are all broadcasts
         */
-        status = hal_receive_can_message(0u, &filter_id, &message_id,
+        do {
+            status = hal_receive_can_message(0u, &filter_id, &message_id,
                                          &length, message);
-        if (status == HAL_STATUS_OK) {
-            hal_enable_can_transmit();
-            broadcast_manager.receive_frame(current_time, message_id, length,
-                                            message);
-        }
+            /* Filter IDs are per-FIFO, so convert this back to the bank index */
+            filter_id += UAVCAN_EQUIPMENT_ESC_RAWCOMMAND;
+            if (status == HAL_STATUS_OK) {
+                uavcan::TransferCRC crc;
+                switch (filter_id) {
+                    case UAVCAN_EQUIPMENT_ESC_RAWCOMMAND:
+                        crc = uavcan::equipment::esc::RawCommand::getDataTypeSignature().toTransferCRC();
+                        break;
+                    case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND:
+                        crc = uavcan::equipment::esc::RPMCommand::getDataTypeSignature().toTransferCRC();
+                        break;
+                    default:
+                        break;
+                }
+                broadcast_manager.receive_frame(current_time, message_id, crc,
+                                                length, message);
+            }
+        } while (status == HAL_STATUS_OK && !broadcast_manager.is_rx_done());
 
         if (broadcast_manager.is_rx_done()) {
             if (filter_id == UAVCAN_EQUIPMENT_ESC_RAWCOMMAND &&
@@ -469,13 +486,34 @@ static void __attribute__((noreturn)) node_run(
         Check for UAVCAN service requests (FIFO 1) -- only process if the
         first byte of the data is the local node ID
         */
-        status = hal_receive_can_message(1u, &filter_id, &message_id,
-                                         &length, message);
-        if (status == HAL_STATUS_OK && message[0] == node_id) {
-            hal_enable_can_transmit();
-            service_manager.receive_frame(current_time, message_id, length,
-                                          message);
-        }
+        do {
+            status = hal_receive_can_message(1u, &filter_id, &message_id,
+                                             &length, message);
+            if (status == HAL_STATUS_OK) {
+                uavcan::TransferCRC crc;
+                switch (filter_id) {
+                    case UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE:
+                        crc = uavcan::protocol::param::ExecuteOpcode::getDataTypeSignature().toTransferCRC();
+                        break;
+                    case UAVCAN_PROTOCOL_PARAM_GETSET:
+                        crc = uavcan::protocol::param::GetSet::getDataTypeSignature().toTransferCRC();
+                        break;
+                    case UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE:
+                        crc = uavcan::protocol::file::BeginFirmwareUpdate::getDataTypeSignature().toTransferCRC();
+                        break;
+                    case UAVCAN_PROTOCOL_GETNODEINFO:
+                        crc = uavcan::protocol::GetNodeInfo::getDataTypeSignature().toTransferCRC();
+                        break;
+                    case UAVCAN_PROTOCOL_RESTARTNODE:
+                        crc = uavcan::protocol::RestartNode::getDataTypeSignature().toTransferCRC();
+                        break;
+                    default:
+                        break;
+                }
+                service_manager.receive_frame(current_time, message_id, crc,
+                                              length, message);
+            }
+        } while (status == HAL_STATUS_OK && !service_manager.is_rx_done());
 
         /*
         Don't process service requests until the last service response is
@@ -521,11 +559,13 @@ static void __attribute__((noreturn)) node_run(
                 }
 
                 if (param_valid) {
-                    if (param.public_type == PARAM_TYPE_FLOAT) {
+                    if (param.public_type == PARAM_TYPE_FLOAT && !gs_req.name.empty() &&
+                            gs_req.value.is(uavcan::protocol::param::Value::Tag::real_value)) {
                         value = gs_req.value.to<uavcan::protocol::param::Value::Tag::real_value>();
                         configuration.set_param_value_by_index(param.index,
                                                                value);
-                    } else if (param.public_type == PARAM_TYPE_INT) {
+                    } else if (param.public_type == PARAM_TYPE_INT && !gs_req.name.empty() &&
+                            gs_req.value.is(uavcan::protocol::param::Value::Tag::integer_value)) {
                         value = (float)gs_req.value.to<uavcan::protocol::param::Value::Tag::integer_value>();
                         configuration.set_param_value_by_index(param.index,
                                                                value);
@@ -534,7 +574,7 @@ static void __attribute__((noreturn)) node_run(
                     value = configuration.get_param_value_by_index(
                         param.index);
 
-                    resp.name = gs_req.name;
+                    resp.name = (const char*)param.name;
                     if (param.public_type == PARAM_TYPE_FLOAT) {
                         resp.value.to<uavcan::protocol::param::Value::Tag::real_value>() = value;
                         resp.default_value.to<uavcan::protocol::param::Value::Tag::real_value>() = param.default_value;
@@ -569,7 +609,9 @@ static void __attribute__((noreturn)) node_run(
 
                 /* Empty request so don't need to decode */
                 resp.status.uptime_sec = current_time / 1000u;
-                resp.status.health = resp.status.HEALTH_OK;
+                resp.status.health = g_controller_state.fault ?
+                    resp.status.HEALTH_CRITICAL :
+                    resp.status.HEALTH_OK;
                 resp.status.mode = resp.status.MODE_OPERATIONAL;
                 resp.status.sub_mode = 0u;
                 resp.status.vendor_specific_status_code = 0u;
@@ -584,10 +626,15 @@ static void __attribute__((noreturn)) node_run(
                     flash_app_descriptor.vcs_commit;
                 resp.software_version.image_crc =
                     flash_app_descriptor.image_crc;
-                resp.hardware_version.major = 0u;
+                resp.hardware_version.major = 1u;
                 resp.hardware_version.minor = 0u;
-                // resp.hardware_version.unique_id;
-                resp.name = "com.thiemar.S2740VC";
+                /* Set the unique ID */
+                memset(resp.hardware_version.unique_id.begin(), 0u,
+                       resp.hardware_version.unique_id.size());
+                memcpy(resp.hardware_version.unique_id.begin(),
+                       (uint8_t*)0x1ffff7ac, 12u);
+                /* Set the hardware name */
+                resp.name = "com.thiemar.s2740vc-v1";
 
                 service_manager.encode_getnodeinfo_response(resp);
             } else if (filter_id == UAVCAN_PROTOCOL_RESTARTNODE &&
@@ -609,10 +656,18 @@ static void __attribute__((noreturn)) node_run(
             }
         }
 
-        if (broadcast_manager.is_tx_done()) {
-            is_a = __VSQRTF(motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
-                            motor_state.i_dq_a[1] * motor_state.i_dq_a[1]);
-            vs_v = __VSQRTF(v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1]);
+        /* Transmit service responses if available */
+        if (current_time > last_tx_time + 1u && hal_is_can_ready(1u) &&
+                service_manager.transmit_frame(message_id, length, message)) {
+            (void)hal_transmit_can_message(1u, message_id, length, message);
+            last_tx_time = current_time;
+        }
+
+        if (broadcast_manager.is_tx_done() && service_manager.is_tx_done() &&
+                !service_manager.is_rx_in_progress(current_time)) {
+            motor_state = const_cast<struct motor_state_t&>(g_motor_state);
+            v_dq_v[0] = g_v_dq_v[0];
+            v_dq_v[1] = g_v_dq_v[1];
 
             if (custom_status_interval && current_time - custom_status_time >=
                     custom_status_interval) {
@@ -643,6 +698,12 @@ static void __attribute__((noreturn)) node_run(
                     current_time - esc_status_time >= esc_status_interval) {
                 uavcan::equipment::esc::Status msg;
 
+                is_a = __VSQRTF(
+                    motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
+                    motor_state.i_dq_a[1] * motor_state.i_dq_a[1]);
+                vs_v = __VSQRTF(v_dq_v[0] * v_dq_v[0] +
+                                v_dq_v[1] * v_dq_v[1]);
+
                 msg.voltage = g_vbus_v;
                 msg.current = is_a * vs_v / g_vbus_v;
                 msg.temperature = 273.15f + hal_get_temperature_degc();
@@ -659,7 +720,9 @@ static void __attribute__((noreturn)) node_run(
                 uavcan::protocol::NodeStatus msg;
 
                 msg.uptime_sec = current_time / 1000u;
-                msg.health = msg.HEALTH_OK;
+                msg.health = g_controller_state.fault ?
+                    msg.HEALTH_CRITICAL :
+                    msg.HEALTH_OK;
                 msg.mode = msg.MODE_OPERATIONAL;
                 msg.sub_mode = 0u;
                 msg.vendor_specific_status_code = 0u;
@@ -669,13 +732,11 @@ static void __attribute__((noreturn)) node_run(
             }
         }
 
-        /* Transmit CAN frames if available */
-        if (broadcast_manager.transmit_frame(message_id, length, message)) {
+        /* Transmit broadcast CAN frames if available */
+        if (current_time > last_tx_time + 1u && hal_is_can_ready(0u) &&
+                broadcast_manager.transmit_frame(message_id, length, message)) {
             (void)hal_transmit_can_message(0u, message_id, length, message);
-        }
-
-        if (service_manager.transmit_frame(message_id, length, message)) {
-            (void)hal_transmit_can_message(1u, message_id, length, message);
+            last_tx_time = current_time;
         }
 
         /* Update the controller mode and setpoint */
@@ -696,7 +757,8 @@ static void __attribute__((noreturn)) node_run(
         been sent, and we're otherwise unoccupied.
         */
         if (g_controller_state.mode == CONTROLLER_STOPPED &&
-                broadcast_manager.is_tx_done() && wants_bootloader_restart) {
+                broadcast_manager.is_tx_done() &&
+                service_manager.is_tx_done() && wants_bootloader_restart) {
             /* TODO */
             hal_restart();
         }
@@ -796,7 +858,9 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     hal_set_high_frequency_callback(control_cb);
     hal_set_low_frequency_callback(systick_cb);
 
-    node_id = (uint8_t)(100u); /* FIXME: load from bootloader/app common */
+    hal_enable_can_transmit();
+
+    node_id = hal_get_can_node_id();
     node_init(node_id);
     node_run(node_id, configuration, motor_params);
 }

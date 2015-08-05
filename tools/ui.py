@@ -47,77 +47,107 @@ from optparse import OptionParser, OptionGroup
 
 
 sys.path.insert(0, "/Users/bendyer/Projects/ARM/workspace/pyuavcan/")
+sys.path.insert(0, "/mnt/hgfs/workspace/pyuavcan/")
 
 
 import uavcan
+import uavcan.dsdl
 import uavcan.node
 import uavcan.monitors
 import uavcan.services
+import uavcan.transport
+
+
+# Py3 compatibility
+try:
+    long
+except:
+    long = int
 
 
 NOTIFY_SOCKETS = set()
-UAVCAN_NODE_UPTIME = {}
-UAVCAN_NODE_CONFIG = collections.defaultdict(dict)
-UAVCAN_NODE_SETPOINT_TIMER = collections.defaultdict(int)
-UAVCAN_NODE_SETPOINT_SCHEDULE = collections.defaultdict(list)
-UAVCAN_NODE_SETPOINT_STARTUP = collections.defaultdict(list)
-UAVCAN_NODE_CONTROL_MODE = collections.defaultdict(int)
-UAVCAN_NODE_MOTOR_RUNNING = collections.defaultdict(bool)
-UAVCAN_NODE_CONTROLLER_QUEUE = collections.defaultdict(collections.deque)
-UAVCAN_NODE_MEASUREMENT_QUEUE = collections.defaultdict(collections.deque)
-UAVCAN_NODE_VOLTAGE_QUEUE = collections.defaultdict(collections.deque)
-UAVCAN_NODE_HFI_QUEUE = collections.defaultdict(collections.deque)
 
 
-SETPOINT_SCHEDULE_TIMER = 0
+UAVCAN_NODE_INFO = {}
+UAVCAN_NODE_CONFIG = {}
 
 
-def send_all(message):
+class UAVCANEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, uavcan.transport.CompoundValue):
+            if obj.is_union:
+                field = obj.union_field or obj.fields.keys()[0]
+                return {field: obj.fields[field]}
+            else:
+                return dict((k, v) for k, v in obj.fields.items()
+                            if not k.startswith("_void_"))
+        elif isinstance(obj, uavcan.transport.ArrayValue):
+            if getattr(obj.type.value_type, "bitlen", None) == 8 and \
+                    getattr(obj.type.value_type, "kind", None) == \
+                    uavcan.dsdl.parser.PrimitiveType.KIND_UNSIGNED_INT:
+                try:
+                    return obj.decode()
+                except Exception:
+                    return obj.to_bytes()
+            else:
+                return list(obj)
+        elif isinstance(obj, uavcan.transport.PrimitiveValue):
+            return obj.value
+        else:
+            return json.JSONEncoder.default(self, obj)
+
+
+def uavcan_value_from_obj(uavcan_value, obj):
+    if isinstance(uavcan_value.type, uavcan.dsdl.parser.PrimitiveType):
+        uavcan_value.value = obj
+    elif isinstance(uavcan_value.type, uavcan.dsdl.parser.ArrayType):
+        if isinstance(obj, list) and isinstance(uavcan_value.type.value_type,
+                                            uavcan.dsdl.parser.PrimitiveType):
+            del uavcan_value[:]
+            for idx, obj_item in enumerate(obj):
+                uavcan_value.insert(idx, obj_item)
+        elif isinstance(obj, list):
+            del uavcan_value[:]
+            for idx, obj_item in enumerate(obj):
+                uavcan_item = uavcan_value.new_item()
+                uavcan_value_from_obj(uavcan_item, obj_item)
+                uavcan_value.insert(idx, uavcan_item)
+        elif isinstance(obj, basestring):
+            try:
+                uavcan_value.encode(obj)
+            except Exception:
+                uavcan_value.from_bytes(obj)
+        else:
+            raise TypeError("Expected list or string type for UAVCAN array")
+    elif isinstance(uavcan_value.type, uavcan.dsdl.parser.CompoundType):
+        for key, obj_value in obj.items():
+            if isinstance(uavcan_value.fields[key].type,
+                          uavcan.dsdl.parser.PrimitiveType):
+                setattr(uavcan_value, key, obj_value)
+            else:
+                uavcan_field = getattr(uavcan_value, key)
+                uavcan_value_from_obj(uavcan_field, obj_value)
+    else:
+        raise TypeError("Invalid UAVCAN object type")
+
+
+def send_all(datatype, node_id, payload):
     global NOTIFY_SOCKETS
+
+    message = json.dumps({
+        "datatype": datatype,
+        "node_id": node_id,
+        "payload": payload
+    }, cls=UAVCANEncoder)
+
     for socket in NOTIFY_SOCKETS:
         socket.write_message(message)
 
 
-def handle_timer(conn):
-    """Send setpoint update messages for each connected node based on the
-    timer interval."""
-    global UAVCAN_NODE_SETPOINT_TIMER, UAVCAN_NODE_SETPOINT_SCHEDULE, \
-           UAVCAN_NODE_CONTROL_MODE, UAVCAN_NODE_SETPOINT_STARTUP, \
-           UAVCAN_NODE_MOTOR_RUNNING
-
-    for node_id, schedule in UAVCAN_NODE_SETPOINT_SCHEDULE.iteritems():
-        if not UAVCAN_NODE_MOTOR_RUNNING[node_id]:
-            # Any value other than 2 or 3 will stop the motor
-            setpoint = 0
-            mode = 0
-            UAVCAN_NODE_SETPOINT_TIMER[node_id] = 0
-        elif len(UAVCAN_NODE_SETPOINT_STARTUP[node_id]) > \
-                UAVCAN_NODE_SETPOINT_TIMER[node_id]:
-            # Start up gracefully, consuming startup entries as we go
-            setpoint = UAVCAN_NODE_SETPOINT_STARTUP[node_id][UAVCAN_NODE_SETPOINT_TIMER[node_id]]
-            mode = UAVCAN_NODE_CONTROL_MODE.get(node_id) or 3
-            UAVCAN_NODE_SETPOINT_TIMER[node_id] += 1
-        else:
-            # Normal operation, loop over the setpoint schedule
-            setpoint = schedule[(UAVCAN_NODE_SETPOINT_TIMER[node_id] -
-                                 len(UAVCAN_NODE_SETPOINT_STARTUP[node_id])) % len(schedule)]
-            mode = UAVCAN_NODE_CONTROL_MODE.get(node_id) or 3
-            UAVCAN_NODE_SETPOINT_TIMER[node_id] += 1
-
-        # log.debug("handle_timer(): node {0} setpoint {1}".format(node_id, setpoint))
-
-        #message = struct.pack("<BBhh", node_id, int(mode), int(setpoint),
-        #                      int(setpoint))
-        #conn.send(CAN_COMMAND_SETPOINT_ID, message)
-
-
 class MessageRelayMonitor(uavcan.node.Monitor):
     def on_message(self, message):
-        send_all({
-            "datatype": message.type.get_normalized_definition(),
-            "node_id": self.transfer.source_node_id,
-            "payload": message
-        })
+        send_all(message.type.get_normalized_definition(),
+                 self.transfer.source_node_id, message)
 
 
 class CANHandler(tornado.websocket.WebSocketHandler):
@@ -133,10 +163,9 @@ class CANHandler(tornado.websocket.WebSocketHandler):
         self.set_nodelay(True)
         log.info("CANHandler.open()")
 
+    @gen.coroutine
     def on_message(self, message):
-        global UAVCAN_NODE_SETPOINT_SCHEDULE, UAVCAN_NODE_CONTROL_MODE, \
-               NOTIFY_SOCKETS, UAVCAN_NODE_MOTOR_RUNNING, \
-               UAVCAN_NODE_SETPOINT_STARTUP
+        global NOTIFY_SOCKETS, UAVCAN_NODE_INFO, UAVCAN_NODE_CONFIG
 
         message = json.loads(message)
 
@@ -147,45 +176,42 @@ class CANHandler(tornado.websocket.WebSocketHandler):
         if self not in NOTIFY_SOCKETS:
             NOTIFY_SOCKETS.add(self)
 
-            for node_id, uptime in UAVCAN_NODE_UPTIME.iteritems():
-                self.write_message({
+            for node_id, msg in UAVCAN_NODE_INFO.iteritems():
+                self.write_message(json.dumps({
+                    "datatype": msg.type.get_normalized_definition(),
                     "node_id": node_id,
-                    "uptime": uptime
-                })
+                    "payload": msg
+                }, cls=UAVCANEncoder))
 
             for node_id, params in UAVCAN_NODE_CONFIG.iteritems():
-                for param_name, param_value in params.iteritems():
-                    self.write_message({
+                for param_name, msg in params.iteritems():
+                    self.write_message(json.dumps({
+                        "datatype": msg.type.get_normalized_definition(),
                         "node_id": node_id,
-                        "param_name": param_name,
-                        "value": param_value
-                    })
+                        "payload": msg
+                    }, cls=UAVCANEncoder))
 
-        if message.get("node_id") is None:
+        if "datatype" not in message:
             return
 
-        if "schedule" in message and \
-                not UAVCAN_NODE_MOTOR_RUNNING[message["node_id"]]:
-            start_setpoint = message["schedule"][0]
-            UAVCAN_NODE_SETPOINT_STARTUP[message["node_id"]] = \
-                list(start_setpoint * i / 100.0 for i in xrange(100))
-            UAVCAN_NODE_SETPOINT_SCHEDULE[message["node_id"]] = \
-                message["schedule"]
-        elif "param_name" in message:
-            index = param_index_from_param_name(message["param_name"])
-            command = struct.pack("<BBBBf", message["node_id"], index, 1, 0,
-                                  message["param_value"])
-            self.can.send(flash.CAN_COMMAND_CONFIG_ID, command)
-        elif "param_apply" in message:
-            command = struct.pack("<BBBBf", message["node_id"], 0, 0, 1, 0)
-            self.can.send(flash.CAN_COMMAND_CONFIG_ID, command)
-            self.can.send(flash.CAN_COMMAND_RESTART_ID,
-                          chr(message["node_id"]) + "\xD4\x6A\xDD\x6E")
-        elif "mode" in message:
-            UAVCAN_NODE_CONTROL_MODE[message["node_id"]] = message["mode"]
-        elif "motor_running" in message:
-            UAVCAN_NODE_MOTOR_RUNNING[message["node_id"]] = \
-                message["motor_running"]
+        if "node_id" in message:
+            request = uavcan.TYPENAMES[message["datatype"]](mode="request")
+            uavcan_value_from_obj(request, message["payload"])
+            (response, response_transfer), _ = yield tornado.gen.Task(
+                self.node.send_request, request, message["node_id"])
+            if response:
+                # Store the response if it's a parameter value
+                if message["datatype"] == "uavcan.protocol.param.GetSet":
+                    UAVCAN_NODE_CONFIG[message["node_id"]][response.name] = \
+                        response
+
+                # Forward the response
+                send_all(response.type.get_normalized_definition(),
+                         message["node_id"], response)
+        else:
+            payload = uavcan.TYPENAMES[message["datatype"]]()
+            uavcan_value_from_obj(payload, message["payload"])
+            self.node.send_message(payload)
 
     def on_close(self):
         global NOTIFY_SOCKETS
@@ -445,6 +471,27 @@ def firmware_files_for_device(firmware_dir, device_name):
     return sorted(available_files, reverse=True)
 
 
+@gen.coroutine
+def enumerate_node_params(this_node, node_id):
+    global UAVCAN_NODE_CONFIG
+
+    param_idx = 0
+    while param_idx < 8192:
+        request = uavcan.protocol.param.GetSet(mode="request")
+        request.index = param_idx
+        (response, response_transfer), _ = yield tornado.gen.Task(
+            this_node.send_request, request, node_id)
+        if response and response.name:
+            # Notify connected clients of the parameter information, and store
+            # it so we can notify clients who connect later
+            UAVCAN_NODE_CONFIG[node_id][response.name] = response
+            send_all(response.type.get_normalized_definition(), node_id,
+                     response)
+            param_idx += 1
+        else:
+            break
+
+
 if __name__ == "__main__":
     log.basicConfig(format="%(asctime)-15s %(message)s", level=log.DEBUG)
 
@@ -490,23 +537,34 @@ if __name__ == "__main__":
         firmware_dir = None
 
     @gen.coroutine
-    def update_device_firmware(this_node, node_id, response):
-        log.debug("update_device_firmware({}, {!r})".format(node_id,
-                                                            response))
+    def enumerate_device(this_node, node_id, response):
+        global UAVCAN_NODE_INFO, UAVCAN_NODE_CONFIG
+        log.debug("enumerate_device({}, {!r})".format(node_id, response))
+
+        # Save the node info request and clear out the config
+        UAVCAN_NODE_INFO[node_id] = response
+        UAVCAN_NODE_CONFIG[node_id] = {}
+
+        # Send the node info message to all connected sockets
+        send_all(response.type.get_normalized_definition(), node_id, response)
+
+        # Schedule a parameter fetch
+        ioloop.add_callback(enumerate_node_params, this_node, node_id)
+
+        # Check the supplied directory for updated firmware
         if not firmware_dir:
-            log.debug("update_device_firmware(): no firmware path specified")
+            log.debug("enumerate_device(): no firmware path specified")
             return
 
         # Search for firmware suitable for this device
         device_name = response.name.decode()
         available_files = firmware_files_for_device(firmware_dir, device_name)
 
-
-        log.debug(("update_device_firmware(): found {:d} firmware file(s) " +
+        log.debug(("enumerate_device(): found {:d} firmware file(s) " +
                    "for device '{!s}'").format(
                    len(available_files), device_name))
         for f in available_files:
-            log.debug(("update_device_firmware():        {!s} " +
+            log.debug(("enumerate_device():        {!s} " +
                        "(modified {:%Y-%m-%dT%H:%M:%S})").format(
                        f[-1], datetime.datetime.fromtimestamp(f[-2])))
 
@@ -524,10 +582,10 @@ if __name__ == "__main__":
                     request.source_node_id = this_node.node_id
                     request.image_file_remote_path.path.encode(
                         os.path.basename(firmware_path))
-                    response, response_transfer = \
-                        yield this_node.send_request(request, node_id)
+                    (response, response_transfer), _ = yield tornado.gen.Task(
+                        this_node.send_request, request, node_id)
 
-                    if response.error != response.ERROR_OK:
+                    if response and response.error != response.ERROR_OK:
                         msg = ("[MASTER] #{0:03d} rejected "
                                "uavcan.protocol.file.BeginFirmwareUpdate " +
                                "with error {1:d}: {2!s}").format(
@@ -535,19 +593,19 @@ if __name__ == "__main__":
                                response.optional_error_message.encode())
                         logging.error(msg)
                 else:
-                    log.debug("update_device_firmware(): device up to date")
+                    log.debug("enumerate_device(): device up to date")
 
     if len(args):
         node = uavcan.node.Node([
             # Server implementation
             (uavcan.protocol.NodeStatus, uavcan.monitors.NodeStatusMonitor,
-                {"new_node_callback": update_device_firmware}),
+                {"new_node_callback": enumerate_device}),
             (uavcan.protocol.dynamic_node_id.Allocation,
                 uavcan.monitors.DynamicNodeIDServer,
                 {"dynamic_id_range": (2, 125)}),
-            (uavcan.protocol.file.GetInfo, uavcan.servers.FileGetInfoServer,
+            (uavcan.protocol.file.GetInfo, uavcan.services.FileGetInfoService,
                 {"path": firmware_dir}),
-            (uavcan.protocol.file.Read, uavcan.servers.FileReadServer,
+            (uavcan.protocol.file.Read, uavcan.services.FileReadService,
                 {"path": firmware_dir}),
             (uavcan.protocol.debug.LogMessage,
                 uavcan.monitors.DebugLogMessageMonitor),
