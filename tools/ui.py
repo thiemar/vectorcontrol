@@ -48,6 +48,7 @@ from optparse import OptionParser, OptionGroup
 
 sys.path.insert(0, "/Users/bendyer/Projects/ARM/workspace/pyuavcan/")
 sys.path.insert(0, "/mnt/hgfs/workspace/pyuavcan/")
+sys.path.insert(0, "/home/dev/workspace/pyuavcan/")
 
 
 import uavcan
@@ -615,10 +616,6 @@ if __name__ == "__main__":
             (uavcan.equipment.esc.FOCStatus, MessageRelayMonitor)
         ], node_id=int(options.node_id))
         node.listen(args[0], baudrate=int(options.bus_speed), io_loop=ioloop)
-        #can_setpoint_schedule_timer = tornado.ioloop.PeriodicCallback(
-        #    functools.partial(handle_timer, can_dev),
-        #    10, io_loop=ioloop)
-        #can_setpoint_schedule_timer.start()
     else:
         log.info("No CAN device specified; starting interface only")
         node = None

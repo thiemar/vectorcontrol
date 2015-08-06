@@ -272,7 +272,7 @@ StateEstimator::update_state_estimate(
 
     next_angle = state_estimate_.angle_rad +
                  2.0f * state_estimate_.angular_velocity_rad_per_s * t_ +
-                 0.1f * accel_direction * hfi_weight;
+                 0.02f * accel_direction * hfi_weight;
     if (next_angle > 2.0f * (float)M_PI) {
         next_angle -= 2.0f * (float)M_PI;
     } else if (next_angle < 0.0f) {

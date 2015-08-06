@@ -182,6 +182,11 @@ public:
 
         error_rad_per_s = setpoint_rad_per_s_ -
                           state.angular_velocity_rad_per_s;
+        if (error_rad_per_s > min_speed_rad_per_s_) {
+            error_rad_per_s = min_speed_rad_per_s_;
+        } else if (error_rad_per_s < -min_speed_rad_per_s_) {
+            error_rad_per_s = -min_speed_rad_per_s_;
+        }
 
         /*
         Determine acceleration torque, and limit to the configured maximum
@@ -213,7 +218,7 @@ public:
                 state.angular_velocity_rad_per_s * setpoint_rad_per_s_ > 0.0f) {
             integral_error_a_ += ki_ * (result_a - integral_error_a_);
         } else {
-            integral_error_a_ += ki_ * (result_a - integral_error_a_) * 0.1f;
+            integral_error_a_ += ki_ * (result_a - integral_error_a_) * 1e-3f;
         }
 
         return result_a;

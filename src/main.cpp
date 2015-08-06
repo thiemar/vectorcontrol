@@ -191,6 +191,8 @@ control_cb(
 
     controller_state =
         const_cast<struct controller_state_t&>(g_controller_state);
+    min_speed = controller_state.min_speed_rad_per_s;
+    max_speed = controller_state.max_speed_rad_per_s;
 
     /* Update the state estimate with those values */
     g_estimator.update_state_estimate(
@@ -226,8 +228,6 @@ control_cb(
             always requests acceleration or deceleration in the direction of
             the requested torque.
             */
-            min_speed = controller_state.min_speed_rad_per_s;
-            max_speed = controller_state.max_speed_rad_per_s;
             speed_setpoint = motor_state.angular_velocity_rad_per_s +
                              (controller_state.current_setpoint > 0.0f ?
                                 min_speed : -min_speed);
@@ -250,8 +250,15 @@ control_cb(
             g_controller_state.speed_setpoint = speed_setpoint =
                 motor_state.angular_velocity_rad_per_s;
         } else {
-            speed_setpoint = controller_state.speed_setpoint;
-
+            if (controller_state.speed_setpoint > 0.0f &&
+                    controller_state.speed_setpoint < min_speed) {
+                speed_setpoint = min_speed;
+            } else if (controller_state.speed_setpoint < 0.0f &&
+                    controller_state.speed_setpoint > -min_speed) {
+                speed_setpoint = -min_speed;
+            } else {
+                speed_setpoint = controller_state.speed_setpoint;
+            }
         }
         g_speed_controller.set_current_limit_a(
                 controller_state.max_current_a);
@@ -759,7 +766,7 @@ static void __attribute__((noreturn)) node_run(
         /* Update the controller mode and setpoint */
         if (!g_controller_state.fault && got_setpoint) {
             if (mode == CONTROLLER_SPEED &&
-                    std::abs(setpoint) > motor_params.min_speed_rad_per_s) {
+                    std::abs(setpoint) > 2.0f * (float)M_PI) {
                 g_controller_state.speed_setpoint = setpoint;
             } else if (mode == CONTROLLER_TORQUE &&
                     std::abs(setpoint) > 0.1f) {
