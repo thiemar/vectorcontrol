@@ -174,7 +174,7 @@ public:
                      innovation_[1] * innovation_[1];
 
         if (scale > 1e-3f) {
-            return innovation / scale;
+            return 1.0f - __VSQRTF(std::min(1.0f, innovation / scale));
         } else {
             return 0.0f;
         }

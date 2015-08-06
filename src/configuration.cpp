@@ -211,7 +211,7 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
 
     params.max_current_a = params_[PARAM_MOTOR_CURRENT_LIMIT];
     params.max_voltage_v = params_[PARAM_MOTOR_VOLTAGE_LIMIT];
-    params.min_speed_rad_per_s = 0.5f / motor_params.phi_v_s_per_rad;
+    params.min_speed_rad_per_s = 1.0f / params.phi_v_s_per_rad;
     params.max_speed_rad_per_s =
         _rad_per_s_from_rpm(params_[PARAM_MOTOR_RPM_MAX], params.num_poles);
 }

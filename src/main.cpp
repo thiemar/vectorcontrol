@@ -76,27 +76,37 @@ it's only used for reporting).
 volatile static struct controller_state_t g_controller_state;
 volatile static struct motor_state_t g_motor_state;
 
+/* Bus and output voltage for reporting purposes */
 volatile static float g_vbus_v;
 volatile static float g_v_dq_v[2];
 
+/* Motor parameter estimation state -- only used on startup */
 volatile static float g_i_samples[4];
 volatile static float g_v_samples[4];
 volatile static bool g_parameter_estimator_done;
+
+/* Motor state estimator consistency check output */
 volatile static float g_estimator_consistency;
 volatile static float g_estimator_hfi[2];
 
 
-/* Written to the image in post-processing */
+/* Written to the firmware image in post-processing */
 extern volatile struct bootloader_app_descriptor flash_app_descriptor;
 
 
-/* Timeouts */
-#define INTERFACE_TIMEOUT_MS 1500u
+/*
+Throttle timeout -- if we don't receive a setpoint update in this long,
+we spin the motor down
+*/
 #define THROTTLE_TIMEOUT_MS 500u
 
 
-/* Hard current limit -- exceeding this shuts down the motor */
-#define HARD_CURRENT_LIMIT_A 60.0f
+/*
+Hard current limit -- exceeding this shuts down the motor immediately
+(possibly destroying the power stage depending on the reason for the
+over-current)
+*/
+#define HARD_CURRENT_LIMIT_A 70.0f
 
 
 extern "C" int main(void);
@@ -200,12 +210,13 @@ control_cb(
     }
 
     if (controller_state.mode == CONTROLLER_STOPPED) {
-        out_v_ab_v[0] = out_v_ab_v[1] = v_dq_v[0] = v_dq_v[1] = 0.0f;
+        g_v_dq_v[0] = g_v_dq_v[1] = out_v_ab_v[0] = out_v_ab_v[1] = 0.0f;
         g_estimator.reset_state();
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
         g_alignment_controller.reset_state();
         readings[0] = readings[1] = 0.0f;
+        g_estimator_consistency = 1.0f;
     } else if (g_estimator.is_converged()) {
         /* Update the speed controller setpoint */
         if (controller_state.mode == CONTROLLER_TORQUE) {
@@ -258,8 +269,7 @@ control_cb(
             Add a small amount of negative torque to ensure the motor actually
             shuts down.
             */
-            current_setpoint = (speed_setpoint > 0.0f ? -0.1f : 0.1f) *
-                               controller_state.max_current_a;
+            current_setpoint = speed_setpoint > 0.0f ? -0.25f : 0.25f;
         } else if (controller_state.mode == CONTROLLER_SPEED) {
             g_controller_state.current_setpoint = current_setpoint;
         }
@@ -288,6 +298,10 @@ control_cb(
         accordingly.
         */
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
+
+        /* Low-pass the estimator consistency value */
+        g_estimator_consistency +=
+            (g_estimator.get_consistency() - g_estimator_consistency) * 0.01f;
     } else {
         /*
         Estimator is still aligning/converging; run the alignment controller
@@ -307,9 +321,12 @@ control_cb(
         out_v_ab_v[1] += v_ab_v[1];
 
         g_v_dq_v[0] = g_v_dq_v[1] = 0.0f;
+        g_estimator_consistency = 1.0f;
     }
 
-    g_estimator_consistency = g_estimator.get_consistency();
+    /*
+    Could look at low-passing these too, based on the FOC status output rate
+    */
     g_motor_state.angular_velocity_rad_per_s =
         motor_state.angular_velocity_rad_per_s;
     g_motor_state.angle_rad = motor_state.angle_rad;
@@ -323,18 +340,14 @@ control_cb(
 
 void systick_cb(void) {
     uint32_t state_time, state_last_setpoint_update;
-    float state_min_speed, motor_speed;
     enum controller_mode_t state_mode;
 
     state_mode = g_controller_state.mode;
-    state_min_speed = g_controller_state.min_speed_rad_per_s;
     state_time = g_controller_state.time + 1u;
     state_last_setpoint_update = g_controller_state.last_setpoint_update;
-    motor_speed = std::abs(g_motor_state.angular_velocity_rad_per_s);
 
     /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
-    if (((std::abs(g_v_dq_v[0]) < 0.1f && std::abs(g_v_dq_v[1]) < 0.1f) ||
-            motor_speed < state_min_speed * 0.1f) &&
+    if (std::abs(g_v_dq_v[0]) < 0.1f && std::abs(g_v_dq_v[1]) < 0.1f &&
             state_mode == CONTROLLER_STOPPING) {
         g_controller_state.mode = CONTROLLER_STOPPED;
         g_controller_state.speed_setpoint = 0.0f;
@@ -393,9 +406,9 @@ static void __attribute__((noreturn)) node_run(
 ) {
     size_t length, i;
     uint32_t message_id, current_time, node_status_time, esc_status_time,
-             custom_status_time, node_status_interval, esc_status_interval,
-             custom_status_interval, last_tx_time;
-    uint8_t filter_id, custom_status_transfer_id, node_status_transfer_id,
+             foc_status_time, node_status_interval, esc_status_interval,
+             foc_status_interval, last_tx_time;
+    uint8_t filter_id, foc_status_transfer_id, node_status_transfer_id,
             esc_status_transfer_id, esc_index, message[8];
     enum hal_status_t status;
     enum controller_mode_t mode;
@@ -403,19 +416,18 @@ static void __attribute__((noreturn)) node_run(
     bool got_setpoint, param_valid, wants_bootloader_restart;
     struct param_t param;
     struct motor_state_t motor_state;
-    uint16_t custom_status_dtid;
+    uint16_t foc_status_dtid;
 
-    custom_status_transfer_id = node_status_transfer_id =
+    foc_status_transfer_id = node_status_transfer_id =
         esc_status_transfer_id = 0u;
 
-    custom_status_time = node_status_time = esc_status_time = last_tx_time =
-        0u;
+    foc_status_time = node_status_time = esc_status_time = last_tx_time = 0u;
 
     wants_bootloader_restart = false;
 
     esc_index = (uint8_t)
         configuration.get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
-    custom_status_dtid = (uint16_t)
+    foc_status_dtid = (uint16_t)
         configuration.get_param_value_by_index(PARAM_FOC_ESCSTATUS_ID);
 
     UAVCANTransferManager broadcast_manager(node_id);
@@ -430,7 +442,7 @@ static void __attribute__((noreturn)) node_run(
     node_status_interval = 900u;
     esc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
         PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 0.001f);
-    custom_status_interval = (uint32_t)(configuration.get_param_value_by_index(
+    foc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
         PARAM_FOC_ESCSTATUS_INTERVAL) * 0.001f);
 
     g_controller_state.min_speed_rad_per_s = motor_params.min_speed_rad_per_s;
@@ -440,6 +452,7 @@ static void __attribute__((noreturn)) node_run(
     while (true) {
         current_time = g_controller_state.time;
         got_setpoint = false;
+        setpoint = 0.0f;
 
         /*
         Check for UAVCAN commands (FIFO 0) -- these are all broadcasts
@@ -448,7 +461,7 @@ static void __attribute__((noreturn)) node_run(
             status = hal_receive_can_message(0u, &filter_id, &message_id,
                                          &length, message);
             /* Filter IDs are per-FIFO, so convert this back to the bank index */
-            filter_id += UAVCAN_EQUIPMENT_ESC_RAWCOMMAND;
+            filter_id = (uint8_t)(filter_id + UAVCAN_EQUIPMENT_ESC_RAWCOMMAND);
             if (status == HAL_STATUS_OK) {
                 uavcan::TransferCRC crc;
                 switch (filter_id) {
@@ -468,13 +481,15 @@ static void __attribute__((noreturn)) node_run(
 
         if (broadcast_manager.is_rx_done()) {
             if (filter_id == UAVCAN_EQUIPMENT_ESC_RAWCOMMAND &&
-                broadcast_manager.decode_esc_rawcommand(raw_cmd)) {
+                    broadcast_manager.decode_esc_rawcommand(raw_cmd) &&
+                    esc_index < raw_cmd.cmd.size()) {
                 got_setpoint = true;
                 mode = CONTROLLER_TORQUE;
                 setpoint = motor_params.max_current_a *
                            (float)raw_cmd.cmd[esc_index] * (1.0f / 8192.0f);
             } else if (filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
-                        broadcast_manager.decode_esc_rpmcommand(rpm_cmd)) {
+                        broadcast_manager.decode_esc_rpmcommand(rpm_cmd) &&
+                        esc_index < rpm_cmd.rpm.size()) {
                 got_setpoint = true;
                 mode = CONTROLLER_SPEED;
                 setpoint = (float)rpm_cmd.rpm[esc_index] * (1.0f / 60.0f) *
@@ -614,7 +629,8 @@ static void __attribute__((noreturn)) node_run(
                     resp.status.HEALTH_OK;
                 resp.status.mode = resp.status.MODE_OPERATIONAL;
                 resp.status.sub_mode = 0u;
-                resp.status.vendor_specific_status_code = 0u;
+                resp.status.vendor_specific_status_code =
+                    (uint16_t)g_controller_state.mode;
                 resp.software_version.major =
                     flash_app_descriptor.major_version;
                 resp.software_version.minor =
@@ -669,8 +685,8 @@ static void __attribute__((noreturn)) node_run(
             v_dq_v[0] = g_v_dq_v[0];
             v_dq_v[1] = g_v_dq_v[1];
 
-            if (custom_status_interval && current_time - custom_status_time >=
-                    custom_status_interval) {
+            if (foc_status_interval && current_time - foc_status_time >=
+                    foc_status_interval) {
                 uavcan::equipment::esc::FOCStatus msg;
 
                 msg.i_dq[0] = motor_state.i_dq_a[0];
@@ -692,8 +708,8 @@ static void __attribute__((noreturn)) node_run(
                     60.0f / ((float)M_PI * (float)motor_params.num_poles));
                 msg.esc_index = esc_index;
                 broadcast_manager.encode_foc_status(
-                    custom_status_transfer_id++, custom_status_dtid, msg);
-                custom_status_time = current_time;
+                    foc_status_transfer_id++, foc_status_dtid, msg);
+                foc_status_time = current_time;
             } else if (esc_status_interval &&
                     current_time - esc_status_time >= esc_status_interval) {
                 uavcan::equipment::esc::Status msg;
@@ -725,7 +741,8 @@ static void __attribute__((noreturn)) node_run(
                     msg.HEALTH_OK;
                 msg.mode = msg.MODE_OPERATIONAL;
                 msg.sub_mode = 0u;
-                msg.vendor_specific_status_code = 0u;
+                msg.vendor_specific_status_code =
+                    (uint16_t)g_controller_state.mode;
                 broadcast_manager.encode_nodestatus(
                     node_status_transfer_id++, msg);
                 node_status_time = current_time;
@@ -741,15 +758,17 @@ static void __attribute__((noreturn)) node_run(
 
         /* Update the controller mode and setpoint */
         if (!g_controller_state.fault && got_setpoint) {
-            if (mode == CONTROLLER_SPEED) {
+            if (mode == CONTROLLER_SPEED &&
+                    std::abs(setpoint) > motor_params.min_speed_rad_per_s) {
                 g_controller_state.speed_setpoint = setpoint;
-                g_controller_state.mode = mode;
-                g_controller_state.last_setpoint_update = current_time;
-            } else if (mode == CONTROLLER_TORQUE) {
+            } else if (mode == CONTROLLER_TORQUE &&
+                    std::abs(setpoint) > 0.1f) {
                 g_controller_state.current_setpoint = setpoint;
-                g_controller_state.mode = mode;
-                g_controller_state.last_setpoint_update = current_time;
+            } else {
+                mode = CONTROLLER_STOPPING;
             }
+            g_controller_state.mode = mode;
+            g_controller_state.last_setpoint_update = current_time;
         }
 
         /*
@@ -759,7 +778,6 @@ static void __attribute__((noreturn)) node_run(
         if (g_controller_state.mode == CONTROLLER_STOPPED &&
                 broadcast_manager.is_tx_done() &&
                 service_manager.is_tx_done() && wants_bootloader_restart) {
-            /* TODO */
             hal_restart();
         }
     }

@@ -142,7 +142,6 @@ function connect() {
                         updateCharts(nodeUi, nodeData[message.node_id]);
                     });
             }
-
         }
     }
 

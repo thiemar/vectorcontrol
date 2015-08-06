@@ -227,7 +227,8 @@ public:
             length += offset + 1u;
 
             data[length - 1u] = tx_tail_;
-            tx_tail_ = (tx_tail_ ^ UAVCAN_TOGGLE_BIT) & (~UAVCAN_SOF_BIT);
+            tx_tail_ = (uint8_t)((tx_tail_ ^ UAVCAN_TOGGLE_BIT) &
+                                 (~UAVCAN_SOF_BIT));
 
             if (tx_offset_ >= tx_buffer_.getMaxWritePos()) {
                 /* Set last frame flag */
@@ -257,7 +258,7 @@ public:
     ) {
         start_tx_();
         uavcan::protocol::NodeStatus::encode(msg, tx_codec_);
-        tx_tail_ = (transfer_id & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
         tx_message_id_ = broadcast_message_id_(0u, msg.DefaultDataTypeID);
         tx_crc_ = uavcan::protocol::NodeStatus::getDataTypeSignature().toTransferCRC();
     }
@@ -268,7 +269,7 @@ public:
     ) {
         start_tx_();
         uavcan::equipment::esc::Status::encode(msg, tx_codec_);
-        tx_tail_ = (transfer_id & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
         tx_message_id_ = broadcast_message_id_(0u, msg.DefaultDataTypeID);
         tx_crc_ = uavcan::equipment::esc::Status::getDataTypeSignature().toTransferCRC();
     }
@@ -280,7 +281,7 @@ public:
     ) {
         start_tx_();
         uavcan::equipment::esc::FOCStatus::encode(msg, tx_codec_);
-        tx_tail_ = (transfer_id & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
         tx_message_id_ = broadcast_message_id_(0u, dtid);
         tx_crc_ = uavcan::equipment::esc::FOCStatus::getDataTypeSignature().toTransferCRC();
     }
@@ -291,7 +292,7 @@ public:
         start_tx_();
         uavcan::protocol::param::ExecuteOpcode::Response::encode(
             msg, tx_codec_);
-        tx_tail_ = (rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
         tx_crc_ = uavcan::protocol::param::ExecuteOpcode::getDataTypeSignature().toTransferCRC();
@@ -302,7 +303,7 @@ public:
     ) {
         start_tx_();
         uavcan::protocol::param::GetSet::Response::encode(msg, tx_codec_);
-        tx_tail_ = (rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
         tx_crc_ = uavcan::protocol::param::GetSet::getDataTypeSignature().toTransferCRC();
@@ -314,7 +315,7 @@ public:
         start_tx_();
         uavcan::protocol::file::BeginFirmwareUpdate::Response::encode(
             msg, tx_codec_);
-        tx_tail_ = (rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
         tx_crc_ = uavcan::protocol::file::BeginFirmwareUpdate::getDataTypeSignature().toTransferCRC();
@@ -325,7 +326,7 @@ public:
     ) {
         start_tx_();
         uavcan::protocol::GetNodeInfo::Response::encode(msg, tx_codec_);
-        tx_tail_ = (rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
         tx_crc_ = uavcan::protocol::GetNodeInfo::getDataTypeSignature().toTransferCRC();
@@ -336,7 +337,7 @@ public:
     ) {
         start_tx_();
         uavcan::protocol::RestartNode::Response::encode(msg, tx_codec_);
-        tx_tail_ = (rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT;
+        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
         tx_crc_ = uavcan::protocol::RestartNode::getDataTypeSignature().toTransferCRC();
