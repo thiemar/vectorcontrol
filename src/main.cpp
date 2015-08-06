@@ -254,7 +254,12 @@ control_cb(
         current_setpoint = g_speed_controller.update(motor_state);
 
         if (controller_state.mode == CONTROLLER_STOPPING) {
-            current_setpoint = controller_state.current_setpoint;
+            /*
+            Add a small amount of negative torque to ensure the motor actually
+            shuts down.
+            */
+            current_setpoint = (speed_setpoint > 0.0f ? -0.1f : 0.1f) *
+                               controller_state.max_current_a;
         } else if (controller_state.mode == CONTROLLER_SPEED) {
             g_controller_state.current_setpoint = current_setpoint;
         }
@@ -267,6 +272,10 @@ control_cb(
                                     motor_state.i_dq_a,
                                     motor_state.angular_velocity_rad_per_s,
                                     vbus_v);
+
+        /* Save global voltages before adding HFI */
+        g_v_dq_v[0] = v_dq_v[0];
+        g_v_dq_v[1] = v_dq_v[1];
 
         /* Add high-frequency injection voltage when required. */
         g_estimator.get_hfi_carrier_dq_v(hfi_v);
@@ -297,7 +306,7 @@ control_cb(
         out_v_ab_v[0] += v_ab_v[0];
         out_v_ab_v[1] += v_ab_v[1];
 
-        v_dq_v[0] = v_dq_v[1] = 0.0f;
+        g_v_dq_v[0] = g_v_dq_v[1] = 0.0f;
     }
 
     g_estimator_consistency = g_estimator.get_consistency();
@@ -306,8 +315,6 @@ control_cb(
     g_motor_state.angle_rad = motor_state.angle_rad;
     g_motor_state.i_dq_a[0] = motor_state.i_dq_a[0];
     g_motor_state.i_dq_a[1] = motor_state.i_dq_a[1];
-    g_v_dq_v[0] = v_dq_v[0];
-    g_v_dq_v[1] = v_dq_v[1];
     g_vbus_v = vbus_v;
     g_estimator_hfi[0] = readings[0];
     g_estimator_hfi[1] = readings[1];
@@ -332,13 +339,6 @@ void systick_cb(void) {
         g_controller_state.mode = CONTROLLER_STOPPED;
         g_controller_state.speed_setpoint = 0.0f;
         g_controller_state.current_setpoint = 0.0f;
-    } else if (state_mode == CONTROLLER_STOPPING) {
-        /*
-        Add a small amount of negative torque to ensure the motor actually
-        shuts down.
-        */
-        g_controller_state.current_setpoint =
-            g_controller_state.speed_setpoint > 0.0f ? -0.1f : 0.1f;
     } else if ((state_mode == CONTROLLER_SPEED ||
                 state_mode == CONTROLLER_TORQUE) &&
                 state_time - state_last_setpoint_update > THROTTLE_TIMEOUT_MS) {

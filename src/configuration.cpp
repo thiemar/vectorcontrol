@@ -204,15 +204,16 @@ Configuration::Configuration(void) {
 void Configuration::read_motor_params(struct motor_params_t& params) {
     params.num_poles = (uint32_t)params_[PARAM_MOTOR_NUM_POLES];
 
-    params.max_current_a = params_[PARAM_MOTOR_CURRENT_LIMIT];
-    params.max_voltage_v = params_[PARAM_MOTOR_VOLTAGE_LIMIT];
-    params.max_speed_rad_per_s =
-        _rad_per_s_from_rpm(params_[PARAM_MOTOR_RPM_MAX], params.num_poles);
-
     params.rs_r = params_[PARAM_MOTOR_RS];
     params.ls_h = params_[PARAM_MOTOR_LS];
     params.phi_v_s_per_rad = 1.0f /
         _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV], params.num_poles);
+
+    params.max_current_a = params_[PARAM_MOTOR_CURRENT_LIMIT];
+    params.max_voltage_v = params_[PARAM_MOTOR_VOLTAGE_LIMIT];
+    params.min_speed_rad_per_s = 0.5f / motor_params.phi_v_s_per_rad;
+    params.max_speed_rad_per_s =
+        _rad_per_s_from_rpm(params_[PARAM_MOTOR_RPM_MAX], params.num_poles);
 }
 
 

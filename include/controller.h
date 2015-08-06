@@ -170,7 +170,7 @@ public:
               control_params.accel_gain;
         ki_ = t_s / control_params.accel_time_s;
 
-        min_speed_rad_per_s_ = 0.5f / motor_params.phi_v_s_per_rad;
+        min_speed_rad_per_s_ = motor_params.min_speed_rad_per_s;
         speed_limit_rad_per_s_ = motor_params.max_speed_rad_per_s;
         current_limit_a_ = motor_params.max_current_a;
         accel_current_limit_a_ = control_params.max_accel_torque_a;
