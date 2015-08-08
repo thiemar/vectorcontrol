@@ -51,15 +51,16 @@ enum controller_mode_t {
     CONTROLLER_STOPPED,
     CONTROLLER_IDENTIFYING,
     CONTROLLER_SPEED,
-    CONTROLLER_TORQUE,
+    CONTROLLER_POWER,
     CONTROLLER_STOPPING
 };
 
 struct controller_state_t {
     uint32_t time;
     uint32_t last_setpoint_update;
-    float current_setpoint;
+    float power_setpoint;
     float speed_setpoint;
+    float current_setpoint;
     float max_speed_rad_per_s;
     float min_speed_rad_per_s;
     float max_current_a;
@@ -192,15 +193,13 @@ control_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
-          v_ab_v[2], min_speed, max_speed, phase, audio_v;
+    float v_dq_v[2], power_setpoint, speed_setpoint, readings[2], hfi_v[2],
+          v_ab_v[2], phase, audio_v, current_setpoint;
     struct motor_state_t motor_state;
     struct controller_state_t controller_state;
 
     controller_state =
         const_cast<struct controller_state_t&>(g_controller_state);
-    min_speed = controller_state.min_speed_rad_per_s;
-    max_speed = controller_state.max_speed_rad_per_s;
 
     /* Calculate audio component */
     if (g_audio_state.off_time) {
@@ -246,27 +245,18 @@ control_cb(
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
     } else if (g_estimator.is_converged()) {
         /* Update the speed controller setpoint */
-        if (controller_state.mode == CONTROLLER_TORQUE) {
+        if (controller_state.mode == CONTROLLER_POWER) {
             /*
             In torque control mode, the torque input is used to limit the
             speed controller's output, and the speed controller setpoint
             always requests acceleration or deceleration in the direction of
             the requested torque.
             */
-            speed_setpoint = motor_state.angular_velocity_rad_per_s +
-                             (controller_state.current_setpoint > 0.0f ?
-                                min_speed : -min_speed);
-            if (speed_setpoint > max_speed) {
-                speed_setpoint = max_speed;
-            } else if (speed_setpoint < -max_speed) {
-                speed_setpoint = -max_speed;
-            }
-            g_controller_state.speed_setpoint = speed_setpoint;
+            power_setpoint = g_controller_state.power_setpoint;
 
-            if (std::abs(motor_state.angular_velocity_rad_per_s) > min_speed) {
-                controller_state.max_current_a =
-                    std::abs(controller_state.current_setpoint);
-            }
+            g_controller_state.speed_setpoint = speed_setpoint =
+                motor_state.angular_velocity_rad_per_s;
+            g_speed_controller.set_power_setpoint(power_setpoint);
         } else if (controller_state.mode == CONTROLLER_STOPPING) {
             /*
             When stopping, the speed controller setpoint tracks the current
@@ -274,20 +264,11 @@ control_cb(
             */
             g_controller_state.speed_setpoint = speed_setpoint =
                 motor_state.angular_velocity_rad_per_s;
-        } else {
-            if (controller_state.speed_setpoint > 0.0f &&
-                    controller_state.speed_setpoint < min_speed) {
-                speed_setpoint = min_speed;
-            } else if (controller_state.speed_setpoint < 0.0f &&
-                    controller_state.speed_setpoint > -min_speed) {
-                speed_setpoint = -min_speed;
-            } else {
-                speed_setpoint = controller_state.speed_setpoint;
-            }
+            g_speed_controller.set_speed_setpoint(speed_setpoint);
+        } else /* controller_state.mode == CONTROLLER_SPEED */ {
+            speed_setpoint = g_controller_state.speed_setpoint;
+            g_speed_controller.set_speed_setpoint(speed_setpoint);
         }
-        g_speed_controller.set_current_limit_a(
-                controller_state.max_current_a);
-        g_speed_controller.set_setpoint(speed_setpoint);
 
         /*
         Update the current controller with the output of the speed controller
@@ -302,7 +283,7 @@ control_cb(
             shuts down.
             */
             current_setpoint = speed_setpoint > 0.0f ? -0.25f : 0.25f;
-        } else if (controller_state.mode == CONTROLLER_SPEED) {
+        } else {
             g_controller_state.current_setpoint = current_setpoint;
         }
 
@@ -386,7 +367,7 @@ void systick_cb(void) {
         g_controller_state.speed_setpoint = 0.0f;
         g_controller_state.current_setpoint = 0.0f;
     } else if ((state_mode == CONTROLLER_SPEED ||
-                state_mode == CONTROLLER_TORQUE) &&
+                state_mode == CONTROLLER_POWER) &&
                 state_time - state_last_setpoint_update > THROTTLE_TIMEOUT_MS) {
         /*
         Stop gracefully if the present command mode doesn't provide an
@@ -525,9 +506,11 @@ static void __attribute__((noreturn)) node_run(
                     broadcast_manager.decode_esc_rawcommand(raw_cmd) &&
                     esc_index < raw_cmd.cmd.size()) {
                 got_setpoint = true;
-                mode = CONTROLLER_TORQUE;
-                setpoint = motor_params.max_current_a *
-                           (float)raw_cmd.cmd[esc_index] * (1.0f / 8192.0f);
+                mode = CONTROLLER_POWER;
+                /* Scale 0-8191 to represent 0 to maximum power. */
+                setpoint = (float)raw_cmd.cmd[esc_index] * (1.0f / 8191.0f) *
+                           (motor_params.max_voltage_v *
+                            motor_params.max_current_a);
             } else if (filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
                         broadcast_manager.decode_esc_rpmcommand(rpm_cmd) &&
                         esc_index < rpm_cmd.rpm.size()) {
@@ -813,9 +796,9 @@ static void __attribute__((noreturn)) node_run(
             if (mode == CONTROLLER_SPEED &&
                     std::abs(setpoint) > 2.0f * (float)M_PI) {
                 g_controller_state.speed_setpoint = setpoint;
-            } else if (mode == CONTROLLER_TORQUE &&
-                    std::abs(setpoint) > 0.1f) {
-                g_controller_state.current_setpoint = setpoint;
+            } else if (mode == CONTROLLER_POWER &&
+                    std::abs(setpoint) >= 1.0f) {
+                g_controller_state.power_setpoint = setpoint;
             } else {
                 mode = CONTROLLER_STOPPING;
             }
@@ -904,6 +887,7 @@ int __attribute__((externally_visible,noreturn)) main(void) {
                                     hal_control_t_s);
     g_speed_controller.set_params(motor_params, control_params,
                                   hal_control_t_s);
+    g_speed_controller.set_current_limit_a(motor_params.max_current_a);
     g_alignment_controller.set_params(motor_params, control_params,
                                       hal_control_t_s);
 

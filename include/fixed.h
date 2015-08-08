@@ -35,6 +35,7 @@ SOFTWARE.
 
 struct motor_state_t {
     int64_t revolution_count;
+    float angular_acceleration_rad_per_s2;
     float angular_velocity_rad_per_s;
     float angle_rad; /* 0 .. 2 * pi */
     float i_dq_a[2];
@@ -55,13 +56,15 @@ struct motor_params_t {
                                   velocity in rad/s */
 
     uint32_t num_poles; /* number of poles */
+
+    /* Inertia of the motor and prop */
+    float rotor_inertia_kg_m2;
 };
 
 
 struct control_params_t {
     float bandwidth_hz;
     float max_accel_torque_a;
-    float load_torque_a;
     float accel_gain;
     float accel_time_s;
 };

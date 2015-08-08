@@ -107,6 +107,13 @@ static struct param_t param_config_[NUM_PARAMS] = {
         850.0f, 100.0f, 5000.0f},
 
     /*
+    Motor + rotor inertia in kg * m^2. A standard value for a small quad might
+    be 5.4 * 10e-5. Used by the aerodynamic power controller
+    */
+    {PARAM_MOTOR_INERTIA, PARAM_TYPE_FLOAT, "motor_inertia",
+        5e-5f, 10e-6f, 10e-3f},
+
+    /*
     Acceleration torque limit in amps. Determines the maximum difference
     between the torque setpoint and the load torque, and therefore the amount
     of torque available for acceleration.
@@ -118,14 +125,6 @@ static struct param_t param_config_[NUM_PARAMS] = {
     */
     {PARAM_CONTROL_ACCEL_TORQUE_MAX, PARAM_TYPE_FLOAT, "control_accel_torque_max",
         2.0f, 0.1f, 40.0f},
-
-    /*
-    Load torque in amps. This is a target value for torque at full throttle,
-    rather than a limit, and in conjunction with control_accel_time it
-    determines the torque output from the speed controller.
-    */
-    {PARAM_CONTROL_LOAD_TORQUE, PARAM_TYPE_FLOAT, "control_load_torque",
-        10.0f, 1.0f, 40.0f},
 
     /*
     Speed controller acceleration gain. A gain of 0.0 results in no torque
@@ -208,6 +207,7 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
     params.ls_h = params_[PARAM_MOTOR_LS];
     params.phi_v_s_per_rad = 1.0f /
         _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV], params.num_poles);
+    params.rotor_inertia_kg_m2 = params_[PARAM_MOTOR_INERTIA];
 
     params.max_current_a = params_[PARAM_MOTOR_CURRENT_LIMIT];
     params.max_voltage_v = params_[PARAM_MOTOR_VOLTAGE_LIMIT];
@@ -222,7 +222,6 @@ void Configuration::read_control_params(
 ) {
     params.bandwidth_hz = 50.0f;
     params.max_accel_torque_a = params_[PARAM_CONTROL_ACCEL_TORQUE_MAX];
-    params.load_torque_a = params_[PARAM_CONTROL_LOAD_TORQUE];
     params.accel_gain = params_[PARAM_CONTROL_ACCEL_GAIN];
     params.accel_time_s = params_[PARAM_CONTROL_ACCEL_TIME];
 }

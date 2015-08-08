@@ -84,6 +84,7 @@ public:
         is_hfi_active_(0)
     {
         state_estimate_.revolution_count = 0;
+        state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
         state_estimate_.i_dq_a[0] = state_estimate_.i_dq_a[1] = 0.0f;
@@ -96,9 +97,10 @@ public:
     }
 
     void reset_state() {
+        state_estimate_.revolution_count = 0;
+        state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
-        state_estimate_.revolution_count = 0;
         next_sin_theta_ = 0;
         next_cos_theta_ = 1.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;

@@ -854,7 +854,7 @@ if __name__ == "__main__":
                                "uavcan.protocol.file.BeginFirmwareUpdate " +
                                "with error {1:d}: {2!s}").format(
                                node_id, response.error,
-                               response.optional_error_message.encode())
+                               response.optional_error_message.decode())
                         logging.error(msg)
                 else:
                     log.debug("enumerate_device(): device up to date")

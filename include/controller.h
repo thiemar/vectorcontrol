@@ -123,39 +123,63 @@ public:
 
 
 class SpeedController {
+    /*
+    Implements standard PI speed control, as well as the aerodynamic power
+    controller described in:
+
+    "Aerodynamic Power Control for Multirotor Aerial Vehicles"
+    Bangura, M.; Lim, H.; Jin Kim, H.; Mahony, R. (2014)
+    */
 protected:
+    bool control_power_;
+
     float integral_error_a_;
-    float setpoint_rad_per_s_;
+    float speed_setpoint_rad_per_s_;
 
-    float kp_;
-    float ki_;
-    float kp_inv_;
+    float power_setpoint_w_;
 
-    float min_speed_rad_per_s_;
+    float speed_kp_;
+    float speed_ki_;
+
+    float power_kp_;
+    float power_ki_;
+
+    float ir_;  /* Rotor inertia in kg * m^2*/
+    float kq0_; /* Torque constant in N*m / A */
+
     float current_limit_a_;
     float accel_current_limit_a_;
-    float speed_limit_rad_per_s_;
 
 public:
     SpeedController():
+        control_power_(false),
         integral_error_a_(0.0f),
-        setpoint_rad_per_s_(0.0f),
-        kp_(0.0f),
-        ki_(0.0f),
-        kp_inv_(0.0f),
-        min_speed_rad_per_s_(0.0f),
+        speed_setpoint_rad_per_s_(0.0f),
+        power_setpoint_w_(0.0f),
+        speed_kp_(0.0f),
+        speed_ki_(0.0f),
+        power_kp_(0.0f),
+        power_ki_(0.0f),
+        ir_(0.0f),
+        kq0_(0.0f),
         current_limit_a_(0.0f),
-        accel_current_limit_a_(0.0f),
-        speed_limit_rad_per_s_(0.0f)
+        accel_current_limit_a_(0.0f)
     {}
 
     void reset_state() {
         integral_error_a_ = 0.0f;
-        setpoint_rad_per_s_ = 0.0f;
+        speed_setpoint_rad_per_s_ = 0.0f;
+        power_setpoint_w_ = 0.0f;
     }
 
-    void set_setpoint(float setpoint) {
-        setpoint_rad_per_s_ = setpoint;
+    void set_speed_setpoint(float setpoint) {
+        speed_setpoint_rad_per_s_ = setpoint;
+        control_power_ = false;
+    }
+
+    void set_power_setpoint(float setpoint) {
+        power_setpoint_w_ = setpoint;
+        control_power_ = true;
     }
 
     void set_current_limit_a(float limit) {
@@ -167,32 +191,47 @@ public:
         const struct control_params_t& control_params,
         float t_s
     ) {
-        kp_ = 0.01f * control_params.max_accel_torque_a *
-              control_params.accel_gain;
-        ki_ = t_s / control_params.accel_time_s;
+        speed_kp_ = 0.01f * control_params.max_accel_torque_a *
+                    control_params.accel_gain;
+        speed_ki_ = t_s / control_params.accel_time_s;
 
-        min_speed_rad_per_s_ = motor_params.min_speed_rad_per_s;
-        speed_limit_rad_per_s_ = motor_params.max_speed_rad_per_s;
+        power_kp_ = control_params.max_accel_torque_a *
+                    control_params.accel_gain;
+        power_ki_ = speed_ki_;
+
         current_limit_a_ = motor_params.max_current_a;
         accel_current_limit_a_ = control_params.max_accel_torque_a;
+
+        /* Power control term calculation */
+        ir_ = motor_params.rotor_inertia_kg_m2;
+        kq0_ = 0.75f * (float)motor_params.num_poles *
+               motor_params.phi_v_s_per_rad;
     }
 
     float __attribute__((optimize("O3")))
     update(const struct motor_state_t& state) {
-        float error_rad_per_s, accel_torque_a, result_a, out_a;
+        float error, power, accel_torque_a, result_a, out_a, kp, ki;
 
-        error_rad_per_s = setpoint_rad_per_s_ -
-                          state.angular_velocity_rad_per_s;
-        if (error_rad_per_s > min_speed_rad_per_s_) {
-            error_rad_per_s = min_speed_rad_per_s_;
-        } else if (error_rad_per_s < -min_speed_rad_per_s_) {
-            error_rad_per_s = -min_speed_rad_per_s_;
+        if (control_power_) {
+            /* Eqn 17 from the paper */
+            power =
+                (kq0_ * state.i_dq_a[1] * state.angular_velocity_rad_per_s) /* -
+                (ir_ * state.angular_velocity_rad_per_s *
+                    state.angular_acceleration_rad_per_s2) */;
+            error = power_setpoint_w_ - power;
+            kp = power_kp_;
+            ki = power_ki_;
+        } else {
+            error = speed_setpoint_rad_per_s_ -
+                    state.angular_velocity_rad_per_s;
+            kp = speed_kp_;
+            ki = speed_ki_;
         }
 
         /*
         Determine acceleration torque, and limit to the configured maximum
         */
-        accel_torque_a = kp_ * error_rad_per_s;
+        accel_torque_a = kp * error;
 
         if (accel_torque_a > accel_current_limit_a_) {
             accel_torque_a = accel_current_limit_a_;
@@ -212,15 +251,9 @@ public:
         }
 
         /*
-        Limit integral term accumulation when the output current is saturated
-        (or when it's lagging behind the setpoint).
+        Limit integral term accumulation when the output current is saturated.
         */
-        if (std::abs(state.angular_velocity_rad_per_s) > min_speed_rad_per_s_ &&
-                state.angular_velocity_rad_per_s * setpoint_rad_per_s_ > 0.0f) {
-            integral_error_a_ += ki_ * (result_a - integral_error_a_);
-        } else {
-            integral_error_a_ += ki_ * (result_a - integral_error_a_) * 1e-3f;
-        }
+        integral_error_a_ += ki * (result_a - integral_error_a_);
 
         return result_a;
     }

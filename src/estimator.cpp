@@ -62,7 +62,7 @@ StateEstimator::update_state_estimate(
           kalman_gain[STATE_DIM * MEASUREMENT_DIM],
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
-          b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d,
+          b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d, acceleration,
           i_dq_a[2], angle_diff, hfi_scale, hfi_weight, last_angle,
           next_angle;
 
@@ -248,10 +248,13 @@ StateEstimator::update_state_estimate(
     on the HFI weight (higher weights = lower low-pass filter cutoff
     frequency).
     */
+    acceleration = ((state_estimate_.angle_rad - last_angle) * t_inv_ -
+                     state_estimate_.angular_velocity_rad_per_s);
+    state_estimate_.angular_acceleration_rad_per_s2 +=
+        angular_velocity_lpf_coeff_ * 0.01f *
+        ((acceleration * t_inv_) - state_estimate_.angular_acceleration_rad_per_s2);
     state_estimate_.angular_velocity_rad_per_s +=
-        ((state_estimate_.angle_rad - last_angle) * t_inv_ -
-            state_estimate_.angular_velocity_rad_per_s) * 0.01f *
-        std::max(0.25f, 1.0f - hfi_weight);
+        acceleration * angular_velocity_lpf_coeff_ /* * std::max(0.25f, 1.0f - hfi_weight) */;
 
     if (!is_converged()) {
         is_converged_++;
@@ -272,7 +275,7 @@ StateEstimator::update_state_estimate(
 
     next_angle = state_estimate_.angle_rad +
                  2.0f * state_estimate_.angular_velocity_rad_per_s * t_ +
-                 0.02f * accel_direction * hfi_weight;
+                 0.01f * accel_direction * hfi_weight;
     if (next_angle > 2.0f * (float)M_PI) {
         next_angle -= 2.0f * (float)M_PI;
     } else if (next_angle < 0.0f) {
