@@ -67,6 +67,13 @@ struct controller_state_t {
     bool fault;
 };
 
+struct audio_state_t {
+    uint32_t off_time;
+    float phase_rad;
+    float angular_velocity_rad_per_u;
+    float volume_v;
+};
+
 
 /*
 Globally-visible board state updated by high-frequency callbacks and read by
@@ -75,6 +82,7 @@ it's only used for reporting).
 */
 volatile static struct controller_state_t g_controller_state;
 volatile static struct motor_state_t g_motor_state;
+volatile static struct audio_state_t g_audio_state;
 
 /* Bus and output voltage for reporting purposes */
 volatile static float g_vbus_v;
@@ -185,7 +193,7 @@ control_cb(
     float vbus_v
 ) {
     float v_dq_v[2], current_setpoint, speed_setpoint, readings[2], hfi_v[2],
-          v_ab_v[2], min_speed, max_speed;
+          v_ab_v[2], min_speed, max_speed, phase, audio_v;
     struct motor_state_t motor_state;
     struct controller_state_t controller_state;
 
@@ -193,6 +201,20 @@ control_cb(
         const_cast<struct controller_state_t&>(g_controller_state);
     min_speed = controller_state.min_speed_rad_per_s;
     max_speed = controller_state.max_speed_rad_per_s;
+
+    /* Calculate audio component */
+    if (g_audio_state.off_time) {
+        phase = g_audio_state.phase_rad;
+        phase += g_audio_state.angular_velocity_rad_per_u;
+        if (phase > (float)M_PI) {
+            phase -= (float)(2.0 * M_PI);
+        }
+        audio_v = g_audio_state.volume_v * (phase > 0.0f ? 1.0f : -1.0f); /*fast_sin(phase)*/
+        g_audio_state.phase_rad = phase;
+        g_audio_state.off_time--;
+    } else {
+        audio_v = 0.0f;
+    }
 
     /* Update the state estimate with those values */
     g_estimator.update_state_estimate(
@@ -212,13 +234,16 @@ control_cb(
     }
 
     if (controller_state.mode == CONTROLLER_STOPPED) {
-        g_v_dq_v[0] = g_v_dq_v[1] = out_v_ab_v[0] = out_v_ab_v[1] = 0.0f;
+        g_v_dq_v[0] = v_dq_v[0] = 0.0f;
         g_estimator.reset_state();
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
         g_alignment_controller.reset_state();
         readings[0] = readings[1] = 0.0f;
         g_estimator_consistency = 1.0f;
+
+        g_v_dq_v[1] = v_dq_v[1] = audio_v;
+        g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
     } else if (g_estimator.is_converged()) {
         /* Update the speed controller setpoint */
         if (controller_state.mode == CONTROLLER_TORQUE) {
@@ -288,7 +313,8 @@ control_cb(
         g_current_controller.update(v_dq_v,
                                     motor_state.i_dq_a,
                                     motor_state.angular_velocity_rad_per_s,
-                                    vbus_v);
+                                    vbus_v,
+                                    audio_v);
 
         /* Save global voltages before adding HFI */
         g_v_dq_v[0] = v_dq_v[0];
@@ -403,6 +429,10 @@ static void node_init(uint8_t node_id) {
         0u, UAVCAN_EQUIPMENT_ESC_RPMCOMMAND, false,
         uavcan::equipment::esc::RPMCommand::DefaultDataTypeID,
         node_id);
+    hal_set_can_dtid_filter(
+        0u, UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND, false,
+        uavcan::equipment::indication::BeepCommand::DefaultDataTypeID,
+        node_id);
 }
 
 
@@ -442,6 +472,7 @@ static void __attribute__((noreturn)) node_run(
 
     uavcan::equipment::esc::RawCommand raw_cmd;
     uavcan::equipment::esc::RPMCommand rpm_cmd;
+    uavcan::equipment::indication::BeepCommand beep_cmd;
     uavcan::protocol::param::ExecuteOpcode::Request xo_req;
     uavcan::protocol::param::GetSet::Request gs_req;
     uavcan::protocol::RestartNode::Request rn_req;
@@ -478,6 +509,9 @@ static void __attribute__((noreturn)) node_run(
                     case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND:
                         crc = uavcan::equipment::esc::RPMCommand::getDataTypeSignature().toTransferCRC();
                         break;
+                    case UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND:
+                        crc = uavcan::equipment::indication::BeepCommand::getDataTypeSignature().toTransferCRC();
+                        break;
                     default:
                         break;
                 }
@@ -501,6 +535,17 @@ static void __attribute__((noreturn)) node_run(
                 mode = CONTROLLER_SPEED;
                 setpoint = (float)rpm_cmd.rpm[esc_index] * (1.0f / 60.0f) *
                           (float)motor_params.num_poles * (float)M_PI;
+            } else if (filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
+                       broadcast_manager.decode_indication_beepcommand(beep_cmd)) {
+                /* Set up audio generation -- aim for 0.5 A */
+                g_audio_state.off_time =
+                    (uint32_t)(beep_cmd.duration / hal_control_t_s);
+                g_audio_state.angular_velocity_rad_per_u =
+                    2.0f * (float)M_PI * hal_control_t_s *
+                    std::max(100.0f, beep_cmd.frequency);
+                g_audio_state.volume_v = std::min(
+                    2.0f * motor_params.rs_r,
+                    0.5f * std::min((float)g_vbus_v, motor_params.max_voltage_v));
             }
         }
 
@@ -871,6 +916,12 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     if (motor_params.max_speed_rad_per_s > limit_speed) {
         motor_params.max_speed_rad_per_s = limit_speed;
     }
+
+    /* Clear audio state */
+    g_audio_state.off_time = 0;
+    g_audio_state.phase_rad = 0.0f;
+    g_audio_state.angular_velocity_rad_per_u = 0.0f;
+    g_audio_state.volume_v = 0.0f;
 
     /* Start PWM */
     hal_set_pwm_state(HAL_PWM_STATE_RUNNING);

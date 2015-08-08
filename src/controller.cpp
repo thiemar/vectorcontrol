@@ -34,7 +34,8 @@ DQCurrentController::update(
     float out_v_dq_v[2],
     const float i_dq_a[2],
     float angular_velocity_rad_per_s,
-    float vbus_v
+    float vbus_v,
+    float audio_v
 ) {
     /*
     Current controller described in:
@@ -75,7 +76,7 @@ DQCurrentController::update(
     voltages
     */
     vd_v = kp_ * ed_a + ccd_v;
-    vq_v = kp_ * eq_a + ccq_v;
+    vq_v = kp_ * eq_a + ccq_v + audio_v;
 
     /*
     Limit the absolute value of Vdq to vbus * maximum modulation.

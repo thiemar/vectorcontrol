@@ -897,9 +897,10 @@ function setupEventListeners() {
     content.addEventListener("click", function(event) {
         var nodeUi;
 
+        nodeUi = event.target.parentElement.parentElement.parentElement
+                             .parentElement;
+
         if (event.target.classList.contains("apply-configuration")) {
-            nodeUi = event.target.parentElement.parentElement.parentElement
-                                 .parentElement;
             ws.send(JSON.stringify({
                 node_id: parseInt(nodeUi.id.split("-")[1], 10),
                 datatype: "uavcan.protocol.param.ExecuteOpcode",
@@ -911,10 +912,8 @@ function setupEventListeners() {
                 payload: {magic_number: 0xACCE551B1E}
             }));
         } else if (event.target.classList.contains("esc-start")) {
-            nodeUi = event.target.parentElement.parentElement.parentElement
-                                 .parentElement;
             nodeUi.querySelectorAll("input, select").forEach(function(elem) {
-                if (elem.name == "stop") {
+                if (elem.name == "stop" || elem.name == "beep") {
                     elem.disabled = false;
                 } else {
                     elem.disabled = true;
@@ -923,8 +922,6 @@ function setupEventListeners() {
 
             setpointTimer = setInterval(updateSetpoint, 100);
         } else if (event.target.classList.contains("esc-stop")) {
-            nodeUi = event.target.parentElement.parentElement.parentElement
-                                 .parentElement;
             nodeUi.querySelectorAll("input, select").forEach(function(elem) {
                 if (elem.name == "stop") {
                     elem.disabled = true;
@@ -935,6 +932,12 @@ function setupEventListeners() {
 
             clearInterval(setpointTimer);
             setpointTimer = null;
+        } else if (event.target.classList.contains("esc-beep")) {
+            ws.send(JSON.stringify({
+                //datatype: "uavcan.equipment.indication.BeepCommand",
+                //payload: {duration: 0.5, frequency: 440.0}
+                audio: 1
+            }));
         } /* else if (nodeUi = selectAncestor(event.target, ".device-header")) {
             nodeUi.classList.toggle("collapsed");
             nodeUi.parentElement.querySelector(".device-detail")

@@ -139,6 +139,18 @@ Contact: Paul Mineiro <paul@mineiro.com>
 }
 
 
+inline float __attribute__((optimize("O3")))
+fast_sin(float x) {
+    const float B = (float)(4.0 / M_PI);
+    const float C = (float)(-4.0 / (M_PI * M_PI));
+    const float P = 0.225f; /* or 0.218 to minimize relative error */
+
+    float y;
+    y = B * x + C * x * std::abs(x);
+    return P * (y * std::abs(y) - y) + y;
+}
+
+
 inline void __attribute__((optimize("O3")))
 sin_cos(
     float& sinx,

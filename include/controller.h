@@ -116,7 +116,8 @@ public:
         float out_v_dq_v[2],
         const float i_dq_a[2],
         float angular_velocity_frac_per_timestep,
-        float vbus_v
+        float vbus_v,
+        float audio_v
     );
 };
 

@@ -35,6 +35,7 @@ SOFTWARE.
 #include "uavcan/equipment/esc/RPMCommand.hpp"
 #include "uavcan/equipment/esc/Status.hpp"
 #include "uavcan/equipment/esc/FOCStatus.hpp"
+#include "uavcan/equipment/indication/BeepCommand.hpp"
 
 
 #define UAVCAN_SOF_BIT 0x80u
@@ -49,7 +50,8 @@ enum uavcan_dtid_filter_id_t {
     UAVCAN_PROTOCOL_GETNODEINFO,
     UAVCAN_PROTOCOL_RESTARTNODE,
     UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
-    UAVCAN_EQUIPMENT_ESC_RPMCOMMAND
+    UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
+    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND
 };
 
 
@@ -355,6 +357,13 @@ public:
         uavcan::equipment::esc::RPMCommand& msg
     ) {
         return uavcan::equipment::esc::RPMCommand::decode(msg, rx_codec_);
+    }
+
+    bool decode_indication_beepcommand (
+        uavcan::equipment::indication::BeepCommand& msg
+    ) {
+        return uavcan::equipment::indication::BeepCommand::decode(
+            msg, rx_codec_);
     }
 
     bool decode_executeopcode_request(
