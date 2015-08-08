@@ -1,36 +1,41 @@
 #encoding=utf-8
 
-# Copyright (c) 2014 - 2015 by Thiemar Pty Ltd
+# Copyright (C) 2014-2015 Thiemar Pty Ltd
 #
-# This file is part of vectorcontrol.
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
 #
-# vectorcontrol is free software: you can redistribute it and/or modify it
-# under the terms of the GNU General Public License as published by the Free
-# Software Foundation, either version 3 of the License, or (at your option)
-# any later version.
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
 #
-# vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-# more details.
-#
-# You should have received a copy of the GNU General Public License along with
-# vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 import os
-import can
+import re
 import cgi
+import sys
+import code
 import json
 import stat
 import time
 import math
-import flash
 import struct
+import binascii
 import datetime
+import cStringIO
 import functools
 import tornado.web
 import collections
-import ConfigParser
 import logging as log
 import tornado.ioloop
 import tornado.netutil
@@ -41,206 +46,374 @@ import tornado.httpserver
 from optparse import OptionParser, OptionGroup
 
 
-NODE_STATUS_TRANSFER_ID = 0
-UAVCAN_NODESTATUS_ID = 550
+sys.path.insert(0, "/Users/bendyer/Projects/ARM/workspace/pyuavcan/")
+sys.path.insert(0, "/mnt/hgfs/workspace/pyuavcan/")
+sys.path.insert(0, "/home/dev/workspace/pyuavcan/")
 
 
-CAN_COMMAND_SETPOINT_ID = 0x740
-CAN_STATUS_CONTROLLER_ID = 0x730
-CAN_STATUS_MEASUREMENT_ID = 0x731
-CAN_STATUS_ESTIMATOR_ID = 0x733
-CAN_STATUS_HFI_ID = 0x734
+import uavcan
+import uavcan.dsdl
+import uavcan.node
+import uavcan.monitors
+import uavcan.services
+import uavcan.transport
+
+
+# Py3 compatibility
+try:
+    long
+except:
+    long = int
 
 
 NOTIFY_SOCKETS = set()
-UAVCAN_NODE_UPTIME = {}
-UAVCAN_NODE_CONFIG = collections.defaultdict(dict)
-UAVCAN_NODE_SETPOINT_TIMER = collections.defaultdict(int)
-UAVCAN_NODE_SETPOINT_SCHEDULE = collections.defaultdict(list)
-UAVCAN_NODE_SETPOINT_STARTUP = collections.defaultdict(list)
-UAVCAN_NODE_CONTROL_MODE = collections.defaultdict(int)
-UAVCAN_NODE_MOTOR_RUNNING = collections.defaultdict(bool)
-UAVCAN_NODE_MEASUREMENT_QUEUE = collections.defaultdict(collections.deque)
-UAVCAN_NODE_CONTROLLER_QUEUE = collections.defaultdict(collections.deque)
-UAVCAN_NODE_HFI_QUEUE = collections.defaultdict(collections.deque)
 
 
-SETPOINT_SCHEDULE_TIMER = 0
+UAVCAN_NODE_INFO = {}
+UAVCAN_NODE_CONFIG = {}
 
 
-@tornado.gen.coroutine
-def read_node_configuration(conn, node_id):
-    "Send a configuration read message for each parameter, 0.01 s apart."
-    param_indexes = list(v for s in flash.CAN_CONFIG_INDEXES.itervalues()
-                           for k, v in s.iteritems())
-    for index in param_indexes:
-        command = struct.pack("<BBBBf", node_id, index, 0, 0, 0)
-        conn.send(flash.CAN_COMMAND_CONFIG_ID, command)
-        yield tornado.gen.Task(tornado.ioloop.IOLoop.instance().call_later,
-                               0.01)
+AUDIO_SEQ = [
+    (4.736448, 1.0, 233.081880759),
+    (0.219280, 0.0, 233.081880759),
+    (0.043856, 1.0, 261.625565301),
+    (0.060302, 0.0, 261.625565301),
+    (0.202834, 1.0, 277.182630977),
+    (0.222021, 0.0, 277.182630977),
+    (0.041115, 1.0, 277.182630977),
+    (0.142532, 0.0, 277.182630977),
+    (0.120604, 1.0, 311.126983722),
+    (0.106899, 0.0, 311.126983722),
+    (0.156237, 1.0, 261.625565301),
+    (0.326179, 0.0, 261.625565301),
+    (0.068525, 1.0, 233.081880759),
+    (0.065784, 0.0, 233.081880759),
+    (0.065784, 1.0, 207.652348790),
+    (0.753775, 0.0, 207.652348790),
+    (1.351313, 1.0, 233.081880759),
+    (0.200093, 0.0, 233.081880759),
+    (0.063043, 1.0, 233.081880759),
+    (0.216539, 0.0, 233.081880759),
+    (0.046597, 1.0, 261.625565301),
+    (0.205575, 0.0, 261.625565301),
+    (0.057561, 1.0, 277.182630977),
+    (0.205575, 0.0, 277.182630977),
+    (0.057561, 1.0, 233.081880759),
+    (0.093194, 0.0, 233.081880759),
+    (0.433078, 1.0, 207.652348790),
+    (0.115122, 0.0, 207.652348790),
+    (0.148014, 1.0, 415.304697580),
+    (0.282323, 0.0, 415.304697580),
+    (0.243949, 1.0, 415.304697580),
+    (0.186388, 0.0, 415.304697580),
+    (0.076748, 1.0, 311.126983722),
+    (0.789408, 0.0, 311.126983722),
+    (0.789408, 1.0, 233.081880759),
+    (0.087712, 0.0, 233.081880759),
+    (0.175424, 1.0, 233.081880759),
+    (0.202834, 0.0, 233.081880759),
+    (0.060302, 1.0, 261.625565301),
+    (0.057561, 0.0, 261.625565301),
+    (0.205575, 1.0, 277.182630977),
+    (0.232985, 0.0, 277.182630977),
+    (0.030151, 1.0, 233.081880759),
+    (0.090453, 0.0, 233.081880759),
+    (0.172683, 1.0, 277.182630977),
+    (0.224762, 0.0, 277.182630977),
+    (0.038374, 1.0, 311.126983722),
+    (0.074007, 0.0, 311.126983722),
+    (0.452265, 1.0, 261.625565301),
+    (0.224762, 0.0, 261.625565301),
+    (0.038374, 1.0, 233.081880759),
+    (0.191870, 0.0, 233.081880759),
+    (0.071266, 1.0, 261.625565301),
+    (0.068525, 0.0, 261.625565301),
+    (0.063043, 1.0, 233.081880759),
+    (0.057561, 0.0, 233.081880759),
+    (0.074007, 1.0, 207.652348790),
+    (0.531754, 0.0, 207.652348790),
+    (0.783926, 1.0, 233.081880759),
+    (0.180906, 0.0, 233.081880759),
+    (0.082230, 1.0, 233.081880759),
+    (0.205575, 0.0, 233.081880759),
+    (0.057561, 1.0, 261.625565301),
+    (0.126086, 0.0, 261.625565301),
+    (0.137050, 1.0, 277.182630977),
+    (0.216539, 0.0, 277.182630977),
+    (0.046597, 1.0, 233.081880759),
+    (0.101417, 0.0, 233.081880759),
+    (0.161719, 1.0, 207.652348790),
+    (0.353589, 0.0, 207.652348790),
+    (0.172683, 1.0, 311.126983722),
+    (0.211057, 0.0, 311.126983722),
+    (0.052079, 1.0, 311.126983722),
+    (0.189129, 0.0, 311.126983722),
+    (0.074007, 1.0, 311.126983722),
+    (0.194611, 0.0, 311.126983722),
+    (0.068525, 1.0, 349.228231433),
+    (0.189129, 0.0, 349.228231433),
+    (0.074007, 1.0, 311.126983722),
+    (0.553682, 0.0, 311.126983722),
+    (0.498862, 1.0, 277.182630977),
+    (1.129292, 0.0, 277.182630977),
+    (0.186388, 1.0, 311.126983722),
+    (0.098676, 0.0, 311.126983722),
+    (0.164460, 1.0, 349.228231433),
+    (0.208316, 0.0, 349.228231433),
+    (0.054820, 1.0, 311.126983722),
+    (0.433078, 0.0, 311.126983722),
+    (0.093194, 1.0, 311.126983722),
+    (0.087712, 0.0, 311.126983722),
+    (0.175424, 1.0, 311.126983722),
+    (0.202834, 0.0, 311.126983722),
+    (0.060302, 1.0, 349.228231433),
+    (0.183647, 0.0, 349.228231433),
+    (0.079489, 1.0, 311.126983722),
+    (0.216539, 0.0, 311.126983722),
+    (0.046597, 1.0, 207.652348790),
+    (0.172683, 0.0, 207.652348790),
+    (0.090453, 1.0, 207.652348790),
+    (0.416632, 0.0, 207.652348790),
+    (0.899048, 1.0, 207.652348790),
+    (0.106899, 0.0, 207.652348790),
+    (0.156237, 1.0, 233.081880759),
+    (0.205575, 0.0, 233.081880759),
+    (0.057561, 1.0, 261.625565301),
+    (0.120604, 0.0, 261.625565301),
+    (0.142532, 1.0, 277.182630977),
+    (0.222021, 0.0, 277.182630977),
+    (0.041115, 1.0, 233.081880759),
+    (0.109640, 0.0, 233.081880759),
+    (0.416632, 1.0, 311.126983722),
+    (0.208316, 0.0, 311.126983722),
+    (0.054820, 1.0, 349.228231433),
+    (0.169942, 0.0, 349.228231433),
+    (0.093194, 1.0, 311.126983722),
+    (0.531754, 0.0, 311.126983722),
+    (0.257654, 1.0, 207.652348790),
+    (0.076748, 0.0, 207.652348790),
+    (0.054820, 1.0, 233.081880759),
+    (0.057561, 0.0, 233.081880759),
+    (0.074007, 1.0, 277.182630977),
+    (0.079489, 0.0, 277.182630977),
+    (0.052079, 1.0, 233.081880759),
+    (0.052079, 0.0, 233.081880759),
+    (0.079489, 1.0, 349.228231433),
+    (0.285064, 0.0, 349.228231433),
+    (0.109640, 1.0, 349.228231433),
+    (0.276841, 0.0, 349.228231433),
+    (0.117863, 1.0, 311.126983722),
+    (0.438560, 0.0, 311.126983722),
+    (0.350848, 1.0, 207.652348790),
+    (0.074007, 0.0, 207.652348790),
+    (0.057561, 1.0, 233.081880759),
+    (0.052079, 0.0, 233.081880759),
+    (0.079489, 1.0, 277.182630977),
+    (0.082230, 0.0, 277.182630977),
+    (0.049338, 1.0, 233.081880759),
+    (0.052079, 0.0, 233.081880759),
+    (0.079489, 1.0, 311.126983722),
+    (0.312474, 0.0, 311.126983722),
+    (0.082230, 1.0, 311.126983722),
+    (0.279582, 0.0, 311.126983722),
+    (0.115122, 1.0, 277.182630977),
+    (0.298769, 0.0, 277.182630977),
+    (0.095935, 1.0, 261.625565301),
+    (0.076748, 0.0, 261.625565301),
+    (0.054820, 1.0, 233.081880759),
+    (0.216539, 0.0, 233.081880759),
+    (0.046597, 1.0, 207.652348790),
+    (0.065784, 0.0, 207.652348790),
+    (0.065784, 1.0, 233.081880759),
+    (0.054820, 0.0, 233.081880759),
+    (0.076748, 1.0, 277.182630977),
+    (0.076748, 0.0, 277.182630977),
+    (0.054820, 1.0, 233.081880759),
+    (0.049338, 0.0, 233.081880759),
+    (0.082230, 1.0, 277.182630977),
+    (0.419373, 0.0, 277.182630977),
+    (0.106899, 1.0, 311.126983722),
+    (0.112381, 0.0, 311.126983722),
+    (0.150755, 1.0, 261.625565301),
+    (0.334402, 0.0, 261.625565301),
+    (0.060302, 1.0, 233.081880759),
+    (0.060302, 0.0, 233.081880759),
+    (0.071266, 1.0, 207.652348790),
+    (0.413891, 0.0, 207.652348790),
+    (0.112381, 1.0, 207.652348790),
+    (0.120604, 0.0, 207.652348790),
+    (0.142532, 1.0, 311.126983722),
+    (0.235726, 0.0, 311.126983722),
+    (0.027410, 1.0, 277.182630977),
+    (0.194611, 0.0, 277.182630977),
+    (0.068525, 1.0, 277.182630977),
+    (0.482416, 0.0, 277.182630977),
+    (0.570128, 1.0, 207.652348790),
+    (0.068525, 0.0, 207.652348790),
+    (0.063043, 1.0, 233.081880759),
+    (0.057561, 0.0, 233.081880759),
+    (0.074007, 1.0, 277.182630977),
+    (0.082230, 0.0, 277.182630977),
+    (0.049338, 1.0, 233.081880759),
+    (0.052079, 0.0, 233.081880759),
+    (0.079489, 1.0, 349.228231433),
+    (0.438560, 0.0, 349.228231433),
+    (0.087712, 1.0, 349.228231433),
+    (0.178165, 0.0, 349.228231433),
+    (0.084971, 1.0, 311.126983722),
+    (0.490639, 0.0, 311.126983722),
+    (0.298769, 1.0, 207.652348790),
+    (0.068525, 0.0, 207.652348790),
+    (0.063043, 1.0, 233.081880759),
+    (0.049338, 0.0, 233.081880759),
+    (0.082230, 1.0, 277.182630977),
+    (0.084971, 0.0, 277.182630977),
+    (0.046597, 1.0, 233.081880759),
+    (0.024669, 0.0, 233.081880759),
+    (0.106899, 1.0, 415.304697580),
+    (0.455006, 0.0, 415.304697580),
+    (0.071266, 1.0, 277.182630977),
+    (0.087712, 0.0, 277.182630977),
+    (0.175424, 1.0, 277.182630977),
+    (0.375517, 0.0, 277.182630977),
+    (0.019187, 1.0, 261.625565301),
+    (0.065784, 0.0, 261.625565301),
+    (0.065784, 1.0, 233.081880759),
+    (0.213798, 0.0, 233.081880759),
+    (0.049338, 1.0, 207.652348790),
+    (0.065784, 0.0, 207.652348790),
+    (0.065784, 1.0, 233.081880759),
+    (0.041115, 0.0, 233.081880759),
+    (0.090453, 1.0, 277.182630977),
+    (0.095935, 0.0, 277.182630977),
+    (0.035633, 1.0, 233.081880759),
+    (0.041115, 0.0, 233.081880759),
+    (0.090453, 1.0, 277.182630977),
+    (0.419373, 0.0, 277.182630977),
+    (0.106899, 1.0, 311.126983722),
+    (0.112381, 0.0, 311.126983722),
+    (0.150755, 1.0, 261.625565301),
+    (0.334402, 0.0, 261.625565301),
+    (0.060302, 1.0, 233.081880759),
+    (0.060302, 0.0, 233.081880759),
+    (0.071266, 1.0, 207.652348790),
+    (0.413891, 0.0, 207.652348790),
+    (0.112381, 1.0, 207.652348790),
+    (0.120604, 0.0, 207.652348790),
+    (0.142532, 1.0, 311.126983722),
+    (0.235726, 0.0, 311.126983722),
+    (0.027410, 1.0, 277.182630977),
+    (0.194611, 0.0, 277.182630977),
+    (0.068525, 1.0, 277.182630977),
+    (0.482416, 0.0, 277.182630977),
+]
+AUDIO_SEQ_IDX = 0
 
 
-def param_index_from_param_name(name):
-    """Obtain a parameter index given a parameter name in the format
-    <section>_<param>."""
-    section, _, name = name.partition("_")
-    return flash.CAN_CONFIG_INDEXES[section][name]
+def audio_playback_cb(node):
+    global AUDIO_SEQ, AUDIO_SEQ_IDX
+
+    cmd = uavcan.equipment.indication.BeepCommand()
+    cmd.duration = AUDIO_SEQ[AUDIO_SEQ_IDX][1]
+    cmd.frequency = AUDIO_SEQ[AUDIO_SEQ_IDX][2]
+
+    if node:
+        node.send_message(cmd)
+    else:
+        log.debug(cmd)
+
+    AUDIO_SEQ_IDX = (AUDIO_SEQ_IDX + 1) % len(AUDIO_SEQ)
+    start_audio(node)
 
 
-def param_name_from_param_index(index):
-    """Obtain a parameter name in the format <section>_<param> given a
-    parameter index."""
-    for section_name, params in flash.CAN_CONFIG_INDEXES.iteritems():
-        for param_name, param_index in params.iteritems():
-            if param_index == index:
-                return section_name + "_" + param_name
-
-    raise KeyError("Unknown parameter index " + str(index))
+def start_audio(node):
+    tornado.ioloop.IOLoop.current().call_later(
+        AUDIO_SEQ[AUDIO_SEQ_IDX][0],
+        functools.partial(audio_playback_cb, node))
 
 
-def send_all(message):
+class UAVCANEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, uavcan.transport.CompoundValue):
+            if obj.is_union:
+                field = obj.union_field or obj.fields.keys()[0]
+                return {field: obj.fields[field]}
+            else:
+                return dict((k, v) for k, v in obj.fields.items()
+                            if not k.startswith("_void_"))
+        elif isinstance(obj, uavcan.transport.ArrayValue):
+            if getattr(obj.type.value_type, "bitlen", None) == 8 and \
+                    getattr(obj.type.value_type, "kind", None) == \
+                    uavcan.dsdl.parser.PrimitiveType.KIND_UNSIGNED_INT:
+                try:
+                    return obj.decode()
+                except Exception:
+                    return obj.to_bytes()
+            else:
+                return list(obj)
+        elif isinstance(obj, uavcan.transport.PrimitiveValue):
+            return obj.value
+        else:
+            return json.JSONEncoder.default(self, obj)
+
+
+def uavcan_value_from_obj(uavcan_value, obj):
+    if isinstance(uavcan_value.type, uavcan.dsdl.parser.PrimitiveType):
+        uavcan_value.value = obj
+    elif isinstance(uavcan_value.type, uavcan.dsdl.parser.ArrayType):
+        if isinstance(obj, list) and isinstance(uavcan_value.type.value_type,
+                                            uavcan.dsdl.parser.PrimitiveType):
+            del uavcan_value[:]
+            for idx, obj_item in enumerate(obj):
+                uavcan_value.insert(idx, obj_item)
+        elif isinstance(obj, list):
+            del uavcan_value[:]
+            for idx, obj_item in enumerate(obj):
+                uavcan_item = uavcan_value.new_item()
+                uavcan_value_from_obj(uavcan_item, obj_item)
+                uavcan_value.insert(idx, uavcan_item)
+        elif isinstance(obj, basestring):
+            try:
+                uavcan_value.encode(obj)
+            except Exception:
+                uavcan_value.from_bytes(obj)
+        else:
+            raise TypeError("Expected list or string type for UAVCAN array")
+    elif isinstance(uavcan_value.type, uavcan.dsdl.parser.CompoundType):
+        for key, obj_value in obj.items():
+            if isinstance(uavcan_value.fields[key].type,
+                          uavcan.dsdl.parser.PrimitiveType):
+                setattr(uavcan_value, key, obj_value)
+            else:
+                uavcan_field = getattr(uavcan_value, key)
+                uavcan_value_from_obj(uavcan_field, obj_value)
+    else:
+        raise TypeError("Invalid UAVCAN object type")
+
+
+def send_all(datatype, node_id, payload):
     global NOTIFY_SOCKETS
+
+    message = json.dumps({
+        "datatype": datatype,
+        "node_id": node_id,
+        "payload": payload
+    }, cls=UAVCANEncoder)
+
     for socket in NOTIFY_SOCKETS:
         socket.write_message(message)
 
 
-def handle_can_message(conn, message):
-    """Process an incoming CAN message."""
-    global UAVCAN_NODES, UAVCAN_NODE_MEASUREMENT_QUEUE, \
-           UAVCAN_NODE_CONTROLLER_QUEUE, UAVCAN_NODE_UPTIME, \
-           UAVCAN_NODE_HFI_QUEUE
-
-    message_id = message[0]
-    message_data = message[1]
-    extended = message[2]
-
-    if extended:
-        data_type_id = can.uavcan_get_data_type_id(message_id)
-    else:
-        data_type_id = None
-
-    if data_type_id == UAVCAN_NODESTATUS_ID:
-        node_id = can.uavcan_get_node_id(message_id)
-        u0, u1, u2, status = struct.unpack("<4B", message_data)
-        uptime = u0 + (u1 << 8) + (u2 << 16)
-
-        if node_id not in UAVCAN_NODE_UPTIME or \
-                UAVCAN_NODE_UPTIME[node_id] > uptime:
-            # New node -- get configuration in the next IOLoop iteration
-            log.debug(("handle_can_message(): detected new/restarted " +
-                       "node ID {0}").format(node_id))
-            tornado.ioloop.IOLoop.instance().add_callback(
-                read_node_configuration, conn, node_id)
-
-        UAVCAN_NODE_UPTIME[node_id] = uptime
-
-        send_all({
-            "node_id": node_id,
-            "uptime": uptime
-        })
-    elif message_id == flash.CAN_STATUS_CONFIG_ID:
-        node_id, param_index, value = struct.unpack("<BBf", message_data)
-        param_name = param_name_from_param_index(param_index)
-        UAVCAN_NODE_CONFIG[node_id][param_name] = value
-
-        send_all({
-            "node_id": node_id,
-            "param_name": param_name,
-            "value": value
-        })
-    elif message_id == CAN_STATUS_CONTROLLER_ID:
-        node_id, i_d, i_q, i_setpoint = struct.unpack("<BHHH", message_data)
-        i_d = can.f32_from_f16(i_d)
-        i_q = can.f32_from_f16(i_q)
-        i_setpoint = can.f32_from_f16(i_setpoint)
-        UAVCAN_NODE_CONTROLLER_QUEUE[node_id].append({
-            "i_d": i_d,
-            "i_q": i_q,
-            "i_setpoint": i_setpoint
-        })
-        if len(UAVCAN_NODE_CONTROLLER_QUEUE[node_id]) == 10:
-            send_all({
-                "node_id": node_id,
-                "current": list(UAVCAN_NODE_CONTROLLER_QUEUE[node_id])
-            })
-            UAVCAN_NODE_CONTROLLER_QUEUE[node_id].clear()
-    elif message_id == CAN_STATUS_MEASUREMENT_ID:
-        node_id, temperature, rpm_setpoint, rpm, vbus = \
-            struct.unpack("<BbhhH", message_data)
-        UAVCAN_NODE_MEASUREMENT_QUEUE[node_id].append({
-            "temperature": temperature,
-            "rpm_setpoint": rpm_setpoint,
-            "rpm": rpm,
-            "vbus": can.f32_from_f16(vbus)
-        })
-        if len(UAVCAN_NODE_MEASUREMENT_QUEUE[node_id]) == 10:
-            send_all({
-                "node_id": node_id,
-                "speed": list(UAVCAN_NODE_MEASUREMENT_QUEUE[node_id])
-            })
-            UAVCAN_NODE_MEASUREMENT_QUEUE[node_id].clear()
-    elif message_id == CAN_STATUS_HFI_ID:
-        node_id, hfi_d, hfi_q, angle_rad = struct.unpack("<BHHH", message_data)
-        hfi_d = can.f32_from_f16(hfi_d)
-        hfi_q = can.f32_from_f16(hfi_q)
-        angle_rad = can.f32_from_f16(angle_rad)
-        UAVCAN_NODE_HFI_QUEUE[node_id].append({
-            "hfi_d": hfi_d,
-            "hfi_q": hfi_q,
-            "angle": angle_rad
-        })
-        if len(UAVCAN_NODE_HFI_QUEUE[node_id]) == 10:
-            send_all({
-                "node_id": node_id,
-                "hfi": list(UAVCAN_NODE_HFI_QUEUE[node_id])
-            })
-            UAVCAN_NODE_HFI_QUEUE[node_id].clear()
-
-
-def send_node_status(conn):
-    global NODE_STATUS_TRANSFER_ID
-    message_id = can.uavcan_broadcast_id(NODE_STATUS_TRANSFER_ID,
-                                         UAVCAN_NODESTATUS_ID)
-    conn.send(message_id, "\x00\x00\x00\x00", True)
-    NODE_STATUS_TRANSFER_ID += 1
-
-
-def handle_timer(conn):
-    """Send setpoint update messages for each connected node based on the
-    timer interval."""
-    global UAVCAN_NODE_SETPOINT_TIMER, UAVCAN_NODE_SETPOINT_SCHEDULE, \
-           UAVCAN_NODE_CONTROL_MODE, UAVCAN_NODE_SETPOINT_STARTUP, \
-           UAVCAN_NODE_MOTOR_RUNNING
-
-    for node_id, schedule in UAVCAN_NODE_SETPOINT_SCHEDULE.iteritems():
-        if not UAVCAN_NODE_MOTOR_RUNNING[node_id]:
-            # Any value other than 2 or 3 will stop the motor
-            setpoint = 0
-            mode = 0
-            UAVCAN_NODE_SETPOINT_TIMER[node_id] = 0
-        elif len(UAVCAN_NODE_SETPOINT_STARTUP[node_id]) > \
-                UAVCAN_NODE_SETPOINT_TIMER[node_id]:
-            # Start up gracefully, consuming startup entries as we go
-            setpoint = UAVCAN_NODE_SETPOINT_STARTUP[node_id][UAVCAN_NODE_SETPOINT_TIMER[node_id]]
-            mode = UAVCAN_NODE_CONTROL_MODE.get(node_id) or 3
-            UAVCAN_NODE_SETPOINT_TIMER[node_id] += 1
-        else:
-            # Normal operation, loop over the setpoint schedule
-            setpoint = schedule[(UAVCAN_NODE_SETPOINT_TIMER[node_id] -
-                                 len(UAVCAN_NODE_SETPOINT_STARTUP[node_id])) % len(schedule)]
-            mode = UAVCAN_NODE_CONTROL_MODE.get(node_id) or 3
-            UAVCAN_NODE_SETPOINT_TIMER[node_id] += 1
-
-        # log.debug("handle_timer(): node {0} setpoint {1}".format(node_id, setpoint))
-
-        message = struct.pack("<BBhh", node_id, int(mode), int(setpoint),
-                              int(setpoint))
-        conn.send(CAN_COMMAND_SETPOINT_ID, message)
+class MessageRelayMonitor(uavcan.node.Monitor):
+    def on_message(self, message):
+        send_all(message.type.get_normalized_definition(),
+                 self.transfer.source_node_id, message)
 
 
 class CANHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, *args, **kwargs):
         self.can = kwargs.pop("can", None)
+        self.node = kwargs.pop("node", None)
         super(CANHandler, self).__init__(*args, **kwargs)
 
     def check_origin(self, origin):
@@ -250,59 +423,59 @@ class CANHandler(tornado.websocket.WebSocketHandler):
         self.set_nodelay(True)
         log.info("CANHandler.open()")
 
+    @gen.coroutine
     def on_message(self, message):
-        global UAVCAN_NODE_SETPOINT_SCHEDULE, UAVCAN_NODE_CONTROL_MODE, \
-               NOTIFY_SOCKETS, UAVCAN_NODE_MOTOR_RUNNING, \
-               UAVCAN_NODE_SETPOINT_STARTUP
+        global NOTIFY_SOCKETS, UAVCAN_NODE_INFO, UAVCAN_NODE_CONFIG
 
         message = json.loads(message)
 
         log.info("CANHandler.on_message({0})".format(repr(message)))
+
+        if "audio" in message:
+            start_audio(self.node)
+            return
 
         # If this is the first message from a socket, add it to the notify
         # list and send the current configuration.
         if self not in NOTIFY_SOCKETS:
             NOTIFY_SOCKETS.add(self)
 
-            for node_id, uptime in UAVCAN_NODE_UPTIME.iteritems():
-                self.write_message({
+            for node_id, msg in UAVCAN_NODE_INFO.iteritems():
+                self.write_message(json.dumps({
+                    "datatype": msg.type.get_normalized_definition(),
                     "node_id": node_id,
-                    "uptime": uptime
-                })
+                    "payload": msg
+                }, cls=UAVCANEncoder))
 
             for node_id, params in UAVCAN_NODE_CONFIG.iteritems():
-                for param_name, param_value in params.iteritems():
-                    self.write_message({
+                for param_name, msg in params.iteritems():
+                    self.write_message(json.dumps({
+                        "datatype": msg.type.get_normalized_definition(),
                         "node_id": node_id,
-                        "param_name": param_name,
-                        "value": param_value
-                    })
+                        "payload": msg
+                    }, cls=UAVCANEncoder))
 
-        if message.get("node_id") is None:
+        if "datatype" not in message:
             return
 
-        if "schedule" in message and \
-                not UAVCAN_NODE_MOTOR_RUNNING[message["node_id"]]:
-            start_setpoint = message["schedule"][0]
-            UAVCAN_NODE_SETPOINT_STARTUP[message["node_id"]] = \
-                list(start_setpoint * i / 100.0 for i in xrange(100))
-            UAVCAN_NODE_SETPOINT_SCHEDULE[message["node_id"]] = \
-                message["schedule"]
-        elif "param_name" in message:
-            index = param_index_from_param_name(message["param_name"])
-            command = struct.pack("<BBBBf", message["node_id"], index, 1, 0,
-                                  message["param_value"])
-            self.can.send(flash.CAN_COMMAND_CONFIG_ID, command)
-        elif "param_apply" in message:
-            command = struct.pack("<BBBBf", message["node_id"], 0, 0, 1, 0)
-            self.can.send(flash.CAN_COMMAND_CONFIG_ID, command)
-            self.can.send(flash.CAN_COMMAND_RESTART_ID,
-                          chr(message["node_id"]) + "\xD4\x6A\xDD\x6E")
-        elif "mode" in message:
-            UAVCAN_NODE_CONTROL_MODE[message["node_id"]] = message["mode"]
-        elif "motor_running" in message:
-            UAVCAN_NODE_MOTOR_RUNNING[message["node_id"]] = \
-                message["motor_running"]
+        if "node_id" in message:
+            request = uavcan.TYPENAMES[message["datatype"]](mode="request")
+            uavcan_value_from_obj(request, message["payload"])
+            (response, response_transfer), _ = yield tornado.gen.Task(
+                self.node.send_request, request, message["node_id"])
+            if response:
+                # Store the response if it's a parameter value
+                if message["datatype"] == "uavcan.protocol.param.GetSet":
+                    UAVCAN_NODE_CONFIG[message["node_id"]][response.name] = \
+                        response
+
+                # Forward the response
+                send_all(response.type.get_normalized_definition(),
+                         message["node_id"], response)
+        else:
+            payload = uavcan.TYPENAMES[message["datatype"]]()
+            uavcan_value_from_obj(payload, message["payload"])
+            self.node.send_message(payload)
 
     def on_close(self):
         global NOTIFY_SOCKETS
@@ -340,13 +513,256 @@ class UI(tornado.web.RequestHandler):
         self.render("ui.html", environment=self.environment)
 
 
+class AppDescriptor(object):
+    """
+    UAVCAN firmware image descriptor format:
+    uint64_t signature (bytes [7:0] set to 'APDesc00' by linker script)
+    uint64_t image_crc (set to 0 by linker script)
+    uint32_t image_size (set to 0 by linker script)
+    uint32_t vcs_commit (set to 0 by linker script)
+    uint8_t version_major (set in source)
+    uint8_t version_minor (set in source)
+    uint8_t reserved[6] (set to 0xFF by linker script)
+    """
+
+    LENGTH = 8 + 8 + 4 + 4 + 1 + 1 + 6
+    SIGNATURE = b"APDesc00"
+    RESERVED =  b"\xFF" * 6
+
+    def __init__(self, bytes=None):
+        self.signature = AppDescriptor.SIGNATURE
+        self.image_crc = 0
+        self.image_size = 0
+        self.vcs_commit = 0
+        self.version_major = 0
+        self.version_minor = 0
+        self.reserved = AppDescriptor.RESERVED
+
+        if bytes:
+            try:
+                self.unpack(bytes)
+            except Exception:
+                raise ValueError("Invalid AppDescriptor: {0}".format(
+                                 binascii.b2a_hex(bytes)))
+
+    def pack(self):
+        return struct.pack("<8sQLLBB6s", self.signature, self.image_crc,
+                           self.image_size, self.vcs_commit,
+                           self.version_major, self.version_minor,
+                           self.reserved)
+
+    def unpack(self, bytes):
+        (self.signature, self.image_crc, self.image_size, self.vcs_commit,
+            self.version_major, self.version_minor, self.reserved) = \
+            struct.unpack("<8sQLLBB6s", bytes)
+
+        if not self.empty and not self.valid:
+            raise ValueError()
+
+    @property
+    def empty(self):
+        return (self.signature == AppDescriptor.SIGNATURE and
+                self.image_crc == 0 and self.image_size == 0 and
+                self.vcs_commit == 0 and
+                self.reserved == AppDescriptor.RESERVED)
+
+    @property
+    def valid(self):
+        return (self.signature == AppDescriptor.SIGNATURE and
+                self.image_crc != 0 and self.image_size > 0 and
+                self.reserved == AppDescriptor.RESERVED)
+
+
+class FirmwareImage(object):
+    def __init__(self, path_or_file, mode="r"):
+        if getattr(path_or_file, "read", None):
+            self._file = path_or_file
+            self._do_close = False
+        else:
+            self._file = open(path_or_file, mode + "b")
+            self._do_close = True
+
+        if "r" in mode:
+            self._contents = cStringIO.StringIO(self._file.read())
+        else:
+            self._contents = cStringIO.StringIO()
+        self._do_write = False
+
+        self._length = None
+        self._descriptor_offset = None
+        self._descriptor_bytes = None
+        self._descriptor = None
+
+    def __enter__(self):
+        return self
+
+    def __getattr__(self, attr):
+        if attr == "write":
+            self._do_write = True
+        return getattr(self._contents, attr)
+
+    def __iter__(self):
+        return iter(self._contents)
+
+    def __exit__(self, *args):
+        if self._do_write:
+            if getattr(self._file, "seek", None):
+                self._file.seek(0)
+            self._file.write(self._contents.getvalue())
+
+        if self._do_close:
+            self._file.close()
+
+    def _write_descriptor_raw(self):
+        # Seek to the appropriate location, write the serialized
+        # descriptor, and seek back.
+        prev_offset = self._contents.tell()
+        self._contents.seek(self._descriptor_offset)
+        self._contents.write(self._descriptor.pack())
+        self._contents.seek(prev_offset)
+
+    def write_descriptor(self):
+        # Set the descriptor's length and CRC to the values required for
+        # CRC computation
+        self.app_descriptor.image_size = self.length
+        self.app_descriptor.image_crc = 0
+
+        self._write_descriptor_raw()
+
+        # Update the descriptor's CRC based on the computed value and write
+        # it out again
+        self.app_descriptor.image_crc = self.crc
+
+        self._write_descriptor_raw()
+
+    @property
+    def crc(self):
+        MASK = 0xFFFFFFFFFFFFFFFF
+        POLY = 0x42F0E1EBA9EA3693
+
+        # Calculate the image CRC with the image_crc field in the app
+        # descriptor zeroed out.
+        crc_offset = self.app_descriptor_offset + len(AppDescriptor.SIGNATURE)
+        content = bytearray(self._contents.getvalue())
+        content[crc_offset:crc_offset + 8] = bytearray("\x00" * 8)
+
+        val = MASK
+        for byte in content:
+            val ^= (byte << 56) & MASK
+            for bit in range(8):
+                if val & (1 << 63):
+                    val = ((val << 1) & MASK) ^ POLY
+                else:
+                    val <<= 1
+
+        return (val & MASK) ^ MASK
+
+    @property
+    def length(self):
+        if not self._length:
+            # Find the length of the file by seeking to the end and getting
+            # the offset
+            prev_offset = self._contents.tell()
+            self._contents.seek(0, os.SEEK_END)
+            self._length = self._contents.tell()
+            self._contents.seek(prev_offset)
+
+        return self._length
+
+    @property
+    def app_descriptor_offset(self):
+        if not self._descriptor_offset:
+            # Save the current position
+            prev_offset = self._contents.tell()
+            # Check each byte in the file to see if a valid descriptor starts
+            # at that location. Slow, but not slow enough to matter.
+            offset = 0
+            while offset < self.length - AppDescriptor.LENGTH:
+                self._contents.seek(offset)
+                try:
+                    # If this throws an exception, there isn't a valid
+                    # descriptor at this offset
+                    AppDescriptor(self._contents.read(AppDescriptor.LENGTH))
+                except Exception:
+                    offset += 1
+                else:
+                    self._descriptor_offset = offset
+                    break
+            # Go back to the previous position
+            self._contents.seek(prev_offset)
+
+        return self._descriptor_offset
+
+    @property
+    def app_descriptor(self):
+        if not self._descriptor:
+            # Save the current position
+            prev_offset = self._contents.tell()
+            # Jump to the descriptor adn parse it
+            self._contents.seek(self.app_descriptor_offset)
+            self._descriptor_bytes = self._contents.read(AppDescriptor.LENGTH)
+            self._descriptor = AppDescriptor(self._descriptor_bytes)
+            # Go back to the previous offset
+            self._contents.seek(prev_offset)
+
+        return self._descriptor
+
+    @app_descriptor.setter
+    def app_descriptor(self, value):
+        self._descriptor = value
+
+
+def firmware_files_for_device(firmware_dir, device_name):
+    filename_regex = re.compile(
+        "^{!s}-([0-9]+).([0-9]+).([0-9a-fA-F]+).uavcan.bin$".format(
+        re.escape(device_name)))
+
+    available_files = []
+
+    for firmware_filename in os.listdir(firmware_dir):
+        match = filename_regex.match(firmware_filename)
+        if not match:
+            continue
+
+        sw_major, sw_minor = map(int, match.groups()[0:2])
+
+        firmware_path = os.path.join(firmware_dir, firmware_filename)
+        mtime = os.path.getmtime(firmware_path)
+        # Sort order is sw_major, sw_minor, mtime
+        available_files.append((sw_major, sw_minor, mtime, firmware_path))
+
+    # Sort descending
+    return sorted(available_files, reverse=True)
+
+
+@gen.coroutine
+def enumerate_node_params(this_node, node_id):
+    global UAVCAN_NODE_CONFIG
+
+    param_idx = 0
+    while param_idx < 8192:
+        request = uavcan.protocol.param.GetSet(mode="request")
+        request.index = param_idx
+        (response, response_transfer), _ = yield tornado.gen.Task(
+            this_node.send_request, request, node_id)
+        if response and response.name:
+            # Notify connected clients of the parameter information, and store
+            # it so we can notify clients who connect later
+            UAVCAN_NODE_CONFIG[node_id][response.name] = response
+            send_all(response.type.get_normalized_definition(), node_id,
+                     response)
+            param_idx += 1
+        else:
+            break
+
+
 if __name__ == "__main__":
     log.basicConfig(format="%(asctime)-15s %(message)s", level=log.DEBUG)
 
     parser = OptionParser(
-        usage="usage: %prog [options] [CAN_DEVICE]",
+        usage="usage: %prog [options] CAN_DEVICE",
         version="%prog 1.0", add_help_option=False,
-        description="S2740VC management UI server")
+        description="UAVCAN management UI server")
 
     parser.add_option("--help", action="help",
                       help="show this help message and exit")
@@ -355,49 +771,125 @@ if __name__ == "__main__":
     parser.add_option("--debug", action="store_true", dest="debug",
                       help="run in debug mode (restart on code changes)")
 
-    cmd_group = OptionGroup(parser, "Network Options")
+    cmd_group = OptionGroup(parser, "Network options")
     cmd_group.add_option("-p", "--port", type="int", dest="port", default=80,
                          help="listen for HTTP requests on PORT")
 
+    cmd_group = OptionGroup(parser, "CAN options")
+    cmd_group.add_option("-n", "--node-id", dest="node_id", default=127,
+                         help="run master with NODE_ID",
+                         metavar="NODE_ID")
+    cmd_group.add_option("-s", "--bus-speed", dest="bus_speed",
+                         default=1000000, help="set CAN bus speed",
+                         metavar="NODE_ID")
+
+    cmd_group = OptionGroup(parser, "UAVCAN options")
+    cmd_group.add_option("--dsdl", dest="dsdl_path", action="append",
+                         metavar="PATH", help="load DSDL files from PATH")
+    cmd_group.add_option("--firmware", dest="firmware", metavar="PATH",
+                         help="use firmware images in PATH to update nodes")
+
     options, args = parser.parse_args()
 
-    asset_dir = "assets" #pkg_resources.resource_filename("ui", "assets")
+    uavcan.load_dsdl(options.dsdl_path)
 
-    if len(args):
-        can_dev = can.CAN(args[0])
-        can_dev.open()
-    else:
-        # Stub out the CAN device
-        class DummyCAN(object):
-            def __init__(self):
-                pass
-
-            def send(self, *args, **kwargs):
-                pass
-
-            def add_to_ioloop(self, *args, **kwargs):
-                pass
-
-        can_dev = DummyCAN()
-
-    app = tornado.web.Application([
-            (r"/can", CANHandler, {"can": can_dev}),
-            (r"/", UI, {"environment": None}),
-        ],
-        debug=options.debug, gzip=True, template_path=asset_dir,
-        static_path=asset_dir)
-    http_server = tornado.httpserver.HTTPServer(app)
-    http_server.listen(options.port)
     ioloop = tornado.ioloop.IOLoop.instance()
 
-    can_dev.add_to_ioloop(ioloop, callback=handle_can_message)
-    can_node_status_timer = tornado.ioloop.PeriodicCallback(
-        functools.partial(send_node_status, can_dev),
-        500, io_loop=ioloop)
-    can_node_status_timer.start()
-    can_setpoint_schedule_timer = tornado.ioloop.PeriodicCallback(
-        functools.partial(handle_timer, can_dev),
-        10, io_loop=ioloop)
-    can_setpoint_schedule_timer.start()
+    if options.firmware:
+        firmware_dir = os.path.dirname(options.firmware)
+    else:
+        firmware_dir = None
+
+    @gen.coroutine
+    def enumerate_device(this_node, node_id, response):
+        global UAVCAN_NODE_INFO, UAVCAN_NODE_CONFIG
+        log.debug("enumerate_device({}, {!r})".format(node_id, response))
+
+        # Save the node info request and clear out the config
+        UAVCAN_NODE_INFO[node_id] = response
+        UAVCAN_NODE_CONFIG[node_id] = {}
+
+        # Send the node info message to all connected sockets
+        send_all(response.type.get_normalized_definition(), node_id, response)
+
+        # Schedule a parameter fetch
+        ioloop.add_callback(enumerate_node_params, this_node, node_id)
+
+        # Check the supplied directory for updated firmware
+        if not firmware_dir:
+            log.debug("enumerate_device(): no firmware path specified")
+            return
+
+        # Search for firmware suitable for this device
+        device_name = response.name.decode()
+        available_files = firmware_files_for_device(firmware_dir, device_name)
+
+        log.debug(("enumerate_device(): found {:d} firmware file(s) " +
+                   "for device '{!s}'").format(
+                   len(available_files), device_name))
+        for f in available_files:
+            log.debug(("enumerate_device():        {!s} " +
+                       "(modified {:%Y-%m-%dT%H:%M:%S})").format(
+                       f[-1], datetime.datetime.fromtimestamp(f[-2])))
+
+        # If there are files available, check the CRC of the latest version
+        # against the CRC of the firmware on the node.
+        if available_files:
+            firmware_path = available_files[0][-1]
+            with FirmwareImage(firmware_path, "rb") as f:
+                if f.app_descriptor.image_crc != \
+                        response.software_version.image_crc:
+                    # Version mismatch, send a BeginFirmwareUpdate with the
+                    # appropriate path.
+                    request = uavcan.protocol.file.BeginFirmwareUpdate(
+                        mode="request")
+                    request.source_node_id = this_node.node_id
+                    request.image_file_remote_path.path.encode(
+                        os.path.basename(firmware_path))
+                    (response, response_transfer), _ = yield tornado.gen.Task(
+                        this_node.send_request, request, node_id)
+
+                    if response and response.error != response.ERROR_OK:
+                        msg = ("[MASTER] #{0:03d} rejected "
+                               "uavcan.protocol.file.BeginFirmwareUpdate " +
+                               "with error {1:d}: {2!s}").format(
+                               node_id, response.error,
+                               response.optional_error_message.encode())
+                        logging.error(msg)
+                else:
+                    log.debug("enumerate_device(): device up to date")
+
+    if len(args):
+        node = uavcan.node.Node([
+            # Server implementation
+            (uavcan.protocol.NodeStatus, uavcan.monitors.NodeStatusMonitor,
+                {"new_node_callback": enumerate_device}),
+            (uavcan.protocol.dynamic_node_id.Allocation,
+                uavcan.monitors.DynamicNodeIDServer,
+                {"dynamic_id_range": (2, 125)}),
+            (uavcan.protocol.file.GetInfo, uavcan.services.FileGetInfoService,
+                {"path": firmware_dir}),
+            (uavcan.protocol.file.Read, uavcan.services.FileReadService,
+                {"path": firmware_dir}),
+            (uavcan.protocol.debug.LogMessage,
+                uavcan.monitors.DebugLogMessageMonitor),
+            # CAN<->WebSocket bridge
+            (uavcan.protocol.NodeStatus, MessageRelayMonitor),
+            (uavcan.equipment.esc.Status, MessageRelayMonitor),
+            (uavcan.equipment.esc.FOCStatus, MessageRelayMonitor)
+        ], node_id=int(options.node_id))
+        node.listen(args[0], baudrate=int(options.bus_speed), io_loop=ioloop)
+    else:
+        log.info("No CAN device specified; starting interface only")
+        node = None
+
+    app = tornado.web.Application([
+            (r"/can", CANHandler, {"node": node}),
+            (r"/", UI, {"environment": None}),
+        ],
+        debug=options.debug, gzip=True, template_path="assets",
+        static_path="assets")
+    http_server = tornado.httpserver.HTTPServer(app)
+    http_server.listen(options.port)
 
     ioloop.start()

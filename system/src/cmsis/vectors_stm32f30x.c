@@ -8,6 +8,7 @@
 // ----------------------------------------------------------------------------
 
 #include "cortexm/ExceptionHandlers.h"
+#include "stm32f30x.h"
 
 // ----------------------------------------------------------------------------
 
@@ -159,8 +160,6 @@ extern unsigned int _estack;
 typedef void
 (* const pHandler)(void);
 
-// ----------------------------------------------------------------------------
-
 // The vector table.
 // This relies on the linker script to place at correct location in memory.
 
@@ -292,5 +291,3 @@ Default_Handler(void)
     {
     }
 }
-
-// ----------------------------------------------------------------------------

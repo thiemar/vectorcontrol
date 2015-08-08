@@ -11,7 +11,7 @@
 
 extern void
 __attribute__((noreturn))
-bootloader_start(void);
+_start(void);
 
 // ----------------------------------------------------------------------------
 // Default exception handlers. Override the ones here by defining your own
@@ -21,21 +21,21 @@ bootloader_start(void);
 #if defined(DEBUG)
 
 // The DEBUG version is not naked, to allow breakpoints at Reset_Handler
-void __attribute__ ((section(".after_vectors"),noreturn))
+void __attribute__ ((section(".after_vectors"),externally_visible,noreturn))
 Reset_Handler (void)
   {
-    bootloader_start ();
+    _start();
   }
 
 #else
 
-// The Release version is optimised to a quick branch to bootloader_start.
+// The Release version is optimised to a quick branch to _start.
 void __attribute__ ((section(".after_vectors"),naked))
 Reset_Handler(void)
 {
   asm volatile
   (
-      " ldr     r0,=bootloader_start \n"
+      " ldr     r0,=_start \n"
       " bx      r0"
       :
       :

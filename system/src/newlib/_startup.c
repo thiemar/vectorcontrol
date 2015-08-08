@@ -202,6 +202,8 @@ _start(void) {
   // Use Old Style DATA and BSS section initialisation,
   // that will manage a single BSS sections.
 
+  SystemInit();
+
 #if defined(DEBUG) && (OS_INCLUDE_STARTUP_GUARD_CHECKS)
   __bss_begin_guard = BSS_GUARD_BAD_VALUE;
   __bss_end_guard = BSS_GUARD_BAD_VALUE;
@@ -234,7 +236,7 @@ _start(void) {
     }
 #endif
 
-  SystemCoreClockUpdate();
+    SystemCoreClockUpdate();
 
   // Call the standard library initialisation (mandatory for C++ to
   // execute the constructors for the static objects).
@@ -246,6 +248,10 @@ _start(void) {
   __run_fini_array();
 
   abort();
+}
+
+void _sbrk(void) {
+
 }
 
 // ----------------------------------------------------------------------------

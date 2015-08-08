@@ -1,23 +1,29 @@
 /*
-Copyright (c) 2014 - 2015 by Thiemar Pty Ltd
+Copyright (C) 2014-2015 Thiemar Pty Ltd
 
-This file is part of vectorcontrol.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-vectorcontrol is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 */
 
 #pragma once
 
+
+#include <cstring>
 #include "fixed.h"
 #include "park.h"
 #include "esc_assert.h"
@@ -50,9 +56,11 @@ class StateEstimator {
     /* Column-major */
     float state_covariance_[4];
 
+    /* Intermediate state */
     float last_i_ab_a_[2];
     float next_sin_theta_;
     float next_cos_theta_;
+    float innovation_[2];
 
     uint16_t is_converged_;
     uint16_t is_hfi_active_;
@@ -84,6 +92,7 @@ public:
         state_covariance_[0] = state_covariance_[1] = state_covariance_[2] =
             state_covariance_[3] = 0.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
+        innovation_[0] = innovation_[1] = 0.0f;
     }
 
     void reset_state() {
@@ -97,6 +106,7 @@ public:
         state_covariance_[1] = state_covariance_[3] = 10.0f;
         i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
         i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
+        innovation_[0] = innovation_[1] = 0.0f;
         is_converged_ = 0;
         is_hfi_active_ = 0;
     }
@@ -147,6 +157,27 @@ public:
     void get_hfi_readings(float readings[2]) const {
         readings[0] = i_hfi_dq_[0];
         readings[1] = i_hfi_dq_[1];
+    }
+
+    float __attribute__((optimize("O3")))
+    get_consistency(void) const {
+        /*
+        The estimator's consistency value is based on the difference between
+        the output voltage predicted by the model, and the actual output
+        voltage. This is captured by the innovation calculated in the EKF
+        update step.
+        */
+        float scale, innovation;
+        scale = last_i_ab_a_[0] * last_i_ab_a_[0] +
+                last_i_ab_a_[1] * last_i_ab_a_[1];
+        innovation = innovation_[0] * innovation_[0] +
+                     innovation_[1] * innovation_[1];
+
+        if (scale > 1e-3f) {
+            return 1.0f - __VSQRTF(std::min(1.0f, innovation / scale));
+        } else {
+            return 0.0f;
+        }
     }
 
     bool is_converged(void) const {

@@ -181,7 +181,6 @@ void GPIO_Init(GPIO_TypeDef* GPIOx, GPIO_InitTypeDef* GPIO_InitStruct)
 {
   uint32_t pinpos = 0x00, pos = 0x00 , currentpin = 0x00;
 
-
   /*-------------------------- Configure the port pins -----------------------*/
   /*-- GPIO Mode Configuration --*/
   for (pinpos = 0x00; pinpos < 0x10; pinpos++)

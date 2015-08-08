@@ -1,24 +1,30 @@
 /*
-Copyright (c) 2014 - 2015 by Thiemar Pty Ltd
+Copyright (C) 2014-2015 Thiemar Pty Ltd
 
-This file is part of vectorcontrol.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-vectorcontrol is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 */
 
 #include <cstdlib>
 #include <cstdint>
 #include <cassert>
+#include <cstring>
+#include <uavcan/data_type.hpp>
 #include "stm32f30x.h"
 #include "hal.h"
 #include "svm.h"
@@ -53,7 +59,7 @@ PIN   PORT   NUMBER    FUNCTION
  22      A       12    CAN_TX
  23      A       13    SWDIO - debug access
  24      A       14    SWCLK - debug access
- 25      A       15    -
+ 25      A       15    TIM2_CH1 - CAN RX timer
  26      B        3    TRACESWO - debug access
  27      B        4    -
  28      B        5    -
@@ -128,6 +134,9 @@ extern const float hal_control_t_s =
 
 /* CAN bit rate in bits per second */
 #define HAL_CAN_RATE_BPS 1000000u
+
+/* CAN node ID */
+#define HAL_CAN_NODE_ID 100u
 
 
 /*
@@ -242,15 +251,19 @@ static GPIO_InitTypeDef PIN_CAN_SILENT = {
 };
 
 
-/* PWM input -- tied to CAN RX but times pulse widths to detect PWM signals */
-#define PORT_PWM_INPUT GPIOA
-static GPIO_InitTypeDef PIN_PWM_INPUT = {
-    GPIO_Pin_15,
-    GPIO_Mode_AF,
-    GPIO_Speed_Level_1,
-    GPIO_OType_PP,
-    GPIO_PuPd_NOPULL
-};
+/* Bootloader communication */
+struct bootloader_app_shared_t {
+    union {
+        uint64_t ull;
+        uint32_t ul[2];
+    } crc;
+    uint32_t signature;
+    uint32_t bus_speed;
+    uint32_t node_id;
+} __attribute__ ((packed));
+
+#define BOOTLOADER_COMMON_APP_SIGNATURE         0xB0A04150u
+#define BOOTLOADER_COMMON_BOOTLOADER_SIGNATURE  0xB0A0424Cu
 
 
 /* Hardware states */
@@ -261,10 +274,10 @@ static volatile enum hal_pwm_state_t pwm_state_;
 static volatile hal_callback_t low_frequency_task_;
 /* High-frequency (ADC update) control task callback */
 static volatile hal_control_callback_t high_frequency_task_;
-/* CAN message RX callback */
-static volatile hal_can_callback_t can_receive_task_;
-/* PWM pulse callback */
-static volatile hal_pwm_callback_t pwm_receive_task_;
+
+
+/* Bootloader parameters */
+static struct bootloader_app_shared_t bootloader_app_shared_;
 
 
 /* ADC conversion result destination */
@@ -284,9 +297,14 @@ static volatile float temp_degc_;
 
 extern "C" void SysTick_Handler(void);
 extern "C" void ADC1_2_IRQHandler(void);
-extern "C" void USB_LP_CAN1_RX0_IRQHandler(void);
-extern "C" void CAN1_RX1_IRQHandler(void);
 extern "C" void Fault_Handler(void);
+
+
+static uint64_t hal_calulate_signature_(
+    const bootloader_app_shared_t *pshared
+);
+static bool hal_bootloader_read_(bootloader_app_shared_t *shared);
+static void hal_bootloader_write_(const bootloader_app_shared_t *shared);
 
 
 static void hal_init_sys_();
@@ -294,7 +312,7 @@ static void hal_init_io_();
 static void hal_init_tim1_();
 static void hal_init_adc_();
 static void hal_init_dma_();
-static void hal_init_can_();
+static void hal_init_can_(uint32_t speed);
 static void hal_run_calibration_();
 static bool hal_read_last_vbus_temp_();
 
@@ -437,15 +455,6 @@ void SysTick_Handler(void) {
     */
     hal_read_last_vbus_temp_();
 
-    /* If we got a PWM pulse, call the PWM receive callback. */
-    if (TIM2->SR & TIM_SR_CC2IF) {
-        if (pwm_receive_task_) {
-            pwm_receive_task_(TIM2->CCR2, TIM2->CCR1);
-        }
-
-        TIM2->SR &= ~(TIM_SR_CC2IF | TIM_SR_CC1IF);
-    }
-
     /* Run the user task, if defined */
     if (low_frequency_task_) {
         low_frequency_task_();
@@ -528,39 +537,39 @@ PERF_COUNT_END
 }
 
 
-void USB_LP_CAN1_RX0_IRQHandler(void) {
-    uint8_t num_messages, i;
-    CANMessage message;
-    CanRxMsg rx_message;
+static uint64_t hal_calulate_signature_(
+    const bootloader_app_shared_t *pshared
+) {
+    uavcan::DataTypeSignatureCRC crc;
+    crc.add((uint8_t*)(&pshared->signature), sizeof(uint32_t) * 3u);
+    return crc.get();
+}
 
-    num_messages = CAN_MessagePending(CAN1, 0);
-    for (i = 0; i < num_messages; i++) {
-        CAN_Receive(CAN1, 0, &rx_message);
-        message.set_id(rx_message.IDE == CAN_Id_Standard ?
-                       rx_message.StdId : rx_message.ExtId);
-        message.set_data(rx_message.DLC, rx_message.Data);
-        if (can_receive_task_) {
-            can_receive_task_(message);
-        }
+static bool hal_bootloader_read_(bootloader_app_shared_t *shared) {
+    shared->signature = CAN1->sFilterRegister[3].FR1;
+    shared->bus_speed = CAN1->sFilterRegister[3].FR2;
+    shared->node_id = CAN1->sFilterRegister[4].FR1;
+    shared->crc.ul[0] = CAN1->sFilterRegister[2].FR2;
+    shared->crc.ul[1] = CAN1->sFilterRegister[2].FR1;
+
+    if (shared->crc.ull == hal_calulate_signature_(shared)) {
+        return true;
+    } else {
+        return false;
     }
 }
 
+static void hal_bootloader_write_(const bootloader_app_shared_t *shared) {
+    bootloader_app_shared_t working = *shared;
 
-void CAN1_RX1_IRQHandler(void) {
-    uint8_t num_messages, i;
-    CANMessage message;
-    CanRxMsg rx_message;
+    working.signature = BOOTLOADER_COMMON_APP_SIGNATURE;
+    working.crc.ull = hal_calulate_signature_(&working);
 
-    num_messages = CAN_MessagePending(CAN1, 1);
-    for (i = 0; i < num_messages; i++) {
-        CAN_Receive(CAN1, 1, &rx_message);
-        message.set_id(rx_message.IDE == CAN_Id_Standard ?
-                       rx_message.StdId : rx_message.ExtId);
-        message.set_data(rx_message.DLC, rx_message.Data);
-            if (can_receive_task_) {
-            can_receive_task_(message);
-        }
-    }
+    CAN1->sFilterRegister[3].FR1 = working.signature;
+    CAN1->sFilterRegister[3].FR2 = working.bus_speed;
+    CAN1->sFilterRegister[4].FR1 = working.node_id;
+    CAN1->sFilterRegister[2].FR2 = working.crc.ul[0];
+    CAN1->sFilterRegister[2].FR1 = working.crc.ul[1];
 }
 
 
@@ -581,7 +590,6 @@ static void hal_init_sys_() {
     /* APB1 peripherals (low-speed) */
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC, ENABLE);
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
     /* Configure the interrupt controller */
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
@@ -632,11 +640,6 @@ static void hal_init_io_() {
 
     /* Turn CAN on */
     GPIO_ResetBits(PORT_CAN_SILENT, (uint16_t)PIN_CAN_SILENT.GPIO_Pin);
-
-    /* Configure PWM alternate function -- TIM2_CH1 */
-    GPIO_PinAFConfig(PORT_PWM_INPUT, GPIO_PinSource15, GPIO_AF_1);
-    GPIO_Init(PORT_PWM_INPUT, &PIN_PWM_INPUT);
-    GPIO_PinLockConfig(PORT_PWM_INPUT, (uint16_t)PIN_PWM_INPUT.GPIO_Pin);
 }
 
 
@@ -706,38 +709,6 @@ static void hal_init_tim1_() {
 
     /* Stop TIM1 when execution is paused */
     DBGMCU_Config(DBGMCU_TIM1_STOP, ENABLE);
-}
-
-
-static void hal_init_pwm_() {
-    TIM_TimeBaseInitTypeDef tim2_config = {
-        .TIM_Prescaler = 72u - 1u, /* 1 us resolution -- TIM2 is on APB1,
-                                      which runs at 36 MHz */
-        .TIM_CounterMode = TIM_CounterMode_Up,
-        .TIM_Period = 65535u, /* 0.065 s maximum period */
-        .TIM_ClockDivision = TIM_CKD_DIV1,
-        .TIM_RepetitionCounter = 0
-    };
-    TIM_ICInitTypeDef capture_config = {
-        .TIM_Channel = TIM_Channel_1,
-        .TIM_ICPolarity = TIM_ICPolarity_Falling,
-        .TIM_ICSelection = TIM_ICSelection_DirectTI,
-        .TIM_ICPrescaler = TIM_ICPSC_DIV1,
-        .TIM_ICFilter = 0
-    };
-
-    TIM_DeInit(TIM2);
-    TIM_TimeBaseInit(TIM2, &tim2_config);
-
-    TIM_SelectInputTrigger(TIM2, TIM_TS_TI1FP1);
-    TIM_SelectSlaveMode(TIM2, TIM_SlaveMode_Reset);
-    TIM_SelectMasterSlaveMode(TIM2, TIM_MasterSlaveMode_Enable);
-
-    TIM_PWMIConfig(TIM2, &capture_config);
-
-    TIM2->SR &= ~(TIM_SR_CC2IF | TIM_SR_CC1IF);
-
-    TIM_Cmd(TIM2, ENABLE);
 }
 
 
@@ -842,7 +813,7 @@ static void hal_init_dma_() {
 }
 
 
-static void hal_init_can_() {
+static void hal_init_can_(uint32_t speed) {
     CAN_InitTypeDef config = {
         .CAN_Prescaler = 0,
         .CAN_Mode = CAN_Mode_Normal, /* Or CAN_Mode_LoopBack */
@@ -855,80 +826,38 @@ static void hal_init_can_() {
                                 management. */
         .CAN_AWUM = ENABLE,  /* Enable or disable the automatic wake-up
                                 mode. */
-        .CAN_NART = ENABLE,  /* Enable or disable the no-automatic
+        .CAN_NART = DISABLE, /* Enable or disable the no-automatic
                                 retransmission mode. */
         .CAN_RFLM = DISABLE,  /* Enable or disable the Receive FIFO Locked
                                  mode. */
         .CAN_TXFP = ENABLE    /* Enable or disable the transmit FIFO
                                 priority. */
     };
-    CAN_FilterInitTypeDef filter_config = {
-        .CAN_FilterIdHigh = 0,         /* Specifies the filter identification
-                                          number (MSBs for a 32-bit
-                                          configuration, first one for a
-                                          16-bit configuration). */
-        .CAN_FilterIdLow = 0,          /* Specifies the filter identification
-                                          number (LSBs for a 32-bit
-                                          configuration, second one for a
-                                          16-bit configuration). */
-        .CAN_FilterMaskIdHigh = 0,     /* Specifies the filter mask number or
-                                          identification number, according to
-                                          the mode (MSBs for a 32-bit
-                                          configuration, first one for a
-                                          16-bit configuration). */
-        .CAN_FilterMaskIdLow = 0,      /* Specifies the filter mask number or
-                                          identification number, according to
-                                          the mode (LSBs for a 32-bit
-                                          configuration, second one for a
-                                          16-bit configuration).*/
-        .CAN_FilterFIFOAssignment = 0,
-        .CAN_FilterNumber = 0,          /* Specifies the filter which will be
-                                           initialized. It ranges from 0 to
-                                           13. */
-        .CAN_FilterMode = 0,            /* Specifies the filter mode to be
-                                           initialized. */
-        .CAN_FilterScale = 0,           /* Specifies the filter scale. */
-        .CAN_FilterActivation = ENABLE
-    };
-    NVIC_InitTypeDef nvic_config = {
-        .NVIC_IRQChannel = 0,
-        .NVIC_IRQChannelPreemptionPriority = CAN_RX_PRE_EMPTION_PRIORITY,
-        .NVIC_IRQChannelSubPriority = CAN_RX_SUB_PRIORITY,
-        .NVIC_IRQChannelCmd = ENABLE
-    };
 
-#if (HAL_CAN_RATE_BPS == 1000000)
-    /* 1 Mbaud from 72 MHz system clock */
-    config.CAN_Prescaler = 4;
-    config.CAN_BS1 = 6;
-    config.CAN_BS2 = 0;
-#elif (HAL_CAN_RATE_BPS == 500000)
-    /* 500 Kbaud from 72 MHz system clock */
-    config.CAN_Prescaler = 9;
-    config.CAN_BS1 = 5;
-    config.CAN_BS2 = 0;
-#elif (HAL_CAN_RATE_BPS == 250000)
-    /* 250 Kbaud from 72 MHz system clock */
-    config.CAN_Prescaler = 9;
-    config.CAN_BS1 = 12;
-    config.CAN_BS2 = 1;
-#else
-#pragma error("Invalid CAN_RATE_BPS")
-#endif
+    if (speed == 125000u) {
+        /* 125 Kbaud from 72 MHz system clock */
+        config.CAN_Prescaler = 32;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    } else if (speed == 250000u) {
+        /* 250 Kbaud from 72 MHz system clock */
+        config.CAN_Prescaler = 16;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    } else if (speed == 500000u) {
+        /* 500 Kbaud from 72 MHz system clock */
+        config.CAN_Prescaler = 8;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    } else /* if (speed == 1000000u) */ {
+        /* 1 Mbaud from 72 MHz system clock -- default */
+        config.CAN_Prescaler = 4;
+        config.CAN_BS1 = 6;
+        config.CAN_BS2 = 0;
+    }
 
     CAN_DeInit(CAN1);
-
     CAN_Init(CAN1, &config);
-    CAN_FilterInit(&filter_config);
-
-    /* Configure interrupts for both RX FIFOs */
-    nvic_config.NVIC_IRQChannel = (uint8_t)USB_LP_CAN1_RX0_IRQn;
-    NVIC_Init(&nvic_config);
-    CAN_ITConfig(CAN1, CAN_IT_FMP0, ENABLE);
-
-    nvic_config.NVIC_IRQChannel = (uint8_t)CAN1_RX1_IRQn;
-    NVIC_Init(&nvic_config);
-    CAN_ITConfig(CAN1, CAN_IT_FMP1, ENABLE);
 }
 
 
@@ -1064,6 +993,12 @@ static bool hal_read_last_vbus_temp_() {
 void hal_restart(void) {
     hal_set_pwm_state(HAL_PWM_STATE_OFF);
 
+    /*
+    Write the CAN bus speed and node ID to the bootloader/app shared registers
+    so the bootloader can maintain the same settings.
+    */
+    hal_bootloader_write_(&bootloader_app_shared_);
+
     /* NVIC_SystemReset(); */
     __DSB();
     SCB->AIRCR = ((0x5FA << SCB_AIRCR_VECTKEY_Pos) |
@@ -1084,8 +1019,17 @@ void hal_reset(void) {
     hal_init_tim1_();
     hal_init_adc_();
     hal_init_dma_();
-    hal_init_can_();
-    hal_init_pwm_();
+
+    /*
+    Read bootloader auto-baud and node ID values, then initialize the CAN
+    controller. If the bootloader read fails, use default node ID and bit
+    rate.
+    */
+    if (!hal_bootloader_read_(&bootloader_app_shared_)) {
+        bootloader_app_shared_.bus_speed = HAL_CAN_RATE_BPS;
+        bootloader_app_shared_.node_id = HAL_CAN_NODE_ID;
+    }
+    hal_init_can_(bootloader_app_shared_.bus_speed);
 
     /* Calibrate the current shunt sensor offsets */
     hal_run_calibration_();
@@ -1099,6 +1043,8 @@ void hal_reset(void) {
     /* Enable SysTick 1 kHz periodic task */
     SysTick_Config(hal_core_frequency_hz / 1000u);
     NVIC_SetPriority(SysTick_IRQn, SYSTICK_PRIORITY);
+
+    __enable_irq();
 }
 
 
@@ -1121,29 +1067,137 @@ void hal_set_pwm_state(enum hal_pwm_state_t state) {
 }
 
 
-enum hal_status_t hal_transmit_can_message(const CANMessage& message) {
-    CanTxMsg msg;
-    uint8_t result;
+uint8_t hal_get_can_node_id(void) {
+    return (uint8_t)(bootloader_app_shared_.node_id & 0x7Fu);
+}
 
-    msg.RTR = CAN_RTR_Data;
 
-    if (message.has_extended_id()) {
-        msg.ExtId = message.get_id();
-        msg.IDE = CAN_Id_Extended;
-    } else {
-        msg.StdId = message.get_id();
-        msg.IDE = CAN_Id_Standard;
+bool hal_is_can_ready(uint8_t mailbox) {
+    uint32_t mask;
+
+    switch (mailbox) {
+        case 0u:
+            mask = CAN_TSR_TME0;
+            break;
+        case 1u:
+            mask = CAN_TSR_TME1;
+            break;
+        case 2u:
+        default:
+            mask = CAN_TSR_TME2;
+            break;
     }
 
-    msg.DLC = (uint8_t)message.get_data(msg.Data);
+    return CAN1->TSR & mask;
+}
 
-    result = CAN_Transmit(CAN1, &msg);
 
-    if (result == CAN_TxStatus_NoMailBox) {
-        return HAL_STATUS_ERROR;
-    } else {
+enum hal_status_t hal_transmit_can_message(
+    uint8_t mailbox,
+    uint32_t message_id,
+    size_t length,
+    const uint8_t *message
+) {
+    uint32_t data[2], i;
+
+    data[0] = data[1] = 0u;
+    for (i = 0u; i < length; i++) {
+        ((uint8_t*)data)[i] = message[i];
+    }
+
+    /* Just block while waiting for the mailbox. */
+    if (hal_is_can_ready(mailbox)) {
+        CAN1->sTxMailBox[mailbox].TIR = 0;
+        CAN1->sTxMailBox[mailbox].TIR |= (message_id << 3u) | 0x4u;
+        CAN1->sTxMailBox[mailbox].TDTR = length;
+        CAN1->sTxMailBox[mailbox].TDLR = data[0];
+        CAN1->sTxMailBox[mailbox].TDHR = data[1];
+        CAN1->sTxMailBox[mailbox].TIR |= 1u;
+
         return HAL_STATUS_OK;
+    } else {
+        return HAL_STATUS_ERROR;
     }
+}
+
+
+enum hal_status_t hal_receive_can_message(
+    uint8_t fifo,
+    uint8_t *filter_id,
+    uint32_t *message_id,
+    size_t *length,
+    uint8_t *message
+) {
+    uint32_t data[2], i;
+
+    *message_id = 0u;
+    *length = 0u;
+    *filter_id = 0xFFu;
+
+    /* Check if a message is pending */
+    if (fifo == 0u && !(CAN1->RF0R & 3u)) {
+        return HAL_STATUS_ERROR;
+    } else if (fifo == 1u && !(CAN1->RF1R & 3u)) {
+        return HAL_STATUS_ERROR;
+    } else if (fifo > 1u) {
+        return HAL_STATUS_ERROR;
+    }
+
+    /* If so, process it */
+    *message_id = CAN1->sFIFOMailBox[fifo].RIR >> 3u;
+    *length = CAN1->sFIFOMailBox[fifo].RDTR & 0xFu;
+    *filter_id = (CAN1->sFIFOMailBox[fifo].RDTR >> 8u) & 0xFFu;
+    data[0] = CAN1->sFIFOMailBox[fifo].RDLR;
+    data[1] = CAN1->sFIFOMailBox[fifo].RDHR;
+
+    /* Release the message from the receive FIFO */
+    if (fifo == 0u) {
+        CAN1->RF0R |= CAN_RF0R_RFOM0;
+    } else {
+        CAN1->RF1R |= CAN_RF1R_RFOM1;
+    }
+
+    for (i = 0u; i < *length; i++) {
+        message[i] = ((uint8_t*)data)[i];
+    }
+
+    return HAL_STATUS_OK;
+}
+
+
+void hal_set_can_dtid_filter(
+    uint8_t fifo,
+    uint8_t filter_id,
+    bool is_service,
+    uint16_t dtid,
+    uint8_t node_id
+) {
+    uint32_t mask;
+    mask = (1u << filter_id);
+
+    CAN1->FMR |= 1u; /* Start init mode */
+    CAN1->FA1R &= ~mask; /* Disable the filter */
+    CAN1->FS1R |= mask; /* Enable 32-bit mode */
+    if (is_service) { /* Service request */
+        CAN1->sFilterRegister[filter_id].FR1 =
+            ((dtid << 16u) | 0x8000u | (node_id << 0x8u) | 0x80u) << 3u;
+    } else { /* Message */
+        CAN1->sFilterRegister[filter_id].FR1 = (dtid << 8u) << 3u;
+    }
+    /*
+    For messages, this mask matches DTID and "service not message" flag.
+    For service requests, it matches DTID, "request not response" flag,
+    destination node ID, and "service not message" flags.
+    */
+    CAN1->sFilterRegister[filter_id].FR2 = 0x00FFFF80u << 3u;
+    CAN1->FM1R &= ~mask; /* Set to mask mode */
+    if (fifo) {
+        CAN1->FFA1R |= mask; /* FIFO 1 */
+    } else {
+        CAN1->FFA1R &= ~mask; /* FIFO 0 */
+    }
+    CAN1->FA1R |= mask; /* Enable the filter */
+    CAN1->FMR &= ~1u; /* Leave init mode */
 }
 
 
@@ -1165,19 +1219,6 @@ void hal_set_high_frequency_callback(hal_control_callback_t callback) {
     high_frequency_task_ = callback;
 }
 
-
-void hal_set_can_receive_callback(hal_can_callback_t callback) {
-    esc_assert(!callback || !can_receive_task_);
-
-    can_receive_task_ = callback;
-}
-
-
-void hal_set_rc_pwm_callback(hal_pwm_callback_t callback) {
-    esc_assert(!callback || !pwm_receive_task_);
-
-    pwm_receive_task_ = callback;
-}
 
 void hal_flash_protect(bool __attribute__((unused)) readonly) {
     /* TODO */
@@ -1233,6 +1274,7 @@ void hal_flash_write(uint8_t *addr, size_t len, const uint8_t *data) {
     }
     FLASH_Lock();
 }
+
 
 void hal_disable_can_transmit(void) {
     GPIO_SetBits(PORT_CAN_SILENT, (uint16_t)PIN_CAN_SILENT.GPIO_Pin);

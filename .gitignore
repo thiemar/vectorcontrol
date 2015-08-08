@@ -33,3 +33,4 @@
 core
 *.pyc
 .DS_Store
+/Debug/

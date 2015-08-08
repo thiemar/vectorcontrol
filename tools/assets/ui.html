@@ -1,21 +1,25 @@
 <!doctype html>
 <html>
 <!--
-Copyright (c) 2014 - 2015 by Thiemar Pty Ltd
+Copyright (C) 2014-2015 Thiemar Pty Ltd
 
-This file is part of vectorcontrol.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-vectorcontrol is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-vectorcontrol is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 -->
 <head>
     <meta charset="utf-8">
@@ -143,6 +147,27 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
             shape-rendering: smoothEdges;
         }
 
+        .voltage-vd {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: blue;
+            shape-rendering: smoothEdges;
+        }
+
+        .voltage-vq {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
+        .consistency-unit {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: red;
+            shape-rendering: smoothEdges;
+        }
+
         .grid .tick {
             stroke: black;
             stroke-width: 0.5px;
@@ -182,12 +207,22 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
             fill: red;
         }
 
+        .y1.axis.consistency>text {
+            fill: red;
+        }
+
         svg {
             display: block;
         }
 
         div.device {
             width: 100%;
+            padding: 20px 0;
+            border-bottom: 1px solid gray;
+        }
+
+        div.device:first-child, div.device:last-child {
+            border-bottom: none;
         }
 
         div.device-detail {
@@ -280,7 +315,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
         }
 
         .hidden {
-            display: none;
+            display: none !important;
         }
 
         #no-device-message {
@@ -290,15 +325,162 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
         #no-device-message:nth-last-child(2) {
             display: block;
         }
+
+        #controls h3 {
+            display: block;
+            margin-top: 0;
+        }
+
+        #controls fieldset {
+            display: block;
+            margin: 0 0 10px 0;
+            padding: 0;
+            border: none;
+        }
+
+        #controls label {
+            display: inline-block;
+            text-align: left;
+            margin: 0 20px 0 0;
+            width: auto;
+        }
+
+        #controls label>span {
+            display: block;
+            text-align: left;
+        }
     </style>
-    <title>S2740VC Management</title>
+    <title>UAVCAN Device Management</title>
 </head>
 <body>
 <div id="content">
     <div class="device" id="no-device-message">
         <div class="device-header">
             <div class="device-info">
-                <h3>No ESC found! Please check your CAN connection.</h3>
+                <h3>No devices found! Please check your CAN connection.</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="device" id="controls">
+        <div class="device-header">
+            <div class="device-info">
+                <form class="control" action="" method="post">
+                    <h3>Setpoint</h3>
+
+                    <fieldset>
+                        <label>
+                            <span>ESC index</span>
+                            <select name="esc_index">
+                                <option>0</option>
+                                <option>1</option>
+                                <option>2</option>
+                                <option>3</option>
+                                <option>4</option>
+                                <option>5</option>
+                                <option>6</option>
+                                <option>7</option>
+                                <option>8</option>
+                                <option>9</option>
+                                <option>10</option>
+                                <option>11</option>
+                                <option>12</option>
+                                <option>13</option>
+                                <option>14</option>
+                                <option>15</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Control mode</span>
+                            <select name="mode">
+                                <option>Duty cycle (%)</option>
+                                <option>Speed (rpm)</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Command type</span>
+                            <select name="command">
+                                <option>constant</option>
+                                <option>step</option>
+                                <option>sine</option>
+                                <option>sweep</option>
+                            </select>
+                        </label>
+
+                        <label><input type="button" class="esc-start" name="start" value="Start"></label>
+                        <label><input type="button" class="esc-stop" name="stop" value="Stop" disabled="disabled"></label>
+                        <label><input type="button" class="esc-beep" name="beep" value="Beep"></label>
+                    </fieldset>
+
+                    <fieldset class="command-params">
+                        <label class="command-constant">
+                            <span>Setpoint</span>
+                            <input name="constant_setpoint" class="setpoint" type="number">
+                        </label>
+
+                        <label class="command-step hidden">
+                            <span>From setpoint</span>
+                            <input name="step_setpoint_start" class="setpoint" type="number">
+                        </label>
+                        <label class="command-step hidden">
+                            <span>To setpoint</span>
+                            <input name="step_setpoint_end" class="setpoint" type="number">
+                        </label>
+                        <label class="command-step hidden">
+                            <span>Low time (s)</span>
+                            <input name="step_low_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
+                        </label>
+                        <label class="command-step hidden">
+                            <span>Rise time (s)</span>
+                            <input name="step_rise_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
+                        </label>
+                        <label class="command-step hidden">
+                            <span>High time (s)</span>
+                            <input name="step_high_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
+                        </label>
+                        <label class="command-step hidden">
+                            <span>Fall time (s)</span>
+                            <input name="step_fall_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
+                        </label>
+
+                        <label class="command-sine hidden">
+                            <span>From setpoint</span>
+                            <input name="sine_setpoint_start" class="setpoint" type="number">
+                        </label>
+                        <label class="command-sine hidden">
+                            <span>To setpoint</span>
+                            <input name="sine_setpoint_end" class="setpoint" type="number">
+                        </label>
+                        <label class="command-sine hidden">
+                            <span>Frequency (Hz)</span>
+                            <input name="sine_frequency" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
+                        </label>
+
+                        <label class="command-sweep hidden">
+                            <span>From setpoint</span>
+                            <input name="sweep_setpoint_start" class="setpoint" type="number">
+                        </label>
+                        <label class="command-sweep hidden">
+                            <span>To setpoint</span>
+                            <input name="sweep_setpoint_end" class="setpoint" type="number">
+                        </label>
+                        <label class="command-sweep hidden">
+                            <span>From frequency (Hz)</span>
+                            <input name="sweep_frequency_start" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
+                        </label>
+                        <label class="command-sweep hidden">
+                            <span>To frequency (Hz)</span>
+                            <input name="sweep_frequency_end" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
+                        </label>
+                        <label class="command-sweep hidden">
+                            <span>Sweep rise time (s)</span>
+                            <input name="sweep_rise_time" class="setpoint" type="number" min="1.0" max="60.0" step="1.0">
+                        </label>
+                    </fieldset>
+
+                </form>
             </div>
         </div>
     </div>
@@ -306,7 +488,8 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
     <div class="device" id="device-template">
         <div class="device-header">
             <div class="device-info">
-                <h3>Node <span class="node-id">unknown</span> (up <span class="node-uptime"></span> seconds)</h3>
+                <h3>#<span class="node-id">unknown</span>: <span class="node-name">com.example.unknown</span>
+                (<span class="node-health">ok</span>, <span class="node-mode">initialization</span>, up <span class="node-uptime"></span> seconds)</h3>
 
                 <!--
                 Not critical to implement in first revision.
@@ -326,102 +509,6 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
 
         <div class="device-detail">
             <div class="device-configuration">
-                <form class="control" action="" method="post">
-                    <h3>Setpoint</h3>
-                    <label>
-                        <span>Control mode</span>
-                        <select name="mode">
-                            <option>torque</option>
-                            <option>rpm</option>
-                        </select>
-                    </label>
-
-                    <label>
-                        <span>Command type</span>
-                        <select name="command">
-                            <option>constant</option>
-                            <option>step</option>
-                            <option>sine</option>
-                            <option>sweep</option>
-                        </select>
-                    </label>
-
-                    <fieldset class="command-constant">
-                        <label>
-                            <span>Setpoint</span>
-                            <input name="constant_setpoint" class="setpoint" type="number">
-                        <label>
-                    </fieldset>
-
-                    <fieldset class="command-step hidden">
-                        <label>
-                            <span>From setpoint</span>
-                            <input name="step_setpoint_start" class="setpoint" type="number">
-                        </label>
-                        <label>
-                            <span>To setpoint</span>
-                            <input name="step_setpoint_end" class="setpoint" type="number">
-                        </label>
-                        <label>
-                            <span>Low time (s)</span>
-                            <input name="step_low_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
-                        </label>
-                        <label>
-                            <span>Rise time (s)</span>
-                            <input name="step_rise_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
-                        </label>
-                        <label>
-                            <span>High time (s)</span>
-                            <input name="step_high_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
-                        </label>
-                        <label>
-                            <span>Fall time (s)</span>
-                            <input name="step_fall_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
-                        </label>
-                    </fieldset>
-
-                    <fieldset class="command-sine hidden">
-                        <label>
-                            <span>From setpoint</span>
-                            <input name="sine_setpoint_start" class="setpoint" type="number">
-                        </label>
-                        <label>
-                            <span>To setpoint</span>
-                            <input name="sine_setpoint_end" class="setpoint" type="number">
-                        </label>
-                        <label>
-                            <span>Frequency (Hz)</span>
-                            <input name="sine_frequency" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
-                        </label>
-                    </fieldset>
-
-                    <fieldset class="command-sweep hidden">
-                        <label>
-                            <span>From setpoint</span>
-                            <input name="sweep_setpoint_start" class="setpoint" type="number">
-                        </label>
-                        <label>
-                            <span>To setpoint</span>
-                            <input name="sweep_setpoint_end" class="setpoint" type="number">
-                        </label>
-                        <label>
-                            <span>From frequency (Hz)</span>
-                            <input name="sweep_frequency_start" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
-                        </label>
-                        <label>
-                            <span>To frequency (Hz)</span>
-                            <input name="sweep_frequency_end" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
-                        </label>
-                        <label>
-                            <span>Sweep rise time (s)</span>
-                            <input name="sweep_rise_time" class="setpoint" type="number" min="1.0" max="60.0" step="1.0">
-                        </label>
-                    </fieldset>
-
-                    <input type="button" class="motor-start" name="start" value="Start motor">
-                    <input type="button" class="motor-stop" name="stop" value="Stop motor" disabled="disabled">
-                </form>
-
                 <form class="configuration" action="" method="post">
                     <h3>Motor parameters</h3>
                     <label>
@@ -450,7 +537,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
                     </label>
                     <label>
                         <span>Kv (rpm / V)</span>
-                        <input name="motor_kv" class="configuration" type="number" min="200" max="4000" step="1">
+                        <input name="motor_kv" class="configuration" type="number" min="200" max="8000" step="1">
                     </label>
 
                     <h3>Control parameters</h3>
@@ -470,58 +557,23 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
                         <span>Acceleration time (s)</span>
                         <input name="control_accel_time" class="configuration" type="number" min="0.01" max="1.0" step="0.01">
                     </label>
-                    <label>
-                        <span>PWM control mode</span>
-                        <select name="pwm_control_mode" class="configuration">
-                            <option value="0">speed</option>
-                            <option value="1">torque</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span>PWM min pulse width (µs)</span>
-                        <input name="pwm_throttle_min" class="configuration" type="number" min="1000.0" max="2000.0" step="1.0">
-                    </label>
-                    <label>
-                        <span>PWM max pulse width (µs)</span>
-                        <input name="pwm_throttle_max" class="configuration" type="number" min="1000.0" max="2000.0" step="1.0">
-                    </label>
-                    <label>
-                        <span>PWM deadband width (µs)</span>
-                        <input name="pwm_throttle_deadband" class="configuration" type="number" min="0.0" max="1000.0" step="1.0">
-                    </label>
-                    <label>
-                        <span>PWM control offset</span>
-                        <input name="pwm_control_offset" class="configuration" type="number" min="-1.0" max="1.0" step="0.01">
-                    </label>
-                    <label>
-                        <span>PWM control curve</span>
-                        <select name="pwm_control_curve" class="configuration">
-                            <option value="0.5">sqrt</option>
-                            <option value="1">linear</option>
-                            <option value="2">quadratic</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span>PWM control min</span>
-                        <input name="pwm_control_min" class="configuration" type="number" min="-40000.0" max="40000.0" step="100.0">
-                    </label>
-                    <label>
-                        <span>PWM control max</span>
-                        <input name="pwm_control_max" class="configuration" type="number" min="-40000.0" max="40000.0" step="100.0">
-                    </label>
 
                     <h3>UAVCAN parameters</h3>
                     <label>
-                        <span>ESC status interval (s)</span>
-                        <input name="uavcan_escstatus_interval" class="configuration" type="number" min="0.01" max="0.1" step="0.01">
+                        <span>Extended status ID</span>
+                        <input name="uavcan.dtid-uavcan.equipment.esc.FOCStatus" class="configuration" type="number" min="1" max="1023" step="1">
                     </label>
                     <label>
-                        <span>Node ID</span>
-                        <input name="uavcan_node_id" class="configuration" type="number" min="1" max="125" step="1">
+                        <span>Extended status interval (µs)</span>
+                        <input name="uavcan.pubp-uavcan.equipment.esc.FOCStatus" class="configuration" type="number" min="0" max="1000000" step="1000">
+                    </label>
+                    <label>
+                        <span>ESC status interval (µs)</span>
+                        <input name="uavcan.pubp-uavcan.equipment.esc.Status" class="configuration" type="number" min="0" max="1000000" step="1000">
                     </label>
                     <label>
                         <span>ESC index</span>
-                        <input name="uavcan_esc_index" class="configuration" type="number" min="0" max="15" step="1">
+                        <input name="uavcan.id-uavcan.equipment.esc-esc_index" class="configuration" type="number" min="0" max="15" step="1">
                     </label>
 
                     <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
@@ -535,6 +587,7 @@ vectorcontrol. If not, see <http://www.gnu.org/licenses/>.
                 <svg class="current-chart"></svg>
                 <svg class="hfi-chart"></svg>
                 <svg class="voltagetemp-chart"></svg>
+                <svg class="output-voltage-chart"></svg>
             </div>
         </div>
     </div>
