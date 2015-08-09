@@ -70,18 +70,6 @@ struct control_params_t {
 };
 
 
-struct pwm_params_t {
-    float control_offset;
-    float control_min;
-    float control_max;
-    uint16_t throttle_pulse_min_us;
-    uint16_t throttle_pulse_max_us;
-    uint16_t throttle_deadband_us;
-    enum { SQRT = 0, LINEAR = 1, QUADRATIC = 2 } control_curve;
-    bool use_speed_controller;
-};
-
-
 #define APPROXIMATE_SIN_COS
 #define APPROXIMATE_EXP
 

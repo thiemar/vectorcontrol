@@ -606,9 +606,6 @@ static void hal_init_io_() {
     GPIO_DeInit(GPIOA);
     GPIO_DeInit(GPIOB);
 
-    /* Turn CAN to silent to avoid glitches */
-    GPIO_SetBits(PORT_CAN_SILENT, (uint16_t)PIN_CAN_SILENT.GPIO_Pin);
-
     /*
     Don't lock GPIO config for these as we need to switch between tri-state
     and alternate function push-pull depending on drive status.

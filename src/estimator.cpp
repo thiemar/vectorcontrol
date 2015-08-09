@@ -36,7 +36,7 @@ SOFTWARE.
 #define MEASUREMENT_DIM 2
 
 
-const float g_process_noise[2] = { 20.0f, 1e-5f };
+const float g_process_noise[2] = { 20.0f, 1e-6f };
 const float g_measurement_noise[2] = { 0.02f, 0.02f };
 
 
@@ -63,8 +63,7 @@ StateEstimator::update_state_estimate(
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
           b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d, acceleration,
-          i_dq_a[2], angle_diff, hfi_scale, hfi_weight, last_angle,
-          next_angle;
+          i_dq_a[2], last_angle, next_angle;
 
     /* Update the Idq estimate based on the theta estimate for time t */
     sin_cos(sin_theta, cos_theta, state_estimate_.angle_rad);
@@ -75,35 +74,8 @@ StateEstimator::update_state_estimate(
     state_estimate_.i_dq_a[1] += (i_dq_a[1] - state_estimate_.i_dq_a[1]) *
                                  i_dq_lpf_coeff_;
 
-    /*
-    Highpass the current readings at the Nyquist frequency in order to extract
-    the HFI signal.
-    */
-    i_dq_m_a_[0] = i_dq_a[0] * 0.06089863257570738f -
-                   i_dq_m_a_[0] * 0.9391013674242926f;
-    i_dq_m_a_[1] = i_dq_a[1] * 0.06089863257570738f -
-                   i_dq_m_a_[1] * 0.9391013674242926f;
-
-    /* Find the magnitude of the HFI signals, and lowpass that. */
-    i_hfi_dq_[0] += (i_dq_m_a_[0] * i_dq_m_a_[0] - i_hfi_dq_[0]) *
-                    hfi_lpf_coeff_;
-    i_hfi_dq_[1] += (i_dq_m_a_[1] * i_dq_m_a_[1] - i_hfi_dq_[1]) *
-                    hfi_lpf_coeff_;
-
     /* Store the original angle */
     last_angle = state_estimate_.angle_rad;
-
-    /* Merge the EKF and HFI angle estimates */
-    hfi_weight = get_hfi_weight();
-    if (is_hfi_active_) {
-        hfi_scale = std::max(0.1f, i_hfi_dq_[0] + i_hfi_dq_[1]);
-        if (accel_direction > 0.0f) {
-            hfi_scale = -hfi_scale;
-        }
-        angle_diff = (i_hfi_dq_[0] - i_hfi_dq_[1]) / hfi_scale;
-
-        state_estimate_.angle_rad += angle_diff * hfi_weight;
-    }
 
 #define Pm(i,j) covariance_temp[i * STATE_DIM + j]
 #define P(i,j) state_covariance_[i * STATE_DIM + j]
@@ -135,7 +107,7 @@ StateEstimator::update_state_estimate(
     // Pm(1,0) = std::numeric_limits<float>::signaling_NaN();
     Pm(1,1) = P(0,0) * t_ * t_ +
               2.0f * t_ * P(0,1) +
-              P(1,1) + g_process_noise[1] + hfi_weight * 1e-4f;
+              P(1,1) + g_process_noise[1] ; /* + hfi_weight * 1e-4f;*/
 
     /* These values are used a few times */
     b_est_sin_theta = b_ * sin_theta;
@@ -238,9 +210,9 @@ StateEstimator::update_state_estimate(
     update[1] = K(0,1) * innovation_[0] + K(1,1) * innovation_[1];
 
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
-    state_estimate_.angle_rad += update[1] * std::max(0.5f, 1.0f - hfi_weight);
+    state_estimate_.angle_rad += update[1];
     state_estimate_.angle_rad +=
-        state_estimate_.angular_velocity_rad_per_s * t_; //* (1.0f - hfi_weight);
+        state_estimate_.angular_velocity_rad_per_s * t_;
 
     /*
     Calculate filtered velocity estimate by differentiating successive
@@ -251,14 +223,24 @@ StateEstimator::update_state_estimate(
     acceleration = ((state_estimate_.angle_rad - last_angle) * t_inv_ -
                      state_estimate_.angular_velocity_rad_per_s);
     state_estimate_.angular_acceleration_rad_per_s2 +=
-        angular_velocity_lpf_coeff_ * 0.01f *
-        ((acceleration * t_inv_) - state_estimate_.angular_acceleration_rad_per_s2);
+        angular_velocity_lpf_coeff_ * 0.1f *
+        ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) - state_estimate_.angular_acceleration_rad_per_s2);
     state_estimate_.angular_velocity_rad_per_s +=
-        acceleration * angular_velocity_lpf_coeff_ /* * std::max(0.25f, 1.0f - hfi_weight) */;
+        acceleration * angular_velocity_lpf_coeff_;
 
-    if (!is_converged()) {
-        is_converged_++;
-        state_estimate_.angular_velocity_rad_per_s = 0.0f;
+    /*
+    Slow start-up if the velocity is lower in magnitude than the minimum speed
+    */
+    if (accel_direction > 0.0f &&
+            state_estimate_.angular_velocity_rad_per_s < min_speed_) {
+        state_estimate_.angular_velocity_rad_per_s +=
+            (min_speed_ - state_estimate_.angular_velocity_rad_per_s) *
+            angular_velocity_lpf_coeff_ * 0.01f;
+    } else if (accel_direction < 0.0f &&
+            state_estimate_.angular_velocity_rad_per_s > min_speed_)  {
+        state_estimate_.angular_velocity_rad_per_s +=
+            (-min_speed_ - state_estimate_.angular_velocity_rad_per_s) *
+            angular_velocity_lpf_coeff_ * 0.01f;
     }
 
     /*
@@ -274,8 +256,7 @@ StateEstimator::update_state_estimate(
     }
 
     next_angle = state_estimate_.angle_rad +
-                 2.0f * state_estimate_.angular_velocity_rad_per_s * t_ +
-                 0.01f * accel_direction * hfi_weight;
+                 2.0f * state_estimate_.angular_velocity_rad_per_s * t_;
     if (next_angle > 2.0f * (float)M_PI) {
         next_angle -= 2.0f * (float)M_PI;
     } else if (next_angle < 0.0f) {

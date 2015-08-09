@@ -25,7 +25,7 @@ NodeList.prototype.forEach = Array.prototype.forEach;
 HTMLCollection.prototype.forEach = Array.prototype.forEach;
 
 var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
-    deviceHFICharts = {}, deviceVoltageTempCharts = {},
+    deviceAccelPowerCharts = {}, deviceVoltageTempCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
     setpointTimer = null, lastUpdate = null;
 
@@ -73,7 +73,7 @@ function connect() {
             setupSpeedChart(nodeUi);
             setupCurrentChart(nodeUi);
             setupVoltageTempChart(nodeUi);
-            setupHFIChart(nodeUi);
+            setupAccelPowerChart(nodeUi);
             setupOutputVoltageChart(nodeUi);
         }
 
@@ -322,9 +322,9 @@ function setupCurrentChart(device) {
 }
 
 
-function setupHFIChart(device) {
+function setupAccelPowerChart(device) {
     var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
-        svg = device.querySelector("svg.hfi-chart"),
+        svg = device.querySelector("svg.accel-power-chart"),
         container = device.querySelector("div.device-measurements"),
         width = container.clientWidth - 150,
         height = 200,
@@ -336,11 +336,11 @@ function setupHFIChart(device) {
 
     result.y0 = d3.scale.linear()
         .range([height, 0.0])
-        .domain([0.0, 0.5]);
+        .domain([-10000.0, 10000.0]);
 
     result.y1 = d3.scale.linear()
         .range([height, 0.0])
-        .domain([0, 360.0]);
+        .domain([0, 10.0]);
 
     result.xAxis = d3.svg.axis()
         .scale(result.x)
@@ -374,7 +374,7 @@ function setupHFIChart(device) {
         .attr("y", -40)
         .style("text-anchor", "middle")
         .attr("transform", "rotate(-90)")
-        .text("HFI signal (A)");
+        .text("Acceleration (rpm/s)");
 
     result.chart.append("g")
         .attr("class", "y1 axis angle")
@@ -385,7 +385,7 @@ function setupHFIChart(device) {
         .attr("y", 40)
         .style("text-anchor", "middle")
         .attr("transform", "rotate(-90)")
-        .text("Angle (°)");
+        .text("Mechanical power (W)");
 
     result.chart.append("clipPath")
         .attr("id", "clip")
@@ -405,7 +405,7 @@ function setupHFIChart(device) {
         .attr("class", "hfi-q")
         .attr('clip-path', 'url(#clip)');
 
-    deviceHFICharts[parseInt(device.id.split("-")[1], 10)] = result;
+    deviceAccelPowerCharts[parseInt(device.id.split("-")[1], 10)] = result;
 }
 
 
@@ -573,7 +573,7 @@ function updateCharts(device, data) {
     updateCurrentChart(deviceId, device, data);
     updateSpeedChart(deviceId, device, data);
     updateVoltageTempChart(deviceId, device, data);
-    updateHFIChart(deviceId, device, data);
+    updateAccelPowerChart(deviceId, device, data);
     updateOutputVoltageChart(deviceId, device, data);
 }
 
@@ -670,33 +670,24 @@ function updateSpeedChart(deviceId, device, data) {
 }
 
 
-function updateHFIChart(deviceId, device, data) {
+function updateAccelPowerChart(deviceId, device, data) {
     var seriesData, chart;
 
-    chart = deviceHFICharts[deviceId];
+    chart = deviceAccelPowerCharts[deviceId];
 
-    /* D current line */
+    /* Acceleration line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_dq[0])); });
+        .y(function(d) { return chart.y0(d.hfi_dq[0]); });
 
     chart.chart.select(".hfi-d")
         .datum(data)
         .attr("d", seriesData);
 
-    /* Q current line */
+    /* Power line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(Math.sqrt(d.hfi_dq[1])); });
-
-    chart.chart.select(".hfi-q")
-        .datum(data)
-        .attr("d", seriesData);
-
-    /* Angle line */
-    seriesData = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y1(d.angle / 255.0 * 360.0); });
+        .y(function(d) { return chart.y1(d.hfi_dq[1]); });
 
     chart.chart.select(".hfi-angle")
         .datum(data)

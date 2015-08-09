@@ -84,12 +84,9 @@ DQCurrentController::update(
     v_mag = __VSQRTF(vd_v * vd_v + vq_v * vq_v);
     if (v_mag > v_max) {
         scale = v_max / v_mag;
-    } else {
-        scale = 1.0f;
+        vd_v *= scale;
+        vq_v *= scale;
     }
-
-    vd_v *= scale;
-    vq_v *= scale;
 
     /*
     Anti-windup calculation for the integral term; if desired |Vdq| is greater

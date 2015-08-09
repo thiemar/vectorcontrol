@@ -149,6 +149,7 @@ protected:
 
     float current_limit_a_;
     float accel_current_limit_a_;
+    float min_speed_rad_per_s_;
 
 public:
     SpeedController():
@@ -163,7 +164,8 @@ public:
         ir_(0.0f),
         kq0_(0.0f),
         current_limit_a_(0.0f),
-        accel_current_limit_a_(0.0f)
+        accel_current_limit_a_(0.0f),
+        min_speed_rad_per_s_(0.0f)
     {}
 
     void reset_state() {
@@ -201,11 +203,24 @@ public:
 
         current_limit_a_ = motor_params.max_current_a;
         accel_current_limit_a_ = control_params.max_accel_torque_a;
+        min_speed_rad_per_s_ = 0.5f / motor_params.phi_v_s_per_rad;
 
-        /* Power control term calculation */
-        ir_ = motor_params.rotor_inertia_kg_m2;
-        kq0_ = 0.75f * (float)motor_params.num_poles *
-               motor_params.phi_v_s_per_rad;
+        /*
+        Power control term calculation.
+
+        Normally Kt (Kq0) is 3/2 * num_poles * phi, but here we pre-multiply
+        by two and divide by num_poles because we're interested in mechanical
+        power rather than torque, and we need to multiply electrical angular
+        velocity by (2/num_poles) to get mechanical angular velocity.
+
+        Ir is twice multiplied by that conversion factor, because it's
+        multiplied by both angular velocity and angular acceleration when
+        converting to mechanical power.
+        */
+        ir_ = motor_params.rotor_inertia_kg_m2 *
+              (2.0f / (float)motor_params.num_poles) *
+              (2.0f / (float)motor_params.num_poles);
+        kq0_ = 3.0f * motor_params.phi_v_s_per_rad;
     }
 
     float __attribute__((optimize("O3")))
@@ -215,9 +230,9 @@ public:
         if (control_power_) {
             /* Eqn 17 from the paper */
             power =
-                (kq0_ * state.i_dq_a[1] * state.angular_velocity_rad_per_s) /* -
+                (kq0_ * state.i_dq_a[1] * state.angular_velocity_rad_per_s) -
                 (ir_ * state.angular_velocity_rad_per_s *
-                    state.angular_acceleration_rad_per_s2) */;
+                    state.angular_acceleration_rad_per_s2);
             error = power_setpoint_w_ - power;
             kp = power_kp_;
             ki = power_ki_;
@@ -253,119 +268,13 @@ public:
         /*
         Limit integral term accumulation when the output current is saturated.
         */
-        integral_error_a_ += ki * (result_a - integral_error_a_);
+        if (std::abs(state.angular_velocity_rad_per_s) >
+                min_speed_rad_per_s_) {
+            integral_error_a_ += ki * (result_a - integral_error_a_);
+        } else {
+            integral_error_a_ *= 0.9;
+        }
 
         return result_a;
-    }
-};
-
-
-class AlignmentController {
-    /* Ia PI coefficients and state */
-    float integral_va_v_;
-    float v_kp_;
-    float v_ki_;
-
-    /* Position controller coefficients and state */
-    float integral_ia_a_;
-    float i_kp_;
-    float i_ki_;
-
-    /* Position controller output (current setpoint) */
-    float i_setpoint_a_;
-
-    /* Physical parameters */
-    float v_limit_;
-    float i_limit_;
-
-public:
-    AlignmentController(void):
-        integral_va_v_(0.0f),
-        v_kp_(0.0f),
-        v_ki_(0.0f),
-        integral_ia_a_(0.0f),
-        i_kp_(0.0f),
-        i_ki_(0.0f),
-        i_setpoint_a_(0.0f),
-        v_limit_(0.0f),
-        i_limit_(0.0f)
-    {}
-
-    void reset_state(void) {
-        integral_va_v_ = 0.0f;
-        integral_ia_a_ = 0.0f;
-        i_setpoint_a_ = 0.0f;
-    }
-
-    void set_params(
-        const struct motor_params_t& params,
-        const struct control_params_t& control_params,
-        float t_s
-    ) {
-        float bandwidth_rad_per_s;
-
-        /*
-        Current controller bandwidth is the same as for the main current
-        controller
-        */
-        bandwidth_rad_per_s = 2.0f * (float)M_PI *
-                              control_params.bandwidth_hz * 10.0f;
-        v_kp_ = params.ls_h * bandwidth_rad_per_s;
-        v_ki_ = t_s * params.rs_r / params.ls_h;
-
-        /*
-        Gain is 10% of max current per radian position error.
-        Integral time is 0.02 s.
-        */
-        i_kp_ = params.max_current_a * 0.1f;
-        i_ki_ = t_s;
-
-        /* Set modulation and current limit */
-        v_limit_ = params.max_voltage_v;
-        i_limit_ = params.max_current_a;
-    }
-
-    void __attribute__((optimize("O3")))
-    update(
-        float out_v_ab_v[2],
-        const float i_ab_a[2],
-        float angle_rad,
-        float vbus_v
-    ) {
-        float v_max, etheta_rad, ea_a, va_v;
-
-        /*
-        Determine how much current the D axis needs to align properly. We take
-        absolute error as the input because we don't care about the direction
-        of the error -- as long as enough current is flowing through D the
-        rotor will converge on the initial position.
-        */
-        etheta_rad = std::abs(angle_rad > (float)M_PI ?
-                              angle_rad - (float)M_PI * 2.0f : angle_rad);
-        i_setpoint_a_ = i_kp_ * etheta_rad + integral_ia_a_;
-
-        if (i_setpoint_a_ > i_limit_) {
-            i_setpoint_a_ = i_limit_;
-        }
-
-        integral_ia_a_ += i_ki_ * (i_setpoint_a_ - integral_ia_a_);
-
-        /*
-        Single-component current controller to run enough current in the D
-        direction to achieve rotor alignment.
-        */
-        v_max = std::min(v_limit_, vbus_v * 0.95f);
-
-        ea_a = i_setpoint_a_ - i_ab_a[0];
-        va_v = v_kp_ * ea_a + integral_va_v_;
-
-        if (va_v > v_max) {
-            va_v = v_max;
-        }
-
-        integral_va_v_ += v_ki_ * (va_v - integral_va_v_);
-
-        out_v_ab_v[0] = va_v;
-        out_v_ab_v[1] = 0.0f;
     }
 };

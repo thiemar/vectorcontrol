@@ -32,12 +32,6 @@ SOFTWARE.
 class StateEstimator {
     struct motor_state_t state_estimate_;
 
-    /* HFI state */
-    float i_dq_m_a_[2];
-    float i_hfi_dq_[2];
-    float hfi_cutoff_rad_per_s_;
-    float hfi_cutoff_inv_;
-
     /* Calculated from start-up parameters */
     float carrier_v_;
 
@@ -47,11 +41,11 @@ class StateEstimator {
     float c_; /* T / L */
     float t_;
     float t_inv_;
+    float min_speed_;
 
     /* Current and speed lowpass filter parameters */
     float i_dq_lpf_coeff_;
     float angular_velocity_lpf_coeff_;
-    float hfi_lpf_coeff_;
 
     /* Column-major */
     float state_covariance_[4];
@@ -62,34 +56,24 @@ class StateEstimator {
     float next_cos_theta_;
     float innovation_[2];
 
-    uint16_t is_converged_;
-    uint16_t is_hfi_active_;
-
 public:
     StateEstimator():
-        hfi_cutoff_rad_per_s_(0.0f),
-        hfi_cutoff_inv_(0.0f),
-        carrier_v_(0.0f),
         a_(0.0f),
         b_(0.0f),
         c_(0.0f),
         t_(0.0f),
         t_inv_(0.0f),
+        min_speed_(0.0f),
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
-        hfi_lpf_coeff_(0.0f),
         next_sin_theta_(0.0f),
-        next_cos_theta_(1.0f),
-        is_converged_(0),
-        is_hfi_active_(0)
+        next_cos_theta_(1.0f)
     {
         state_estimate_.revolution_count = 0;
         state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
         state_estimate_.i_dq_a[0] = state_estimate_.i_dq_a[1] = 0.0f;
-        i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
-        i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
         state_covariance_[0] = state_covariance_[1] = state_covariance_[2] =
             state_covariance_[3] = 0.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
@@ -106,11 +90,7 @@ public:
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
         state_covariance_[0] = state_covariance_[2] = 100.0f;
         state_covariance_[1] = state_covariance_[3] = 10.0f;
-        i_dq_m_a_[0] = i_dq_m_a_[1] = 0.0f;
-        i_hfi_dq_[0] = i_hfi_dq_[1] = 0.0f;
         innovation_[0] = innovation_[1] = 0.0f;
-        is_converged_ = 0;
-        is_hfi_active_ = 0;
     }
 
     void update_state_estimate(
@@ -132,72 +112,20 @@ public:
                                next_cos_theta_);
     }
 
-    float __attribute__((optimize("O3")))
-    get_hfi_weight(void) const {
-        float weight, temp;
-        temp = state_estimate_.angular_velocity_rad_per_s * hfi_cutoff_inv_;
-        weight = 1.0f - std::abs(temp);
-        return weight > 0.0f ? weight : 0.0f;
-    }
-
-    void __attribute__((optimize("O3")))
-    get_hfi_carrier_dq_v(float v_dq[2]) {
-        float weight;
-        weight = get_hfi_weight();
-
-        if (weight > 1e-6f || is_hfi_active_ > 500u) {
-            is_hfi_active_ = 500u;
-        } else if (is_hfi_active_ > 0) {
-            is_hfi_active_--;
-        }
-
-        carrier_v_ = -carrier_v_;
-        v_dq[0] = carrier_v_ * ((float)is_hfi_active_ * (1.0f / 500.0f));
-        v_dq[1] = -v_dq[0];
-    }
-
-    void get_hfi_readings(float readings[2]) const {
-        readings[0] = i_hfi_dq_[0];
-        readings[1] = i_hfi_dq_[1];
-    }
-
-    float __attribute__((optimize("O3")))
-    get_consistency(void) const {
-        /*
-        The estimator's consistency value is based on the difference between
-        the output voltage predicted by the model, and the actual output
-        voltage. This is captured by the innovation calculated in the EKF
-        update step.
-        */
-        float scale, innovation;
-        scale = last_i_ab_a_[0] * last_i_ab_a_[0] +
-                last_i_ab_a_[1] * last_i_ab_a_[1];
-        innovation = innovation_[0] * innovation_[0] +
-                     innovation_[1] * innovation_[1];
-
-        if (scale > 1e-3f) {
-            return 1.0f - __VSQRTF(std::min(1.0f, innovation / scale));
-        } else {
-            return 0.0f;
-        }
-    }
-
-    bool is_converged(void) const {
-        return is_converged_ == 5000u;
-    }
-
     void set_params(
         const struct motor_params_t& params,
         const struct control_params_t& control_params,
         float t_s
     ) {
-        float wc, zwc, wb;
+        float wb;
 
         a_ = 1.0f - params.rs_r / params.ls_h * t_s;
         b_ = params.phi_v_s_per_rad / params.ls_h * t_s;
         c_ = t_s / params.ls_h;
         t_ = t_s;
         t_inv_ = 1.0f / t_s;
+
+        min_speed_ = 0.1f / params.phi_v_s_per_rad;
 
         /*
         Control parameters -- LPF corner frequency is one decade higher than
@@ -207,31 +135,6 @@ public:
         wb = 2.0f * (float)M_PI * control_params.bandwidth_hz;
         i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 50.0f);
         angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s);
-
-        /*
-        High-frequency injection parameters:
-        wc is the carrier angular frequency, which is the Nyquist frequency of
-        the sample loop expressed in rad/s
-        zwc is the motor's impedance at that frequency
-        */
-        wc = (float)M_PI / t_s;
-        zwc = __VSQRTF(params.rs_r * params.rs_r +
-                       wc * wc * params.ls_h * params.ls_h);
-
-        /*
-        Set carrier voltage to whatever will give us an 0.25 A injected
-        current, up to a maximum of 2 V.
-        */
-        carrier_v_ = std::min(1.0f, 0.1f * zwc);
-
-        /*
-        HFI parameters. Cut-off speed and angular velocity filter frequency
-        are both set to the speed at which the motor generates 0.5 V in back
-        EMF.
-        */
-        hfi_cutoff_rad_per_s_ = 0.5f / params.phi_v_s_per_rad;
-        hfi_cutoff_inv_ = 1.0f / hfi_cutoff_rad_per_s_;
-        hfi_lpf_coeff_ = 1.0f - fast_expf(-hfi_cutoff_rad_per_s_ * t_s * 10.0f);
     }
 };
 

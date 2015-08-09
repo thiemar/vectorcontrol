@@ -22,9 +22,11 @@ SOFTWARE.
 
 #pragma once
 
+
 extern volatile uint32_t g_perf_total;
 extern volatile uint32_t g_perf_last;
 extern volatile uint32_t g_perf_samples;
+
 
 #define PERF_COUNT_START uint32_t _start_cyccnt; \
 { \
@@ -33,6 +35,7 @@ extern volatile uint32_t g_perf_samples;
     _start_cyccnt = *DWT_CYCCNT; \
     asm volatile ("":::"memory"); \
 }
+
 
 #define PERF_COUNT_END { \
     volatile uint32_t* DWT_CYCCNT = (uint32_t*)0xE0001004; \

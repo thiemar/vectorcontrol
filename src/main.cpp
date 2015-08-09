@@ -44,7 +44,6 @@ static StateEstimator g_estimator;
 static ParameterEstimator g_parameter_estimator;
 static DQCurrentController g_current_controller;
 static SpeedController g_speed_controller;
-static AlignmentController g_alignment_controller;
 
 
 enum controller_mode_t {
@@ -93,10 +92,6 @@ volatile static float g_v_dq_v[2];
 volatile static float g_i_samples[4];
 volatile static float g_v_samples[4];
 volatile static bool g_parameter_estimator_done;
-
-/* Motor state estimator consistency check output */
-volatile static float g_estimator_consistency;
-volatile static float g_estimator_hfi[2];
 
 
 /* Written to the firmware image in post-processing */
@@ -193,8 +188,8 @@ control_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float v_dq_v[2], power_setpoint, speed_setpoint, readings[2], hfi_v[2],
-          v_ab_v[2], phase, audio_v, current_setpoint;
+    float v_dq_v[2], power_setpoint, speed_setpoint,
+          phase, audio_v, current_setpoint;
     struct motor_state_t motor_state;
     struct controller_state_t controller_state;
 
@@ -237,13 +232,10 @@ control_cb(
         g_estimator.reset_state();
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
-        g_alignment_controller.reset_state();
-        readings[0] = readings[1] = 0.0f;
-        g_estimator_consistency = 1.0f;
 
         g_v_dq_v[1] = v_dq_v[1] = audio_v;
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
-    } else if (g_estimator.is_converged()) {
+    } else {
         /* Update the speed controller setpoint */
         if (controller_state.mode == CONTROLLER_POWER) {
             /*
@@ -297,58 +289,28 @@ control_cb(
                                     vbus_v,
                                     audio_v);
 
-        /* Save global voltages before adding HFI */
+        /* Save global voltages */
         g_v_dq_v[0] = v_dq_v[0];
         g_v_dq_v[1] = v_dq_v[1];
-
-        /* Add high-frequency injection voltage when required. */
-        g_estimator.get_hfi_carrier_dq_v(hfi_v);
-        g_estimator.get_hfi_readings(readings);
-        v_dq_v[0] += hfi_v[0];
-        v_dq_v[1] += hfi_v[1];
 
         /*
         Transform Vd and Vq into the alpha-beta frame, and set the PWM output
         accordingly.
         */
         g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
-
-        /* Low-pass the estimator consistency value */
-        g_estimator_consistency +=
-            (g_estimator.get_consistency() - g_estimator_consistency) * 0.01f;
-    } else {
-        /*
-        Estimator is still aligning/converging; run the alignment controller
-        and add the HFI voltages on top.
-        */
-        g_alignment_controller.update(v_ab_v, i_ab_a, motor_state.angle_rad,
-                                      vbus_v);
-        g_estimator.get_hfi_carrier_dq_v(hfi_v);
-        g_estimator.get_hfi_readings(readings);
-
-        /*
-        Transform Vd and Vq into the alpha-beta frame, and set the PWM output
-        accordingly.
-        */
-        g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, hfi_v);
-        out_v_ab_v[0] += v_ab_v[0];
-        out_v_ab_v[1] += v_ab_v[1];
-
-        g_v_dq_v[0] = g_v_dq_v[1] = 0.0f;
-        g_estimator_consistency = 1.0f;
     }
 
     /*
     Could look at low-passing these too, based on the FOC status output rate
     */
+    g_motor_state.angular_acceleration_rad_per_s2 =
+        motor_state.angular_acceleration_rad_per_s2;
     g_motor_state.angular_velocity_rad_per_s =
         motor_state.angular_velocity_rad_per_s;
     g_motor_state.angle_rad = motor_state.angle_rad;
     g_motor_state.i_dq_a[0] = motor_state.i_dq_a[0];
     g_motor_state.i_dq_a[1] = motor_state.i_dq_a[1];
     g_vbus_v = vbus_v;
-    g_estimator_hfi[0] = readings[0];
-    g_estimator_hfi[1] = readings[1];
 }
 
 
@@ -729,18 +691,27 @@ static void __attribute__((noreturn)) node_run(
                 msg.i_setpoint = g_controller_state.current_setpoint;
                 msg.v_dq[0] = v_dq_v[0];
                 msg.v_dq[1] = v_dq_v[1];
-                msg.hfi_dq[0] = g_estimator_hfi[0];
-                msg.hfi_dq[1] = g_estimator_hfi[1];
-                msg.consistency = (uint8_t)
-                    (g_estimator_consistency * 255.0f);
+                /* Acceleration */
+                msg.hfi_dq[0] = motor_state.angular_acceleration_rad_per_s2 *
+                    60.0f / ((float)M_PI * (float)motor_params.num_poles);
+                /* Power */
+                msg.hfi_dq[1] = 3.0f * motor_params.phi_v_s_per_rad *
+                                motor_state.i_dq_a[1] *
+                                motor_state.angular_velocity_rad_per_s -
+                                motor_params.rotor_inertia_kg_m2 *
+                                motor_state.angular_velocity_rad_per_s *
+                                motor_state.angular_acceleration_rad_per_s2 *
+                                (2.0f / (float)motor_params.num_poles) *
+                                (2.0f / (float)motor_params.num_poles);
+                msg.consistency = 0;
                 msg.vbus = g_vbus_v;
                 msg.temperature = 273.15f + hal_get_temperature_degc();
                 msg.angle = (uint8_t)
                     (motor_state.angle_rad * (0.5f / M_PI) * 255.0f);
-                msg.rpm = (g_motor_state.angular_velocity_rad_per_s *
-                    60.0f / ((float)M_PI * (float)motor_params.num_poles));
-                msg.rpm_setpoint = (g_controller_state.speed_setpoint *
-                    60.0f / ((float)M_PI * (float)motor_params.num_poles));
+                msg.rpm = motor_state.angular_velocity_rad_per_s *
+                    60.0f / ((float)M_PI * (float)motor_params.num_poles);
+                msg.rpm_setpoint = g_controller_state.speed_setpoint *
+                    60.0f / ((float)M_PI * (float)motor_params.num_poles);
                 msg.esc_index = esc_index;
                 broadcast_manager.encode_foc_status(
                     foc_status_transfer_id++, foc_status_dtid, msg);
@@ -797,7 +768,7 @@ static void __attribute__((noreturn)) node_run(
                     std::abs(setpoint) > 2.0f * (float)M_PI) {
                 g_controller_state.speed_setpoint = setpoint;
             } else if (mode == CONTROLLER_POWER &&
-                    std::abs(setpoint) >= 1.0f) {
+                    std::abs(setpoint) >= 0.1f) {
                 g_controller_state.power_setpoint = setpoint;
             } else {
                 mode = CONTROLLER_STOPPING;
@@ -888,8 +859,6 @@ int __attribute__((externally_visible,noreturn)) main(void) {
     g_speed_controller.set_params(motor_params, control_params,
                                   hal_control_t_s);
     g_speed_controller.set_current_limit_a(motor_params.max_current_a);
-    g_alignment_controller.set_params(motor_params, control_params,
-                                      hal_control_t_s);
 
     /*
     Calculate the motor's maximum (electrical) speed based on Vbus at startup

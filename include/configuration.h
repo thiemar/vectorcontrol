@@ -27,14 +27,10 @@ SOFTWARE.
 
 * 8 KiB bootloader region (stubbed out in default image) at 0x08000000
 * 52 KiB main application area starting at 0x08002000
-* 2 KiB parameter area starting at 0x0800F000
-* 2 KiB read-only area starting at 0x0800F800
+* 4 KiB parameter area starting at 0x0800F000
 */
 #define FLASH_PARAM_ADDRESS 0x0800F000
-#define FLASH_PARAM_LENGTH  0x00000800
-
-#define FLASH_READONLY_ADDRESS 0x0800F800
-#define FLASH_READONLY_LENGTH  0x00000800
+#define FLASH_PARAM_LENGTH  0x00001000
 
 
 #define FLASH_PARAM_VERSION 1u
