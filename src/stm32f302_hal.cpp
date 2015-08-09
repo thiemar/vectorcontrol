@@ -706,9 +706,6 @@ static void hal_init_tim1_() {
     */
     TIM_Cmd(TIM1, ENABLE);
     TIM_GenerateEvent(TIM1, TIM_EventSource_Update);
-
-    /* Stop TIM1 when execution is paused */
-    DBGMCU_Config(DBGMCU_TIM1_STOP, ENABLE);
 }
 
 
