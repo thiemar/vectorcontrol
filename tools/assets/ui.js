@@ -336,11 +336,11 @@ function setupAccelPowerChart(device) {
 
     result.y0 = d3.scale.linear()
         .range([height, 0.0])
-        .domain([-10000.0, 10000.0]);
+        .domain([-20000.0, 20000.0]);
 
     result.y1 = d3.scale.linear()
         .range([height, 0.0])
-        .domain([0, 10.0]);
+        .domain([0, 200.0]);
 
     result.xAxis = d3.svg.axis()
         .scale(result.x)

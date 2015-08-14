@@ -45,7 +45,7 @@ PIN   PORT   NUMBER    FUNCTION
   8      A        1    ADC1_IN2 - Phase B current sense
   9      A        2    ADC1_IN3 - Phase C current sense
  10      A        3    ADC1_IN4 - VSENSE
- 11      A        4    ADC1_IN5 - TSENSE
+ 11      A        4    -
  12      A        5    -
  13      A        6    -
  14      A        7    -
@@ -59,7 +59,7 @@ PIN   PORT   NUMBER    FUNCTION
  22      A       12    CAN_TX
  23      A       13    SWDIO - debug access
  24      A       14    SWCLK - debug access
- 25      A       15    TIM2_CH1 - CAN RX timer
+ 25      A       15    -
  26      B        3    TRACESWO - debug access
  27      B        4    -
  28      B        5    -
@@ -295,6 +295,10 @@ static uint32_t board_temp_lsb_;
 static volatile float temp_degc_;
 
 
+/* If true, phases A and B are swapped to reverse the directon of the motor */
+static volatile bool phase_reverse_;
+
+
 extern "C" void SysTick_Handler(void);
 extern "C" void ADC1_2_IRQHandler(void);
 extern "C" void Fault_Handler(void);
@@ -322,14 +326,17 @@ hal_read_phase_shunts_(
     int16_t phase_shunt_signal_lsb[3],
     uint8_t phase_pwm_sector
 ) {
-    /* Direct reading of phase A current */
-    phase_shunt_signal_lsb[0] = (int16_t)ADC1->JDR1;
-
-    /* Direct reading of phase B current */
-    phase_shunt_signal_lsb[1] = (int16_t)ADC1->JDR2;
-
-    /* Direct reading of phase C current */
-    phase_shunt_signal_lsb[2] = (int16_t)ADC1->JDR3;
+    if (phase_reverse_) {
+        /* Direct reading of phase A, B and C current */
+        phase_shunt_signal_lsb[1] = (int16_t)ADC1->JDR1;
+        phase_shunt_signal_lsb[0] = (int16_t)ADC1->JDR2;
+        phase_shunt_signal_lsb[2] = (int16_t)ADC1->JDR3;
+    } else {
+        /* Direct reading of phase A, B and C current */
+        phase_shunt_signal_lsb[0] = (int16_t)ADC1->JDR1;
+        phase_shunt_signal_lsb[1] = (int16_t)ADC1->JDR2;
+        phase_shunt_signal_lsb[2] = (int16_t)ADC1->JDR3;
+    }
 
     switch (phase_pwm_sector) {
         case 4:
@@ -417,10 +424,18 @@ hal_update_timer_(
     /*
     Update the on times for the PWM channels as well as the ADC trigger point
     */
-    TIM1->CCR1 = phase_on_ticks[0];
-    TIM1->CCR2 = phase_on_ticks[1];
-    TIM1->CCR3 = phase_on_ticks[2];
-    TIM1->CCR4 = sample_ticks;
+    if (phase_reverse_) {
+        TIM1->CCR1 = phase_on_ticks[1];
+        TIM1->CCR2 = phase_on_ticks[0];
+        TIM1->CCR3 = phase_on_ticks[2];
+        TIM1->CCR4 = sample_ticks;
+    } else {
+        TIM1->CCR1 = phase_on_ticks[0];
+        TIM1->CCR2 = phase_on_ticks[1];
+        TIM1->CCR3 = phase_on_ticks[2];
+        TIM1->CCR4 = sample_ticks;
+    }
+
 }
 
 
@@ -980,6 +995,13 @@ static bool hal_read_last_vbus_temp_() {
         return true;
     } else {
         return false;
+    }
+}
+
+
+void hal_set_pwm_reverse(bool reverse) {
+    if (pwm_state_ != HAL_PWM_STATE_RUNNING) {
+        phase_reverse_ = reverse;
     }
 }
 

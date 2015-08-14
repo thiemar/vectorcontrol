@@ -44,7 +44,8 @@ void __attribute__((optimize("O3")))
 StateEstimator::update_state_estimate(
     const float i_ab_a[2],
     const float v_ab_v[2],
-    float __attribute__((unused)) accel_direction
+    float speed_setpoint,
+    float closed_loop_frac
 ) {
     /*
     EKF observer largely derived from:
@@ -56,7 +57,7 @@ StateEstimator::update_state_estimate(
     */
     float covariance_temp[STATE_DIM * STATE_DIM],
           hessian[STATE_DIM * STATE_DIM],
-          prediction[MEASUREMENT_DIM],
+          prediction[MEASUREMENT_DIM], innovation[STATE_DIM],
           measurement_covariance[MEASUREMENT_DIM * MEASUREMENT_DIM],
           measurement_covariance_temp[MEASUREMENT_DIM * MEASUREMENT_DIM],
           kalman_gain[STATE_DIM * MEASUREMENT_DIM],
@@ -107,7 +108,7 @@ StateEstimator::update_state_estimate(
     // Pm(1,0) = std::numeric_limits<float>::signaling_NaN();
     Pm(1,1) = P(0,0) * t_ * t_ +
               2.0f * t_ * P(0,1) +
-              P(1,1) + g_process_noise[1] ; /* + hfi_weight * 1e-4f;*/
+              P(1,1) + g_process_noise[1];
 
     /* These values are used a few times */
     b_est_sin_theta = b_ * sin_theta;
@@ -202,17 +203,19 @@ StateEstimator::update_state_estimate(
                     c_ * v_ab_v[1];
 
     /* Calculate innovation */
-    innovation_[0] = i_ab_a[0] - prediction[0];
-    innovation_[1] = i_ab_a[1] - prediction[1];
+    innovation[0] = i_ab_a[0] - prediction[0];
+    innovation[1] = i_ab_a[1] - prediction[1];
 
     /* Update the estimate */
-    update[0] = K(0,0) * innovation_[0] + K(1,0) * innovation_[1];
-    update[1] = K(0,1) * innovation_[0] + K(1,1) * innovation_[1];
+    update[0] = K(0,0) * innovation[0] + K(1,0) * innovation[1];
+    update[1] = K(0,1) * innovation[0] + K(1,1) * innovation[1];
 
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
-    state_estimate_.angle_rad += update[1];
+    state_estimate_.angle_rad += update[1] * closed_loop_frac;
     state_estimate_.angle_rad +=
-        state_estimate_.angular_velocity_rad_per_s * t_;
+        (state_estimate_.angular_velocity_rad_per_s * t_) * closed_loop_frac;
+    state_estimate_.angle_rad +=
+        (speed_setpoint * t_) * (1.0f - closed_loop_frac);
 
     /*
     Calculate filtered velocity estimate by differentiating successive
@@ -224,35 +227,16 @@ StateEstimator::update_state_estimate(
                      state_estimate_.angular_velocity_rad_per_s);
     state_estimate_.angular_acceleration_rad_per_s2 +=
         angular_velocity_lpf_coeff_ * 0.1f *
-        ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) - state_estimate_.angular_acceleration_rad_per_s2);
+        ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) -
+            state_estimate_.angular_acceleration_rad_per_s2);
     state_estimate_.angular_velocity_rad_per_s +=
         acceleration * angular_velocity_lpf_coeff_;
 
-    /*
-    Slow start-up if the velocity is lower in magnitude than the minimum speed
-    */
-    if (accel_direction > 0.0f &&
-            state_estimate_.angular_velocity_rad_per_s < min_speed_) {
-        state_estimate_.angular_velocity_rad_per_s +=
-            (min_speed_ - state_estimate_.angular_velocity_rad_per_s) *
-            angular_velocity_lpf_coeff_ * 0.01f;
-    } else if (accel_direction < 0.0f &&
-            state_estimate_.angular_velocity_rad_per_s > min_speed_)  {
-        state_estimate_.angular_velocity_rad_per_s +=
-            (-min_speed_ - state_estimate_.angular_velocity_rad_per_s) *
-            angular_velocity_lpf_coeff_ * 0.01f;
-    }
-
-    /*
-    Constrain angle to 0 .. 2 * pi; increment or decrement the revolution
-    count whenever the angle exceeds that range.
-    */
+    /* Constrain angle to 0 .. 2 * pi */
     if (state_estimate_.angle_rad > 2.0f * (float)M_PI) {
         state_estimate_.angle_rad -= 2.0f * (float)M_PI;
-        state_estimate_.revolution_count++;
     } else if (state_estimate_.angle_rad < 0.0f) {
         state_estimate_.angle_rad += 2.0f * (float)M_PI;
-        state_estimate_.revolution_count--;
     }
 
     next_angle = state_estimate_.angle_rad +

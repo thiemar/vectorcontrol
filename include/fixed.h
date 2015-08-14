@@ -34,7 +34,6 @@ SOFTWARE.
 
 
 struct motor_state_t {
-    int64_t revolution_count;
     float angular_acceleration_rad_per_s2;
     float angular_velocity_rad_per_s;
     float angle_rad; /* 0 .. 2 * pi */
@@ -54,6 +53,11 @@ struct motor_params_t {
                                   rad/s */
     float min_speed_rad_per_s; /* Minimum controllable electrical angular
                                   velocity in rad/s */
+    float idle_speed_rad_per_s; /* Speed to spin at when armed but with zero
+                                   setpoint, in rad/s */
+    float spinup_rate_rad_per_s2; /* Rate at which to increase the motor
+                                     speed when starting up. */
+    float accel_current_a; /* Start-up acceleration current in amps */
 
     uint32_t num_poles; /* number of poles */
 

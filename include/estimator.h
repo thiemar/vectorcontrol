@@ -32,16 +32,12 @@ SOFTWARE.
 class StateEstimator {
     struct motor_state_t state_estimate_;
 
-    /* Calculated from start-up parameters */
-    float carrier_v_;
-
     /* Intermediate values */
     float a_; /* 1.0 - R / L * T */
     float b_; /* phi / L * T */
     float c_; /* T / L */
     float t_;
     float t_inv_;
-    float min_speed_;
 
     /* Current and speed lowpass filter parameters */
     float i_dq_lpf_coeff_;
@@ -54,7 +50,6 @@ class StateEstimator {
     float last_i_ab_a_[2];
     float next_sin_theta_;
     float next_cos_theta_;
-    float innovation_[2];
 
 public:
     StateEstimator():
@@ -63,13 +58,11 @@ public:
         c_(0.0f),
         t_(0.0f),
         t_inv_(0.0f),
-        min_speed_(0.0f),
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f)
     {
-        state_estimate_.revolution_count = 0;
         state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
@@ -77,11 +70,9 @@ public:
         state_covariance_[0] = state_covariance_[1] = state_covariance_[2] =
             state_covariance_[3] = 0.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
-        innovation_[0] = innovation_[1] = 0.0f;
     }
 
     void reset_state() {
-        state_estimate_.revolution_count = 0;
         state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
@@ -90,13 +81,13 @@ public:
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
         state_covariance_[0] = state_covariance_[2] = 100.0f;
         state_covariance_[1] = state_covariance_[3] = 10.0f;
-        innovation_[0] = innovation_[1] = 0.0f;
     }
 
     void update_state_estimate(
         const float i_ab_a[2],
         const float v_ab_v[2],
-        float accel_direction
+        float speed_setpoint,
+        float closed_loop_frac
     );
 
     void get_state_estimate(struct motor_state_t& out_estimate) const {
@@ -124,8 +115,6 @@ public:
         c_ = t_s / params.ls_h;
         t_ = t_s;
         t_inv_ = 1.0f / t_s;
-
-        min_speed_ = 0.1f / params.phi_v_s_per_rad;
 
         /*
         Control parameters -- LPF corner frequency is one decade higher than
