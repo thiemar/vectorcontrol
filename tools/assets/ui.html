@@ -168,6 +168,20 @@ SOFTWARE.
             shape-rendering: smoothEdges;
         }
 
+        .airspeed-tas {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: blue;
+            shape-rendering: smoothEdges;
+        }
+
+        .airspeed-ias {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
         .grid .tick {
             stroke: black;
             stroke-width: 0.5px;
@@ -485,7 +499,7 @@ SOFTWARE.
         </div>
     </div>
 
-    <div class="device" id="device-template">
+    <div class="device device-template-com_thiemar_s2740vc-v1 hidden">
         <div class="device-header">
             <div class="device-info">
                 <h3>#<span class="node-id">unknown</span>: <span class="node-name">com.example.unknown</span>
@@ -600,6 +614,103 @@ SOFTWARE.
                 <svg class="accel-power-chart"></svg>
                 <svg class="voltagetemp-chart"></svg>
                 <svg class="output-voltage-chart"></svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="device device-template-com_thiemar_p7000d-v1 hidden">
+        <div class="device-header">
+            <div class="device-info">
+                <h3>#<span class="node-id">unknown</span>: <span class="node-name">com.example.unknown</span>
+                (<span class="node-health">ok</span>, <span class="node-mode">initialization</span>, up <span class="node-uptime"></span> seconds)</h3>
+
+                <!--
+                Not critical to implement in first revision.
+
+                <label>
+                    <span>Load configuration:</span>
+                    <input name="load-configuration" class="load-configuration" type="file">
+                </label>
+
+                <label>
+                    <span>Load firmware:</span>
+                    <input name="load-firmware" class="load-firmware" type="file">
+                </label>
+                -->
+            </div>
+        </div>
+
+        <div class="device-detail">
+            <div class="device-configuration">
+                <form class="configuration" action="" method="post">
+                    <h3>UAVCAN parameters</h3>
+
+                    <label>
+                        <span>TAS publish interval (µs)</span>
+                        <input name="uavcan.pubp-uavcan.equipment.air_data.TrueAirspeed" class="configuration" type="number" min="0" max="1000000" step="1000">
+                    </label>
+
+                    <label>
+                        <span>IAS publish interval (µs)</span>
+                        <input name="uavcan.pubp-uavcan.equipment.air_data.IndicatedAirspeed" class="configuration" type="number" min="0" max="1000000" step="1000">
+                    </label>
+
+                    <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
+                </form>
+            </div>
+
+            <div class="device-measurements">
+                <h3>Measurements</h3>
+
+                <svg class="airspeed-chart"></svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="device device-template-com_thiemar_loadsensor-v1 hidden">
+        <div class="device-header">
+            <div class="device-info">
+                <h3>#<span class="node-id">unknown</span>: <span class="node-name">com.example.unknown</span>
+                (<span class="node-health">ok</span>, <span class="node-mode">initialization</span>, up <span class="node-uptime"></span> seconds)</h3>
+
+                <!--
+                Not critical to implement in first revision.
+
+                <label>
+                    <span>Load configuration:</span>
+                    <input name="load-configuration" class="load-configuration" type="file">
+                </label>
+
+                <label>
+                    <span>Load firmware:</span>
+                    <input name="load-firmware" class="load-firmware" type="file">
+                </label>
+                -->
+            </div>
+        </div>
+
+        <div class="device-detail">
+            <div class="device-configuration">
+                <form class="configuration" action="" method="post">
+                    <h3>UAVCAN parameters</h3>
+
+                    <label>
+                        <span>Hardpoint status interval (µs)</span>
+                        <input name="uavcan.pubp-uavcan.equipment.hardpoint.Status" class="configuration" type="number" min="0" max="1000000" step="1000">
+                    </label>
+                    <label>
+                        <span>Hardpoint index</span>
+                        <input name="uavcan.id-uavcan.equipment.hardpoint-hardpoint_id" class="configuration" type="number" min="0" max="255" step="1">
+                    </label>
+
+                    <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
+                </form>
+            </div>
+
+            <div class="device-measurements">
+                <h3>Measurements</h3>
+
+                <svg class="load-chart"></svg>
             </div>
         </div>
     </div>

@@ -66,15 +66,18 @@ function connect() {
         nodeUi = document.getElementById("device-" + message.node_id);
         if (!nodeUi) {
             content = document.getElementById("content");
-            nodeUi = document.getElementById("device-template").cloneNode(true);
+            nodeUi = document.querySelector("device-template-").cloneNode(true);
             nodeUi.id = "device-" + message.node_id;
             nodeUi.querySelector("span.node-id").textContent = message.node_id;
             content.appendChild(nodeUi);
+
             setupSpeedChart(nodeUi);
             setupCurrentChart(nodeUi);
             setupVoltageTempChart(nodeUi);
             setupAccelPowerChart(nodeUi);
             setupOutputVoltageChart(nodeUi);
+
+            nodeUi.classList.removeClass("hidden");
         }
 
         /* Process message data */
@@ -120,7 +123,10 @@ function connect() {
             updateSpeedChart(nodeUi, nodeData[message.node_id] || []);
             updateOutputVoltageChart(nodeUi,
                                      nodeData[message.node_id] || []);
-        } else if (message.datatype == "uavcan.equipment.esc.FOCStatus") {
+        } else if (message.datatype == "uavcan.equipment.esc.FOCStatus" ||
+                   message.datatype == "uavcan.equipment.air_data.TrueAirspeed" ||
+                   message.datatype == "uavcan.equipment.air_data.IndicatedAirspeed" ||
+                   message.datatype == "uavcan.equipment.hardpoint.Status") {
             /*
             Measurement data -- add it to the measurement array, removing old
             data if the total length is more than 600 samples
@@ -570,12 +576,19 @@ function updateCharts(device, data) {
     deviceId = parseInt(device.id.split("-")[1], 10);
     deviceAnimationCallbacks[deviceId] = undefined;
 
-    updateCurrentChart(deviceId, device, data);
-    updateSpeedChart(deviceId, device, data);
-    updateVoltageTempChart(deviceId, device, data);
-    updateAccelPowerChart(deviceId, device, data);
-    updateOutputVoltageChart(deviceId, device, data);
+    if (device.classList.classed("device-template-com_thiemar_s2740vc-v1")) {
+        updateCurrentChart(deviceId, device, data);
+        updateSpeedChart(deviceId, device, data);
+        updateVoltageTempChart(deviceId, device, data);
+        updateAccelPowerChart(deviceId, device, data);
+        updateOutputVoltageChart(deviceId, device, data);
+    } else if (device.classList.classed("device-template-com_thiemar_p7000d-v1")) {
+        updateAirspeedChart(deviceId, device, data);
+    } else if (device.classList.classed("device-template-com_thiemar_loadsensor-v1")) {
+        updateLoadChart(deviceId, device, data);
+    }
 }
+
 
 function updateVoltageTempChart(deviceId, device, data) {
     var seriesData, chart;
@@ -600,6 +613,7 @@ function updateVoltageTempChart(deviceId, device, data) {
         .datum(data)
         .attr("d", seriesData);
 }
+
 
 function updateCurrentChart(deviceId, device, data) {
     var current, chart, maxCurrent;
@@ -731,6 +745,35 @@ function updateOutputVoltageChart(deviceId, device, data) {
     chart.chart.select(".voltage-vq")
         .datum(data)
         .attr("d", voltage);
+}
+
+
+function updateAirspeedChart(deviceId, device, data) {
+    var airspeed, chart;
+
+    chart = deviceAirspeedCharts[deviceId];
+
+    /* TAS line */
+    airspeed = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y(d.true_airspeed); });
+
+    chart.chart.select(".airspeed-tas")
+        .datum(data.filter(function(d) {
+            return d.datatype == "uavcan.equipment.air_data.TrueAirspeed";
+        }))
+        .attr("d", airspeed);
+
+    /* IAS line */
+    airspeed = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y(d.indicated_airspeed); });
+
+    chart.chart.select(".airspeed-ias")
+        .datum(data.filter(function(d) {
+            return d.datatype == "uavcan.equipment.air_data.IndicatedAirspeed";
+        }))
+        .attr("d", airspeed);
 }
 
 
