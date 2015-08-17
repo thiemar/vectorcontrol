@@ -796,7 +796,7 @@ if __name__ == "__main__":
     ioloop = tornado.ioloop.IOLoop.instance()
 
     if options.firmware:
-        firmware_dir = os.path.dirname(options.firmware)
+        firmware_dir = options.firmware
     else:
         firmware_dir = None
 
@@ -812,7 +812,8 @@ if __name__ == "__main__":
         # Send the node info message to all connected sockets
         send_all(response.type.get_normalized_definition(), node_id, response)
 
-        # Schedule a parameter fetch
+        # Schedule a parameter fetch if the node is in operating mode
+        #if not response.status.mode:
         ioloop.add_callback(enumerate_node_params, this_node, node_id)
 
         # Check the supplied directory for updated firmware
@@ -876,7 +877,11 @@ if __name__ == "__main__":
             # CAN<->WebSocket bridge
             (uavcan.protocol.NodeStatus, MessageRelayMonitor),
             (uavcan.equipment.esc.Status, MessageRelayMonitor),
-            (uavcan.equipment.esc.FOCStatus, MessageRelayMonitor)
+            (uavcan.equipment.esc.FOCStatus, MessageRelayMonitor),
+            (uavcan.equipment.air_data.TrueAirspeed, MessageRelayMonitor),
+            (uavcan.equipment.air_data.IndicatedAirspeed,
+                MessageRelayMonitor),
+            (uavcan.equipment.hardpoint.Status, MessageRelayMonitor),
         ], node_id=int(options.node_id))
         node.listen(args[0], baudrate=int(options.bus_speed), io_loop=ioloop)
     else:

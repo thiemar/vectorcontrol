@@ -27,7 +27,9 @@ HTMLCollection.prototype.forEach = Array.prototype.forEach;
 var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
     deviceAccelPowerCharts = {}, deviceVoltageTempCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
-    setpointTimer = null, lastUpdate = null;
+    deviceAirspeedCharts = {}, deviceLoadCharts = {}, activeESCs = {},
+    escRpmSetpointFunctions = [], escRawSetpointFunctions = [],
+    lastUpdate = null;
 
 function getParamValue(param) {
     if (param.real_value !== undefined) {
@@ -64,24 +66,14 @@ function connect() {
         clone the template interface.
         */
         nodeUi = document.getElementById("device-" + message.node_id);
-        if (!nodeUi) {
-            content = document.getElementById("content");
-            nodeUi = document.querySelector("device-template-").cloneNode(true);
-            nodeUi.id = "device-" + message.node_id;
-            nodeUi.querySelector("span.node-id").textContent = message.node_id;
-            content.appendChild(nodeUi);
-
-            setupSpeedChart(nodeUi);
-            setupCurrentChart(nodeUi);
-            setupVoltageTempChart(nodeUi);
-            setupAccelPowerChart(nodeUi);
-            setupOutputVoltageChart(nodeUi);
-
-            nodeUi.classList.removeClass("hidden");
-        }
 
         /* Process message data */
-        if (message.datatype == "uavcan.protocol.NodeStatus") {
+        if (message.datatype == "uavcan.protocol.GetNodeInfo") {
+            if (!nodeUi) {
+                createNodeUi(message);
+            }
+        } else if (message.datatype == "uavcan.protocol.NodeStatus" &&
+                   nodeUi) {
             /* Node status -- display the new uptime and status code */
             nodeUi.querySelector("span.node-uptime").textContent =
                 message.payload.uptime_sec;
@@ -98,10 +90,8 @@ function connect() {
                 3: "software update",
                 7: "offline"
             }[message.payload.mode];
-        } else if (message.datatype == "uavcan.protocol.GetNodeInfo") {
-            nodeUi.querySelector("span.node-name").textContent =
-                message.payload.name;
-        } else if (message.datatype == "uavcan.protocol.param.GetSet") {
+        } else if (message.datatype == "uavcan.protocol.param.GetSet" &&
+                   nodeUi) {
             /*
             Parameter value update -- set the corresponding input to the new
             value, and update the chart scaling if necessary.
@@ -119,14 +109,18 @@ function connect() {
                 input.classList.add("dtype-integer");
             }
 
-            updateCurrentChart(nodeUi, nodeData[message.node_id] || []);
-            updateSpeedChart(nodeUi, nodeData[message.node_id] || []);
-            updateOutputVoltageChart(nodeUi,
-                                     nodeData[message.node_id] || []);
-        } else if (message.datatype == "uavcan.equipment.esc.FOCStatus" ||
+            if (false) {
+                updateCurrentChart(nodeUi, nodeData[message.node_id] || []);
+                updateSpeedChart(nodeUi, nodeData[message.node_id] || []);
+                updateOutputVoltageChart(nodeUi,
+                                         nodeData[message.node_id] || []);
+            }
+
+        } else if ((message.datatype == "uavcan.equipment.esc.FOCStatus" ||
                    message.datatype == "uavcan.equipment.air_data.TrueAirspeed" ||
                    message.datatype == "uavcan.equipment.air_data.IndicatedAirspeed" ||
-                   message.datatype == "uavcan.equipment.hardpoint.Status") {
+                   message.datatype == "uavcan.equipment.hardpoint.Status") &&
+                   nodeUi) {
             /*
             Measurement data -- add it to the measurement array, removing old
             data if the total length is more than 600 samples
@@ -147,6 +141,10 @@ function connect() {
                     requestAnimationFrame(function () {
                         updateCharts(nodeUi, nodeData[message.node_id]);
                     });
+            }
+
+            if (message.datatype == "uavcan.equipment.esc.FOCStatus") {
+                ensureESCActive(message);
             }
         }
     }
@@ -172,6 +170,64 @@ function connect() {
             ws.send("{}");
         }
     }, 1000.0);
+}
+
+
+function createNodeUi(message) {
+    var deviceName = message.payload.name.replace(/\./g, "_");
+
+    content = document.getElementById("content");
+    nodeUi = document.querySelector(".hidden.device-template-" + deviceName).cloneNode(true);
+    nodeUi.id = "device-" + message.node_id;
+    nodeUi.querySelector("span.node-id").textContent = message.node_id;
+    nodeUi.querySelector("span.node-name").textContent =
+        message.payload.name;
+    nodeUi.classList.remove("hidden");
+    content.appendChild(nodeUi);
+
+    if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1")) {
+        setupSpeedChart(nodeUi);
+        setupCurrentChart(nodeUi);
+        setupVoltageTempChart(nodeUi);
+        setupAccelPowerChart(nodeUi);
+        setupOutputVoltageChart(nodeUi);
+    } else if (nodeUi.classList.contains("device-template-com_thiemar_p7000d-v1")) {
+        setupAirspeedChart(nodeUi);
+    } else if (nodeUi.classList.contains("device-template-com_thiemar_loadsensor-v1")) {
+        setupLoadChart(nodeUi);
+    }
+}
+
+
+function ensureESCActive(message) {
+    var escIdx = message.payload.esc_index,
+        escUi = document.getElementById("control-esc-" + escIdx),
+        uiContainer =
+            document.getElementById("control-esc-template").parentNode,
+        childIdx;
+
+    activeESCs[message.payload.esc_index] = (new Date()).valueOf();
+
+    if (!escUi) {
+        escUi = document.getElementById("control-esc-template").cloneNode(true);
+        escUi.id = "control-esc-" + escIdx;
+        escUi.querySelector("span.esc-index").textContent = "ESC " +
+            message.payload.esc_index;
+        escUi.classList.remove("hidden");
+
+        /* Insert the node in ESC index order */
+        for (var i = 1; i < uiContainer.children.length; i++) {
+            childIdx = parseInt(uiContainer.children[i].id.split("-")[2], 10);
+            if (childIdx > escIdx) {
+                uiContainer.insertBefore(escUi, uiContainer.children[i]);
+                break;
+            }
+        }
+
+        if (i == uiContainer.children.length) {
+            uiContainer.appendChild(escUi);
+        }
+    }
 }
 
 
@@ -571,20 +627,149 @@ function setupOutputVoltageChart(device) {
     deviceOutputVoltageCharts[parseInt(device.id.split("-")[1], 10)] = result;
 }
 
+
+function setupAirspeedChart(device) {
+    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
+        svg = device.querySelector("svg.airspeed-chart"),
+        container = device.querySelector("div.device-measurements"),
+        width = container.clientWidth - 150,
+        height = 200,
+        margin = {top: 10, right: 50, left: 50, bottom: 10};
+
+    result.x = d3.scale.linear()
+        .range([0, width])
+        .domain([0.0, 30.0]);
+
+    result.y = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([0.0, 50.0]);
+
+    result.xAxis = d3.svg.axis()
+        .scale(result.x)
+        .orient("bottom")
+        .ticks(30)
+        .tickFormat("")
+        .tickSize(-height, 0, 0);
+    result.yAxis = d3.svg.axis()
+        .scale(result.y)
+        .orient("left")
+        .tickSize(-width, 0, 0);
+
+    result.chart = d3.select(svg)
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    result.chart.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(result.xAxis);
+
+    result.chart.append("g")
+        .attr("class", "y axis")
+        .call(result.yAxis)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Airspeed (m/s)");
+
+    result.chart.append("clipPath")
+        .attr("id", "clip")
+    .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+
+    result.chart.append("path")
+        .attr("class", "airspeed-tas")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "airspeed-ias")
+        .attr('clip-path', 'url(#clip)');
+
+    deviceAirspeedCharts[parseInt(device.id.split("-")[1], 10)] = result;
+}
+
+
+function setupLoadChart(device) {
+    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
+        svg = device.querySelector("svg.load-chart"),
+        container = device.querySelector("div.device-measurements"),
+        width = container.clientWidth - 150,
+        height = 200,
+        margin = {top: 10, right: 50, left: 50, bottom: 10};
+
+    result.x = d3.scale.linear()
+        .range([0, width])
+        .domain([0.0, 30.0]);
+
+    result.y = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([-50.0, 50.0]);
+
+    result.xAxis = d3.svg.axis()
+        .scale(result.x)
+        .orient("bottom")
+        .ticks(30)
+        .tickFormat("")
+        .tickSize(-height, 0, 0);
+    result.yAxis = d3.svg.axis()
+        .scale(result.y)
+        .orient("left")
+        .tickSize(-width, 0, 0);
+
+    result.chart = d3.select(svg)
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    result.chart.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(result.xAxis);
+
+    result.chart.append("g")
+        .attr("class", "y axis")
+        .call(result.yAxis)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Load (N)");
+
+    result.chart.append("clipPath")
+        .attr("id", "clip")
+    .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+
+    result.chart.append("path")
+        .attr("class", "load-n")
+        .attr('clip-path', 'url(#clip)');
+
+    deviceLoadCharts[parseInt(device.id.split("-")[1], 10)] = result;
+}
+
+
 function updateCharts(device, data) {
     var deviceId;
     deviceId = parseInt(device.id.split("-")[1], 10);
     deviceAnimationCallbacks[deviceId] = undefined;
 
-    if (device.classList.classed("device-template-com_thiemar_s2740vc-v1")) {
+    if (device.classList.contains("device-template-com_thiemar_s2740vc-v1")) {
         updateCurrentChart(deviceId, device, data);
         updateSpeedChart(deviceId, device, data);
         updateVoltageTempChart(deviceId, device, data);
         updateAccelPowerChart(deviceId, device, data);
         updateOutputVoltageChart(deviceId, device, data);
-    } else if (device.classList.classed("device-template-com_thiemar_p7000d-v1")) {
+    } else if (device.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         updateAirspeedChart(deviceId, device, data);
-    } else if (device.classList.classed("device-template-com_thiemar_loadsensor-v1")) {
+    } else if (device.classList.contains("device-template-com_thiemar_loadsensor-v1")) {
         updateLoadChart(deviceId, device, data);
     }
 }
@@ -777,109 +962,62 @@ function updateAirspeedChart(deviceId, device, data) {
 }
 
 
+function updateLoadChart(deviceId, device, data) {
+    var load, chart;
+
+    chart = deviceLoadCharts[deviceId];
+
+    /* Load line */
+    load = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y(d.cargo_weight); });
+
+    chart.chart.select(".load-n")
+        .datum(data)
+        .attr("d", load);
+}
+
+
 function updateSetpoint() {
-    var schedule, setpoints = [], escIndex;
-
-    switch (document.querySelector("select[name=command]").value) {
-        case "constant":
-            schedule = [parseFloat(document.querySelector("input[name=constant_setpoint]").value) || 0.0]
-            break;
-        case "step":
-            tLow = parseFloat(document.querySelector("input[name=step_low_time]").value || 0.01);
-            tRise = parseFloat(document.querySelector("input[name=step_rise_time]").value || 0.01);
-            tHigh = parseFloat(document.querySelector("input[name=step_high_time]").value || 0.01);
-            tFall = parseFloat(document.querySelector("input[name=step_fall_time]").value || 0.01);
-            minSetpoint = parseFloat(document.querySelector("input[name=step_setpoint_start]").value || 0.0);
-            maxSetpoint = parseFloat(document.querySelector("input[name=step_setpoint_end]").value || 0.0);
-            tTotal = tLow + tRise + tHigh + tFall;
-
-            schedule = [];
-            for (i = 0; i < tTotal; i += 0.01) {
-                if (i < tLow) {
-                    schedule.push(minSetpoint);
-                } else if (i >= tLow && i < tLow + tRise) {
-                    schedule.push(minSetpoint + (maxSetpoint - minSetpoint) *
-                                                (i - tLow) / tRise);
-                } else if (i >= tLow + tRise && i < tLow + tRise + tHigh) {
-                    schedule.push(maxSetpoint);
-                } else if (i >= tLow + tRise + tHigh) {
-                    schedule.push(maxSetpoint + (minSetpoint - maxSetpoint) *
-                                                (i - tLow - tRise - tHigh) /
-                                                tFall);
-                }
-            }
-            break;
-        case "sine":
-            minSetpoint = parseFloat(document.querySelector("input[name=sine_setpoint_start]").value || 0.0);
-            maxSetpoint = parseFloat(document.querySelector("input[name=sine_setpoint_end]").value || 0.0);
-            minFreq = parseFloat(document.querySelector("input[name=sine_frequency]").value || 1.0);
-            tTotal = 1.0 / minFreq;
-
-            schedule = [];
-            for (i = 0, p = 0, d = 2.0 * Math.PI * minFreq / 100.0;
-                    i < tTotal; i += 0.01) {
-                schedule.push(minSetpoint + (maxSetpoint - minSetpoint) *
-                                            (0.5 * (1.0 + Math.sin(p))));
-                p += d;
-            }
-            break;
-        case "sweep":
-            minSetpoint = parseFloat(document.querySelector("input[name=sweep_setpoint_start]").value || 0.0);
-            maxSetpoint = parseFloat(document.querySelector("input[name=sweep_setpoint_end]").value || 0.0);
-            minFreq = parseFloat(document.querySelector("input[name=sweep_frequency_start]").value || 1.0);
-            maxFreq = parseFloat(document.querySelector("input[name=sweep_frequency_end]").value || 1.0);
-            tTotal = parseFloat(document.querySelector("input[name=sweep_rise_time]").value || 1.0);
-
-            schedule = [];
-            for (i = 0, p = 0, f = minFreq, d = 2.0 * Math.PI * f / 100.0;
-                    i < tTotal * 0.5; i += 0.01) {
-                schedule.push(minSetpoint + (maxSetpoint - minSetpoint) *
-                                            (0.5 * (1.0 + Math.sin(p))));
-                p += d;
-                f += (maxFreq - minFreq) / (100.0 * tTotal * 0.5);
-                d = 2.0 * Math.PI * f / 100.0;
-            }
-            for (f = maxFreq, d = 2.0 * Math.PI * f / 100.0;
-                    i < tTotal; i += 0.01) {
-                schedule.push(minSetpoint + (maxSetpoint - minSetpoint) *
-                                            (0.5 * (1.0 + Math.sin(p))));
-                p += d;
-                f += (minFreq - maxFreq) / (100.0 * tTotal * 0.5);
-                d = 2.0 * Math.PI * f / 100.0;
-            }
-
-            break;
-    }
-
-    escIndex = document.querySelector("select[name=esc_index]").selectedIndex;
+    var rpmSetpoints = [], rawSetpoints = [],
+        time = (new Date()).valueOf() * 0.001,  /* seconds */
+        maxRpmIdx = -1, maxRawIdx = -1;
 
     for (var i = 0; i < 16; i++) {
-        setpoints.push(0.0);
-    }
-    setpoints[escIndex] = schedule[0] || 0.0;
-
-    if (document.querySelector("select[name='mode']").selectedIndex === 0) {
-        /* Rescale setpoints to use the full duty cycle range */
-        for (var i = 0; i < 16; i++) {
-            setpoints[i] = parseInt(setpoints[i] * (8191.0 / 100.0), 10);
+        if (escRpmSetpointFunctions[i]) {
+            rpmSetpoints.push(parseInt(escRpmSetpointFunctions[i](time), 10));
+            rawSetpoints.push(0.0);
+            maxRpmIdx = i;
+        } else if (escRawSetpointFunctions[i]) {
+            rpmSetpoints.push(0.0);
+            rawSetpoints.push(parseInt(escRawSetpointFunctions[i](time) *
+                                       (8191.0 / 100.0), 10));
+            maxRawIdx = i;
+        } else {
+            rpmSetpoints.push(0.0);
+            rawSetpoints.push(0.0);
         }
+    }
 
-        ws.send(JSON.stringify({
-            datatype: "uavcan.equipment.esc.RawCommand",
-            payload: {
-                cmd: setpoints
-            }
-        }));
-    } else {
+    if (maxRpmIdx >= 0) {
         ws.send(JSON.stringify({
             datatype: "uavcan.equipment.esc.RPMCommand",
             payload: {
-                rpm: setpoints
+                rpm: rpmSetpoints.slice(0, maxRpmIdx + 1)
             }
         }));
     }
 
+    if (maxRawIdx >= 0) {
+        ws.send(JSON.stringify({
+            datatype: "uavcan.equipment.esc.RawCommand",
+            payload: {
+                cmd: rawSetpoints.slice(0, maxRawIdx + 1)
+            }
+        }));
+    }
 }
+
 
 function selectAncestor(elem, selector) {
     elem = elem.parentNode;
@@ -892,6 +1030,7 @@ function selectAncestor(elem, selector) {
     }
     return null;
 }
+
 
 function setupEventListeners() {
     var content;
@@ -915,9 +1054,8 @@ function setupEventListeners() {
                 }
             }));
         } else if (event.target.name == "command") {
-            nodeUi = event.target.parentElement.parentElement.parentElement
-                                 .parentElement.parentElement;
-            document.querySelectorAll("fieldset.command-params label")
+            escUi = event.target.parentElement.parentElement.parentElement;
+            escUi.querySelectorAll("label.command")
                     .forEach(function(elem) {
                 if (elem.classList.contains("command-" + event.target.value)) {
                     elem.classList.remove("hidden");
@@ -929,12 +1067,11 @@ function setupEventListeners() {
     });
 
     content.addEventListener("click", function(event) {
-        var nodeUi;
-
-        nodeUi = event.target.parentElement.parentElement.parentElement
-                             .parentElement;
+        var nodeUi, escUi, escIndex, func, commandMode;
 
         if (event.target.classList.contains("apply-configuration")) {
+            nodeUi = event.target.parentElement.parentElement.parentElement
+                                 .parentElement;
             ws.send(JSON.stringify({
                 node_id: parseInt(nodeUi.id.split("-")[1], 10),
                 datatype: "uavcan.protocol.param.ExecuteOpcode",
@@ -945,33 +1082,53 @@ function setupEventListeners() {
                 datatype: "uavcan.protocol.RestartNode",
                 payload: {magic_number: 0xACCE551B1E}
             }));
-        } else if (event.target.classList.contains("esc-start")) {
-            nodeUi.querySelectorAll("input, select").forEach(function(elem) {
-                if (elem.name == "stop" || elem.name == "beep") {
-                    elem.disabled = false;
-                } else {
-                    elem.disabled = true;
-                }
-            });
 
-            setpointTimer = setInterval(updateSetpoint, 100);
-        } else if (event.target.classList.contains("esc-stop")) {
-            nodeUi.querySelectorAll("input, select").forEach(function(elem) {
-                if (elem.name == "stop") {
-                    elem.disabled = true;
-                } else {
-                    elem.disabled = false;
-                }
-            });
+            event.stopPropagation();
+        } else if (event.target.classList.contains("esc-startstop")) {
+            escUi = event.target.parentElement.parentElement.parentElement;
+            escIndex = parseInt(escUi.id.split("-")[2], 10);
 
-            clearInterval(setpointTimer);
-            setpointTimer = null;
+            if (event.target.value == "Start") {
+                escUi.querySelectorAll("input, select").forEach(function(elem) {
+                    elem.disabled = elem != event.target;
+                });
+
+                /*
+                Freeze the setpoint command data and add it to the setpoint
+                function array
+                */
+                commandMode = escUi.querySelector("select[name=mode]").value;
+                func = makeEscSetpointFunction((new Date()).valueOf() * 0.001,
+                                               escUi);
+
+                if (commandMode == "raw") {
+                    escRpmSetpointFunctions[escIndex] = null;
+                    escRawSetpointFunctions[escIndex] = func;
+                } else if (commandMode == "rpm") {
+                    escRpmSetpointFunctions[escIndex] = func;
+                    escRawSetpointFunctions[escIndex] = null;
+                }
+
+                event.target.value = "Stop";
+            } else if (event.target.value == "Stop") {
+                escUi.querySelectorAll("input, select").forEach(function(elem) {
+                    elem.disabled = false;
+                });
+
+                event.target.value = "Start";
+                escRpmSetpointFunctions[escIndex] =
+                    escRawSetpointFunctions[escIndex] = null;
+            }
+
+            event.stopPropagation();
         } else if (event.target.classList.contains("esc-beep")) {
             ws.send(JSON.stringify({
                 //datatype: "uavcan.equipment.indication.BeepCommand",
                 //payload: {duration: 0.5, frequency: 440.0}
                 audio: 1
             }));
+
+            event.stopPropagation();
         } /* else if (nodeUi = selectAncestor(event.target, ".device-header")) {
             nodeUi.classList.toggle("collapsed");
             nodeUi.parentElement.querySelector(".device-detail")
@@ -983,3 +1140,94 @@ function setupEventListeners() {
 connect();
 setupEventListeners();
 
+
+for (var i = 0; i < 16; i++) {
+    escRpmSetpointFunctions.push(null);
+    escRawSetpointFunctions.push(null);
+}
+setInterval(updateSetpoint, 50);
+
+
+function makeConstantFunction(tStart, value) {
+    return function(t) { return value; }
+}
+
+
+function makeStepFunction(tStart, tLow, tRise, tHigh, tFall, minSetpoint, maxSetpoint) {
+    return function(t) {
+        var tTot = tLow + tRise + tHigh + tFall,
+            tDelta = (t - tStart) % tTot,
+            interp;
+
+        if (tDelta <= tLow) {
+            return minSetpoint;
+        } else if (tDelta <= tLow + tRise) {
+            interp = Math.min(1.0, (tDelta - tLow) / tRise);
+            return minSetpoint + interp * (maxSetpoint - minSetpoint);
+        } else if (tDelta <= tLow + tRise + tHigh) {
+            return maxSetpoint;
+        } else {
+            interp = Math.min(1.0, (tDelta - tLow - tRise - tHigh) / tFall);
+            return maxSetpoint + interp * (minSetpoint - maxSetpoint);
+        }
+    };
+}
+
+
+function makeSineFunction(tStart, freq, minSetpoint, maxSetpoint) {
+    return function(t) {
+        var phase = 2.0 * Math.PI * (t - tStart) * freq;
+
+        return minSetpoint + (maxSetpoint - minSetpoint) * 0.5 *
+                             (1.0 + Math.sin(phase));
+    };
+}
+
+
+function makeSweepFunction(tStart, tSweep, minFreq, maxFreq, minSetpoint, maxSetpoint) {
+    return function(t) {
+        var t = (t - tStart) % (2.0 * tSweep),
+            delta = 1.0 - Math.abs(1.0 - t / tSweep), /* 0-1-0 over t = 0-tSweep-tSweep*2 */
+            phase = 2.0 * Math.PI * t *
+                    (minFreq + (maxFreq - minFreq) * delta / 2.0);
+
+        return minSetpoint + (maxSetpoint - minSetpoint) * 0.5 *
+                             (1.0 + Math.sin(phase));
+    };
+}
+
+
+function makeEscSetpointFunction(tStart, escUi) {
+    var commandType = escUi.querySelector("select[name=command]").value;
+
+    if (commandType == "constant") {
+        var setpoint = parseFloat(escUi.querySelector("input[name=constant_setpoint]").value) || 0.0;
+
+        return makeConstantFunction(tStart, setpoint);
+    } else if (commandType == "step") {
+        var tLow = parseFloat(escUi.querySelector("input[name=step_low_time]").value || 0.05),
+            tRise = parseFloat(escUi.querySelector("input[name=step_rise_time]").value || 0.05),
+            tHigh = parseFloat(escUi.querySelector("input[name=step_high_time]").value || 0.05),
+            tFall = parseFloat(escUi.querySelector("input[name=step_fall_time]").value || 0.05),
+            minSetpoint = parseFloat(escUi.querySelector("input[name=step_setpoint_start]").value || 0.0),
+            maxSetpoint = parseFloat(escUi.querySelector("input[name=step_setpoint_end]").value || 0.0);
+
+        return makeStepFunction(tStart, tLow, tRise, tHigh, tFall, minSetpoint, maxSetpoint);
+    } else if (commandType == "sine") {
+        var minSetpoint = parseFloat(escUi.querySelector("input[name=sine_setpoint_start]").value || 0.0),
+            maxSetpoint = parseFloat(escUi.querySelector("input[name=sine_setpoint_end]").value || 0.0),
+            freq = parseFloat(escUi.querySelector("input[name=sine_frequency]").value || 1.0);
+
+        return makeSineFunction(tStart, freq, minSetpoint, maxSetpoint);
+    } else if (commandType == "sweep") {
+        var minSetpoint = parseFloat(escUi.querySelector("input[name=sweep_setpoint_start]").value || 0.0),
+            maxSetpoint = parseFloat(escUi.querySelector("input[name=sweep_setpoint_end]").value || 0.0),
+            minFreq = parseFloat(escUi.querySelector("input[name=sweep_frequency_start]").value || 1.0),
+            maxFreq = parseFloat(escUi.querySelector("input[name=sweep_frequency_end]").value || 1.0),
+            tSweep = parseFloat(escUi.querySelector("input[name=sweep_rise_time]").value || 1.0);
+
+        return makeSweepFunction(tStart, tSweep, minFreq, maxFreq, minSetpoint, maxSetpoint);
+    } else {
+        return null;
+    }
+}

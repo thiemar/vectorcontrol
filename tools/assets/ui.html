@@ -182,6 +182,13 @@ SOFTWARE.
             shape-rendering: smoothEdges;
         }
 
+        .load-n {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: red;
+            shape-rendering: smoothEdges;
+        }
+
         .grid .tick {
             stroke: black;
             stroke-width: 0.5px;
@@ -363,6 +370,10 @@ SOFTWARE.
             display: block;
             text-align: left;
         }
+
+        #controls input {
+            width: 80px;
+        }
     </style>
     <title>UAVCAN Device Management</title>
 </head>
@@ -379,37 +390,20 @@ SOFTWARE.
     <div class="device" id="controls">
         <div class="device-header">
             <div class="device-info">
-                <form class="control" action="" method="post">
-                    <h3>Setpoint</h3>
-
+                <form id="control-esc-template" class="control hidden" action="" method="post">
                     <fieldset>
                         <label>
-                            <span>ESC index</span>
-                            <select name="esc_index">
-                                <option>0</option>
-                                <option>1</option>
-                                <option>2</option>
-                                <option>3</option>
-                                <option>4</option>
-                                <option>5</option>
-                                <option>6</option>
-                                <option>7</option>
-                                <option>8</option>
-                                <option>9</option>
-                                <option>10</option>
-                                <option>11</option>
-                                <option>12</option>
-                                <option>13</option>
-                                <option>14</option>
-                                <option>15</option>
-                            </select>
+                            <span class="esc-index">ESC 0</span>
+                            <input type="button" class="esc-startstop" name="startstop" value="Start">
+
+                            <!-- <input type="button" class="esc-beep" name="beep" value="Beep"> -->
                         </label>
 
                         <label>
                             <span>Control mode</span>
                             <select name="mode">
-                                <option>Power (W)</option>
-                                <option>Speed (rpm)</option>
+                                <option value="raw">Power (%)</option>
+                                <option value="rpm">Speed (rpm)</option>
                             </select>
                         </label>
 
@@ -423,77 +417,70 @@ SOFTWARE.
                             </select>
                         </label>
 
-                        <label><input type="button" class="esc-start" name="start" value="Start"></label>
-                        <label><input type="button" class="esc-stop" name="stop" value="Stop" disabled="disabled"></label>
-                        <label><input type="button" class="esc-beep" name="beep" value="Beep"></label>
-                    </fieldset>
-
-                    <fieldset class="command-params">
-                        <label class="command-constant">
+                        <label class="command command-constant">
                             <span>Setpoint</span>
                             <input name="constant_setpoint" class="setpoint" type="number">
                         </label>
 
-                        <label class="command-step hidden">
+                        <label class="command command-step hidden">
                             <span>From setpoint</span>
                             <input name="step_setpoint_start" class="setpoint" type="number">
                         </label>
-                        <label class="command-step hidden">
+                        <label class="command command-step hidden">
                             <span>To setpoint</span>
                             <input name="step_setpoint_end" class="setpoint" type="number">
                         </label>
-                        <label class="command-step hidden">
+                        <label class="command command-step hidden">
                             <span>Low time (s)</span>
                             <input name="step_low_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
                         </label>
-                        <label class="command-step hidden">
+                        <label class="command command-step hidden">
                             <span>Rise time (s)</span>
                             <input name="step_rise_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
                         </label>
-                        <label class="command-step hidden">
+                        <label class="command command-step hidden">
                             <span>High time (s)</span>
                             <input name="step_high_time" class="setpoint" type="number" min="0.1" max="10.0" step="0.1">
                         </label>
-                        <label class="command-step hidden">
+                        <label class="command command-step hidden">
                             <span>Fall time (s)</span>
                             <input name="step_fall_time" class="setpoint" type="number" min="0.01" max="1.0" step="0.01">
                         </label>
 
-                        <label class="command-sine hidden">
+                        <label class="command command-sine hidden">
                             <span>From setpoint</span>
                             <input name="sine_setpoint_start" class="setpoint" type="number">
                         </label>
-                        <label class="command-sine hidden">
+                        <label class="command command-sine hidden">
                             <span>To setpoint</span>
                             <input name="sine_setpoint_end" class="setpoint" type="number">
                         </label>
-                        <label class="command-sine hidden">
+                        <label class="command command-sine hidden">
                             <span>Frequency (Hz)</span>
                             <input name="sine_frequency" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
                         </label>
 
-                        <label class="command-sweep hidden">
+                        <label class="command command-sweep hidden">
                             <span>From setpoint</span>
                             <input name="sweep_setpoint_start" class="setpoint" type="number">
                         </label>
-                        <label class="command-sweep hidden">
+                        <label class="command command-sweep hidden">
                             <span>To setpoint</span>
                             <input name="sweep_setpoint_end" class="setpoint" type="number">
                         </label>
-                        <label class="command-sweep hidden">
+                        <label class="command command-sweep hidden">
                             <span>From frequency (Hz)</span>
                             <input name="sweep_frequency_start" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
                         </label>
-                        <label class="command-sweep hidden">
+                        <label class="command command-sweep hidden">
                             <span>To frequency (Hz)</span>
                             <input name="sweep_frequency_end" class="setpoint" type="number" min="0.25" max="25.0" step="0.25">
                         </label>
-                        <label class="command-sweep hidden">
+                        <label class="command command-sweep hidden">
                             <span>Sweep rise time (s)</span>
                             <input name="sweep_rise_time" class="setpoint" type="number" min="1.0" max="60.0" step="1.0">
                         </label>
                     </fieldset>
-
                 </form>
             </div>
         </div>
@@ -692,6 +679,17 @@ SOFTWARE.
         <div class="device-detail">
             <div class="device-configuration">
                 <form class="configuration" action="" method="post">
+                    <h3>Sensor parameters</h3>
+
+                    <label>
+                        <span>Sensor offset (lsb)</span>
+                        <input name="sensor_offset" class="configuration" type="number" min="-8388608" max="8388607" step="1">
+                    </label>
+                    <label>
+                        <span>Sensor scale (mN/lsb)</span>
+                        <input name="sensor_scale" class="configuration" type="number" min="0.001" max="1000" step="0.001">
+                    </label>
+
                     <h3>UAVCAN parameters</h3>
 
                     <label>
@@ -700,7 +698,7 @@ SOFTWARE.
                     </label>
                     <label>
                         <span>Hardpoint index</span>
-                        <input name="uavcan.id-uavcan.equipment.hardpoint-hardpoint_id" class="configuration" type="number" min="0" max="255" step="1">
+                        <input name="uavcan.id-uavcan.equipment.hardpoint-hardpoint_id" class="configuration" type="number" min="0" max="127" step="1">
                     </label>
 
                     <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
