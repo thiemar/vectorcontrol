@@ -348,7 +348,7 @@ class UAVCANEncoder(json.JSONEncoder):
                 try:
                     return obj.decode()
                 except Exception:
-                    return obj.to_bytes()
+                    return binascii.hexlify(obj.to_bytes())
             else:
                 return list(obj)
         elif isinstance(obj, uavcan.transport.PrimitiveValue):
@@ -813,8 +813,8 @@ if __name__ == "__main__":
         send_all(response.type.get_normalized_definition(), node_id, response)
 
         # Schedule a parameter fetch if the node is in operating mode
-        #if not response.status.mode:
-        ioloop.add_callback(enumerate_node_params, this_node, node_id)
+        if not response.status.mode:
+            ioloop.add_callback(enumerate_node_params, this_node, node_id)
 
         # Check the supplied directory for updated firmware
         if not firmware_dir:

@@ -185,7 +185,8 @@ function createNodeUi(message) {
     nodeUi.classList.remove("hidden");
     content.appendChild(nodeUi);
 
-    if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1")) {
+    if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
+            nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         setupSpeedChart(nodeUi);
         setupCurrentChart(nodeUi);
         setupVoltageTempChart(nodeUi);
@@ -761,7 +762,8 @@ function updateCharts(device, data) {
     deviceId = parseInt(device.id.split("-")[1], 10);
     deviceAnimationCallbacks[deviceId] = undefined;
 
-    if (device.classList.contains("device-template-com_thiemar_s2740vc-v1")) {
+    if (device.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
+            device.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         updateCurrentChart(deviceId, device, data);
         updateSpeedChart(deviceId, device, data);
         updateVoltageTempChart(deviceId, device, data);
