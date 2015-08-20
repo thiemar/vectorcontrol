@@ -83,7 +83,7 @@ class FirmwareImage(object):
         if getattr(path_or_file, "read", None):
             self._file = path_or_file
             self._do_close = False
-            self._padding = 0
+            self._padding = 4
         else:
             self._file = open(path_or_file, mode + "b")
             self._do_close = True
@@ -116,8 +116,8 @@ class FirmwareImage(object):
             if getattr(self._file, "seek", None):
                 self._file.seek(0)
             self._file.write(self._contents.getvalue())
-            if  self._padding:
-                self._file.write(b'\xff' * self._padding)
+            if self.padding:
+                self._file.write(b'\xff' * self.padding)
 
         if self._do_close:
             self._file.close()
@@ -151,11 +151,12 @@ class FirmwareImage(object):
 
         # Calculate the image CRC with the image_crc field in the app
         # descriptor zeroed out.
+        length = self.length  # force _pad_bytes to be calculated
         crc_offset = self.app_descriptor_offset + len(AppDescriptor.SIGNATURE)
         content = bytearray(self._contents.getvalue())
         content[crc_offset:crc_offset + 8] = bytearray("\x00" * 8)
-        if  self._padding:
-            content += bytearray("\xff" * self._padding)
+        if self.padding:
+            content += bytearray("\xff" * self.padding)
         val = MASK
         for byte in content:
             val ^= (byte << 56) & MASK
@@ -169,22 +170,24 @@ class FirmwareImage(object):
 
     @property
     def padding(self):
-        return self._padding
+        _ = self.length  # Force _pad_bytes to be calculated
+        return self._pad_bytes
 
     @property
     def length(self):
-        if not self._length:
-            # Find the length of the file by seeking to the end and getting
-            # the offset
-            prev_offset = self._contents.tell()
-            self._contents.seek(0, os.SEEK_END)
-            self._length = self._contents.tell()
-            if self._padding:
-                fill = self._length % self._padding
-                if fill:
-                    self._length += fill
-                self._padding = fill
-            self._contents.seek(prev_offset)
+        # Find the length of the file by seeking to the end and getting
+        # the offset
+        prev_offset = self._contents.tell()
+        self._contents.seek(0, os.SEEK_END)
+        self._length = self._contents.tell()
+        if self._padding and self._length % self._padding:
+            fill = self._padding - (self._length % self._padding)
+            if fill:
+                self._length += fill
+            self._pad_bytes = fill
+        else:
+            self._pad_bytes = 0
+        self._contents.seek(prev_offset)
 
         return self._length
 
@@ -209,6 +212,8 @@ class FirmwareImage(object):
                     break
             # Go back to the previous position
             self._contents.seek(prev_offset)
+            if not self._descriptor_offset:
+                raise Exception("AppDescriptor not found")
 
         return self._descriptor_offset
 
