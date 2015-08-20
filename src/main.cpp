@@ -438,8 +438,8 @@ static void __attribute__((noreturn)) node_run(
              foc_status_time, node_status_interval, esc_status_interval,
              foc_status_interval, last_tx_time;
     uint8_t filter_id, foc_status_transfer_id, node_status_transfer_id,
-            esc_status_transfer_id, esc_index, message[8];
-    enum hal_status_t status;
+            esc_status_transfer_id, esc_index, message[8],
+            broadcast_filter_id, service_filter_id;
     enum controller_mode_t mode;
     float setpoint, value, is_a, vs_v, v_dq_v[2];
     bool got_setpoint, param_valid, wants_bootloader_restart;
@@ -449,6 +449,8 @@ static void __attribute__((noreturn)) node_run(
 
     foc_status_transfer_id = node_status_transfer_id =
         esc_status_transfer_id = 0u;
+
+    broadcast_filter_id = service_filter_id = 0xFFu;
 
     foc_status_time = node_status_time = esc_status_time = last_tx_time = 0u;
 
@@ -488,33 +490,35 @@ static void __attribute__((noreturn)) node_run(
         /*
         Check for UAVCAN commands (FIFO 0) -- these are all broadcasts
         */
-        do {
-            status = hal_receive_can_message(0u, &filter_id, &message_id,
-                                         &length, message);
+        while (hal_receive_can_message(0u, &filter_id, &message_id, &length, message)) {
+            uavcan::TransferCRC crc;
             /* Filter IDs are per-FIFO, so convert this back to the bank index */
             filter_id = (uint8_t)(filter_id + UAVCAN_EQUIPMENT_ESC_RAWCOMMAND);
-            if (status == HAL_STATUS_OK) {
-                uavcan::TransferCRC crc;
-                switch (filter_id) {
-                    case UAVCAN_EQUIPMENT_ESC_RAWCOMMAND:
-                        crc = uavcan::equipment::esc::RawCommand::getDataTypeSignature().toTransferCRC();
-                        break;
-                    case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND:
-                        crc = uavcan::equipment::esc::RPMCommand::getDataTypeSignature().toTransferCRC();
-                        break;
-                    case UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND:
-                        crc = uavcan::equipment::indication::BeepCommand::getDataTypeSignature().toTransferCRC();
-                        break;
-                    default:
-                        break;
-                }
-                broadcast_manager.receive_frame(current_time, message_id, crc,
-                                                length, message);
+
+            switch (filter_id) {
+                case UAVCAN_EQUIPMENT_ESC_RAWCOMMAND:
+                    crc = uavcan::equipment::esc::RawCommand::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND:
+                    crc = uavcan::equipment::esc::RPMCommand::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND:
+                    crc = uavcan::equipment::indication::BeepCommand::getDataTypeSignature().toTransferCRC();
+                    break;
+                default:
+                    break;
             }
-        } while (status == HAL_STATUS_OK && !broadcast_manager.is_rx_done());
+            broadcast_manager.receive_frame(current_time, message_id, crc,
+                                            length, message);
+
+            if (broadcast_manager.is_rx_done()) {
+                broadcast_filter_id = filter_id;
+                break;
+            }
+        }
 
         if (broadcast_manager.is_rx_done()) {
-            if (filter_id == UAVCAN_EQUIPMENT_ESC_RAWCOMMAND &&
+            if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RAWCOMMAND &&
                     broadcast_manager.decode_esc_rawcommand(raw_cmd) &&
                     esc_index < raw_cmd.cmd.size()) {
                 got_setpoint = true;
@@ -523,14 +527,14 @@ static void __attribute__((noreturn)) node_run(
                 setpoint = (float)raw_cmd.cmd[esc_index] * (1.0f / 8191.0f) *
                            (motor_params.max_voltage_v *
                             motor_params.max_current_a);
-            } else if (filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
+            } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
                         broadcast_manager.decode_esc_rpmcommand(rpm_cmd) &&
                         esc_index < rpm_cmd.rpm.size()) {
                 got_setpoint = true;
                 mode = CONTROLLER_SPEED;
                 setpoint = (float)rpm_cmd.rpm[esc_index] * (1.0f / 60.0f) *
                           (float)motor_params.num_poles * (float)M_PI;
-            } else if (filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
+            } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
                        broadcast_manager.decode_indication_beepcommand(beep_cmd)) {
                 /* Set up audio generation -- aim for 0.5 A */
                 g_audio_state.off_time =
@@ -542,47 +546,50 @@ static void __attribute__((noreturn)) node_run(
                     2.0f * motor_params.rs_r,
                     0.5f * std::min((float)g_vbus_v, motor_params.max_voltage_v));
             }
+
+            broadcast_manager.receive_acknowledge();
         }
 
         /*
         Check for UAVCAN service requests (FIFO 1) -- only process if the
         first byte of the data is the local node ID
         */
-        do {
-            status = hal_receive_can_message(1u, &filter_id, &message_id,
-                                             &length, message);
-            if (status == HAL_STATUS_OK) {
-                uavcan::TransferCRC crc;
-                switch (filter_id) {
-                    case UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE:
-                        crc = uavcan::protocol::param::ExecuteOpcode::getDataTypeSignature().toTransferCRC();
-                        break;
-                    case UAVCAN_PROTOCOL_PARAM_GETSET:
-                        crc = uavcan::protocol::param::GetSet::getDataTypeSignature().toTransferCRC();
-                        break;
-                    case UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE:
-                        crc = uavcan::protocol::file::BeginFirmwareUpdate::getDataTypeSignature().toTransferCRC();
-                        break;
-                    case UAVCAN_PROTOCOL_GETNODEINFO:
-                        crc = uavcan::protocol::GetNodeInfo::getDataTypeSignature().toTransferCRC();
-                        break;
-                    case UAVCAN_PROTOCOL_RESTARTNODE:
-                        crc = uavcan::protocol::RestartNode::getDataTypeSignature().toTransferCRC();
-                        break;
-                    default:
-                        break;
-                }
-                service_manager.receive_frame(current_time, message_id, crc,
-                                              length, message);
+        while (hal_receive_can_message(1u, &filter_id, &message_id, &length, message)) {
+            uavcan::TransferCRC crc;
+            switch (filter_id) {
+                case UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE:
+                    crc = uavcan::protocol::param::ExecuteOpcode::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_PROTOCOL_PARAM_GETSET:
+                    crc = uavcan::protocol::param::GetSet::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE:
+                    crc = uavcan::protocol::file::BeginFirmwareUpdate::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_PROTOCOL_GETNODEINFO:
+                    crc = uavcan::protocol::GetNodeInfo::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_PROTOCOL_RESTARTNODE:
+                    crc = uavcan::protocol::RestartNode::getDataTypeSignature().toTransferCRC();
+                    break;
+                default:
+                    break;
             }
-        } while (status == HAL_STATUS_OK && !service_manager.is_rx_done());
+            service_manager.receive_frame(current_time, message_id, crc,
+                                          length, message);
+
+            if (service_manager.is_rx_done()) {
+                service_filter_id = filter_id;
+                break;
+            }
+        }
 
         /*
         Don't process service requests until the last service response is
         completely sent, to avoid overwriting the TX buffer.
         */
         if (service_manager.is_rx_done() && service_manager.is_tx_done()) {
-            if (filter_id == UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE &&
+            if (service_filter_id == UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE &&
                     service_manager.decode_executeopcode_request(xo_req)) {
                 /*
                 Return OK if the opcode is understood and the controller is
@@ -608,8 +615,8 @@ static void __attribute__((noreturn)) node_run(
                     xo_resp.ok = true;
                 }
                 service_manager.encode_executeopcode_response(xo_resp);
-            } else if (filter_id == UAVCAN_PROTOCOL_PARAM_GETSET &&
-                    service_manager.decode_getset_request(gs_req)) {
+            } else if (service_filter_id == UAVCAN_PROTOCOL_PARAM_GETSET &&
+                       service_manager.decode_getset_request(gs_req)) {
                 uavcan::protocol::param::GetSet::Response resp;
 
                 if (!gs_req.name.empty()) {
@@ -628,7 +635,7 @@ static void __attribute__((noreturn)) node_run(
                                                                value);
                     } else if (param.public_type == PARAM_TYPE_INT && !gs_req.name.empty() &&
                             gs_req.value.is(uavcan::protocol::param::Value::Tag::integer_value)) {
-                        value = (float)gs_req.value.to<uavcan::protocol::param::Value::Tag::integer_value>();
+                        value = (float)((int32_t)gs_req.value.to<uavcan::protocol::param::Value::Tag::integer_value>());
                         configuration.set_param_value_by_index(param.index,
                                                                value);
                     }
@@ -643,15 +650,15 @@ static void __attribute__((noreturn)) node_run(
                         resp.min_value.to<uavcan::protocol::param::NumericValue::Tag::real_value>() = param.min_value;
                         resp.max_value.to<uavcan::protocol::param::NumericValue::Tag::real_value>() = param.max_value;
                     } else if (param.public_type == PARAM_TYPE_INT) {
-                        resp.value.to<uavcan::protocol::param::Value::Tag::integer_value>() = (int64_t)value;
-                        resp.default_value.to<uavcan::protocol::param::Value::Tag::integer_value>() = (int64_t)param.default_value;
-                        resp.min_value.to<uavcan::protocol::param::NumericValue::Tag::integer_value>() = (int64_t)param.min_value;
-                        resp.max_value.to<uavcan::protocol::param::NumericValue::Tag::integer_value>() = (int64_t)param.max_value;
+                        resp.value.to<uavcan::protocol::param::Value::Tag::integer_value>() = (int32_t)value;
+                        resp.default_value.to<uavcan::protocol::param::Value::Tag::integer_value>() = (int32_t)param.default_value;
+                        resp.min_value.to<uavcan::protocol::param::NumericValue::Tag::integer_value>() = (int32_t)param.min_value;
+                        resp.max_value.to<uavcan::protocol::param::NumericValue::Tag::integer_value>() = (int32_t)param.max_value;
                     }
                 }
 
                 service_manager.encode_getset_response(resp);
-            } else if (filter_id == UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE) {
+            } else if (service_filter_id == UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE) {
                 uavcan::protocol::file::BeginFirmwareUpdate::Response resp;
 
                 /*
@@ -666,7 +673,7 @@ static void __attribute__((noreturn)) node_run(
                     resp.error = resp.ERROR_INVALID_MODE;
                 }
                 service_manager.encode_beginfirmwareupdate_response(resp);
-            } else if (filter_id == UAVCAN_PROTOCOL_GETNODEINFO) {
+            } else if (service_filter_id == UAVCAN_PROTOCOL_GETNODEINFO) {
                 uavcan::protocol::GetNodeInfo::Response resp;
 
                 /* Empty request so don't need to decode */
@@ -689,8 +696,8 @@ static void __attribute__((noreturn)) node_run(
                     flash_app_descriptor.vcs_commit;
                 resp.software_version.image_crc =
                     flash_app_descriptor.image_crc;
-                resp.hardware_version.major = 1u;
-                resp.hardware_version.minor = 0u;
+                resp.hardware_version.major = 1;
+                resp.hardware_version.minor = 0;
                 /* Set the unique ID */
                 memset(resp.hardware_version.unique_id.begin(), 0u,
                        resp.hardware_version.unique_id.size());
@@ -700,7 +707,7 @@ static void __attribute__((noreturn)) node_run(
                 resp.name = "com.thiemar.s2740vc-v1";
 
                 service_manager.encode_getnodeinfo_response(resp);
-            } else if (filter_id == UAVCAN_PROTOCOL_RESTARTNODE &&
+            } else if (service_filter_id == UAVCAN_PROTOCOL_RESTARTNODE &&
                     service_manager.decode_restartnode_request(rn_req)) {
                 uavcan::protocol::RestartNode::Response resp;
 
@@ -711,18 +718,20 @@ static void __attribute__((noreturn)) node_run(
                 if (g_controller_state.mode == CONTROLLER_STOPPED &&
                         rn_req.magic_number == rn_req.MAGIC_NUMBER) {
                     resp.ok = true;
-                    hal_restart();
+                    wants_bootloader_restart = true;
                 } else {
                     resp.ok = false;
                 }
                 service_manager.encode_restartnode_response(resp);
             }
+
+            service_manager.receive_acknowledge();
         }
 
         /* Transmit service responses if available */
         if (current_time > last_tx_time + 1u && hal_is_can_ready(1u) &&
                 service_manager.transmit_frame(message_id, length, message)) {
-            (void)hal_transmit_can_message(1u, message_id, length, message);
+            hal_transmit_can_message(1u, message_id, length, message);
             last_tx_time = current_time;
         }
 
@@ -808,7 +817,7 @@ static void __attribute__((noreturn)) node_run(
         /* Transmit broadcast CAN frames if available */
         if (current_time > last_tx_time + 1u && hal_is_can_ready(0u) &&
                 broadcast_manager.transmit_frame(message_id, length, message)) {
-            (void)hal_transmit_can_message(0u, message_id, length, message);
+            hal_transmit_can_message(0u, message_id, length, message);
             last_tx_time = current_time;
         }
 
@@ -818,20 +827,22 @@ static void __attribute__((noreturn)) node_run(
                     std::abs(setpoint) >= motor_params.min_speed_rad_per_s) {
                 g_controller_state.speed_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_SPEED;
+                g_controller_state.last_setpoint_update = current_time;
             } else if (mode == CONTROLLER_POWER &&
                     std::abs(setpoint) >= 1.0f) {
                 g_controller_state.power_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_POWER;
+                g_controller_state.last_setpoint_update = current_time;
             } else if ((g_controller_state.mode == CONTROLLER_STOPPED &&
                         motor_params.idle_speed_rad_per_s > 0.0f) ||
                         g_controller_state.mode == CONTROLLER_IDLING) {
                 g_controller_state.mode = CONTROLLER_IDLING;
                 g_controller_state.speed_setpoint =
                     g_controller_state.power_setpoint = 0.0f;
+                g_controller_state.last_setpoint_update = current_time;
             } else {
-                g_controller_state.mode = CONTROLLER_STOPPING;
+                /* g_controller_state.mode = CONTROLLER_STOPPING; */
             }
-            g_controller_state.last_setpoint_update = current_time;
         }
 
         /*
@@ -839,8 +850,9 @@ static void __attribute__((noreturn)) node_run(
         been sent, and we're otherwise unoccupied.
         */
         if (g_controller_state.mode == CONTROLLER_STOPPED &&
-                broadcast_manager.is_tx_done() &&
-                service_manager.is_tx_done() && wants_bootloader_restart) {
+                broadcast_manager.is_tx_done() && hal_is_can_ready(0u) &&
+                service_manager.is_tx_done() && hal_is_can_ready(1u) &&
+                wants_bootloader_restart) {
             hal_restart();
         }
     }

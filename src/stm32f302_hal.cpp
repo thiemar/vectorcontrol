@@ -1108,7 +1108,7 @@ bool hal_is_can_ready(uint8_t mailbox) {
 }
 
 
-enum hal_status_t hal_transmit_can_message(
+bool hal_transmit_can_message(
     uint8_t mailbox,
     uint32_t message_id,
     size_t length,
@@ -1130,14 +1130,14 @@ enum hal_status_t hal_transmit_can_message(
         CAN1->sTxMailBox[mailbox].TDHR = data[1];
         CAN1->sTxMailBox[mailbox].TIR |= 1u;
 
-        return HAL_STATUS_OK;
+        return true;
     } else {
-        return HAL_STATUS_ERROR;
+        return false;
     }
 }
 
 
-enum hal_status_t hal_receive_can_message(
+bool hal_receive_can_message(
     uint8_t fifo,
     uint8_t *filter_id,
     uint32_t *message_id,
@@ -1152,11 +1152,11 @@ enum hal_status_t hal_receive_can_message(
 
     /* Check if a message is pending */
     if (fifo == 0u && !(CAN1->RF0R & 3u)) {
-        return HAL_STATUS_ERROR;
+        return false;
     } else if (fifo == 1u && !(CAN1->RF1R & 3u)) {
-        return HAL_STATUS_ERROR;
+        return false;
     } else if (fifo > 1u) {
-        return HAL_STATUS_ERROR;
+        return false;
     }
 
     /* If so, process it */
@@ -1177,7 +1177,7 @@ enum hal_status_t hal_receive_can_message(
         message[i] = ((uint8_t*)data)[i];
     }
 
-    return HAL_STATUS_OK;
+    return true;
 }
 
 

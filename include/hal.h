@@ -56,13 +56,13 @@ extern const float hal_control_t_s;
 void hal_reset(void);
 void hal_set_pwm_state(enum hal_pwm_state_t state);
 void hal_set_pwm_reverse(bool reverse);
-enum hal_status_t hal_transmit_can_message(
+bool hal_transmit_can_message(
     uint8_t mailbox,
     uint32_t message_id,
     size_t length,
     const uint8_t *message
 );
-enum hal_status_t hal_receive_can_message(
+bool hal_receive_can_message(
     uint8_t fifo,
     uint8_t *filter_id,
     uint32_t *message_id,

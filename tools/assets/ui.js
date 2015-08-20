@@ -709,7 +709,7 @@ function setupLoadChart(device) {
 
     result.y = d3.scale.linear()
         .range([height, 0.0])
-        .domain([-50.0, 50.0]);
+        .domain([-5.0, 15.0]);
 
     result.xAxis = d3.svg.axis()
         .scale(result.x)
@@ -947,7 +947,7 @@ function updateAirspeedChart(deviceId, device, data) {
 
     chart.chart.select(".airspeed-tas")
         .datum(data.filter(function(d) {
-            return d.datatype == "uavcan.equipment.air_data.TrueAirspeed";
+            return d.true_airspeed !== undefined;
         }))
         .attr("d", airspeed);
 
@@ -958,7 +958,7 @@ function updateAirspeedChart(deviceId, device, data) {
 
     chart.chart.select(".airspeed-ias")
         .datum(data.filter(function(d) {
-            return d.datatype == "uavcan.equipment.air_data.IndicatedAirspeed";
+            return d.indicated_airspeed !== undefined;
         }))
         .attr("d", airspeed);
 }
