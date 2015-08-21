@@ -31,13 +31,15 @@ SOFTWARE.
 
 class StateEstimator {
     struct motor_state_t state_estimate_;
+    float phi_estimate_v_s_per_rad_;
 
     /* Intermediate values */
     float a_; /* 1.0 - R / L * T */
-    float b_; /* phi / L * T */
+    float b_; /* 1.0 / L * T; needs to be multiplied by phi */
     float c_; /* T / L */
     float t_;
     float t_inv_;
+    float rs_r_;
 
     /* Current and speed lowpass filter parameters */
     float i_dq_lpf_coeff_;
@@ -53,11 +55,13 @@ class StateEstimator {
 
 public:
     StateEstimator():
+        phi_estimate_v_s_per_rad_(0.0f),
         a_(0.0f),
         b_(0.0f),
         c_(0.0f),
         t_(0.0f),
         t_inv_(0.0f),
+        rs_r_(0.0f),
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
         next_sin_theta_(0.0f),
@@ -103,25 +107,37 @@ public:
                                next_cos_theta_);
     }
 
-    void set_params(
-        const struct motor_params_t& params,
-        const struct control_params_t& control_params,
+    float get_phi_estimate(void) const {
+        return phi_estimate_v_s_per_rad_;
+    }
+
+    void set_motor_params(
+        float rs_r,
+        float ls_h,
+        float phi_v_s_per_rad,
+        float t_s
+    ) {
+        a_ = 1.0f - rs_r / ls_h * t_s;
+        b_ = 1.0f / ls_h * t_s;
+        c_ = t_s / ls_h;
+        t_ = t_s;
+        t_inv_ = 1.0f / t_s;
+        rs_r_ = rs_r;
+        phi_estimate_v_s_per_rad_ = phi_v_s_per_rad;
+    }
+
+    void set_control_params(
+        float control_bandwidth_hz,
         float t_s
     ) {
         float wb;
-
-        a_ = 1.0f - params.rs_r / params.ls_h * t_s;
-        b_ = params.phi_v_s_per_rad / params.ls_h * t_s;
-        c_ = t_s / params.ls_h;
-        t_ = t_s;
-        t_inv_ = 1.0f / t_s;
 
         /*
         Control parameters -- LPF corner frequency is one decade higher than
         the controller bandwidth; current control bandwidth is one decade
         higher than speed control bandwidth.
         */
-        wb = 2.0f * (float)M_PI * control_params.bandwidth_hz;
+        wb = 2.0f * (float)M_PI * control_bandwidth_hz;
         i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 50.0f);
         angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s);
     }

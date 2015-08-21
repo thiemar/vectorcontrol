@@ -57,17 +57,15 @@ struct motor_params_t {
     float phi_v_s_per_rad; /* speed constant in volt-seconds per radian */
 
     /* Operating limits */
-    float max_voltage_v; /* RMS voltage limit in volts */
     float max_current_a; /* RMS current limit in amps */
-    float max_speed_rad_per_s; /* Electrical angular velocity limit in
-                                  rad/s */
+    float max_voltage_v; /* RMS voltage limit in volts */
+    float accel_voltage_v; /* RMS initial open-loop voltage */
     float min_speed_rad_per_s; /* Minimum controllable electrical angular
                                   velocity in rad/s */
     float idle_speed_rad_per_s; /* Speed to spin at when armed but with zero
                                    setpoint, in rad/s */
-    float spinup_rate_rad_per_s2; /* Rate at which to increase the motor
-                                     speed when starting up. */
-    float accel_current_a; /* Start-up acceleration current in amps */
+    float spinup_rate_rad_per_s2; /* Rate at which to increase the motor speed
+                                     when starting up. */
 
     uint32_t num_poles; /* number of poles */
 
@@ -78,7 +76,6 @@ struct motor_params_t {
 
 struct control_params_t {
     float bandwidth_hz;
-    float max_accel_torque_a;
     float accel_gain;
     float accel_time_s;
 };

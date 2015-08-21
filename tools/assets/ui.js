@@ -806,7 +806,7 @@ function updateCurrentChart(deviceId, device, data) {
     var current, chart, maxCurrent;
 
     chart = deviceCurrentCharts[deviceId];
-    maxCurrent = parseFloat(device.querySelector("input[name=motor_current_limit]").value) || 40.0;
+    maxCurrent = parseFloat(device.querySelector("input[name=motor_i_max]").value) || 40.0;
 
     chart.y.domain([-maxCurrent, maxCurrent]);
     chart.yAxis.scale(chart.y);
@@ -845,7 +845,12 @@ function updateSpeedChart(deviceId, device, data) {
     var speed, chart, maxSpeed;
 
     chart = deviceSpeedCharts[deviceId];
-    maxSpeed = parseFloat(device.querySelector("input[name=motor_rpm_max]").value) || 10000.0;
+    maxSpeed = parseFloat(device.querySelector("input[name=motor_kv]").value) *
+               parseFloat(device.querySelector("input[name=motor_v_max]").value);
+
+    if (isNaN(maxSpeed)) {
+        maxSpeed = 10000.0;
+    }
 
     chart.y.domain([-maxSpeed * 1.1, maxSpeed * 1.1]);
     chart.yAxis.scale(chart.y);
@@ -900,7 +905,7 @@ function updateOutputVoltageChart(deviceId, device, data) {
     var voltage, chart, maxVoltage, consistency;
 
     chart = deviceOutputVoltageCharts[deviceId];
-    maxVoltage = parseFloat(device.querySelector("input[name=motor_voltage_limit]").value) || 27.0;
+    maxVoltage = parseFloat(device.querySelector("input[name=motor_v_max]").value) || 27.0;
 
     chart.y0.domain([-maxVoltage, maxVoltage]);
     chart.yAxis0.scale(chart.y0);

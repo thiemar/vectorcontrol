@@ -186,8 +186,8 @@ public:
         control_power_ = true;
     }
 
-    void set_current_limit_a(float limit) {
-        current_limit_a_ = limit;
+    void set_phi_v_s_per_rad(float phi) {
+        kq0_ = phi;
     }
 
     void set_params(
@@ -195,16 +195,19 @@ public:
         const struct control_params_t& control_params,
         float t_s
     ) {
-        speed_kp_ = 0.01f * control_params.max_accel_torque_a *
-                    control_params.accel_gain;
+        float max_accel_torque;
+
+        max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
+
+        speed_kp_ = 0.01f * max_accel_torque * control_params.accel_gain;
         speed_ki_ = t_s / control_params.accel_time_s;
 
-        power_kp_ = control_params.max_accel_torque_a *
-                    control_params.accel_gain;
+        power_kp_ = max_accel_torque * control_params.accel_gain;
         power_ki_ = speed_ki_;
 
         current_limit_a_ = motor_params.max_current_a;
-        accel_current_limit_a_ = control_params.max_accel_torque_a;
+        accel_current_limit_a_ = std::min(motor_params.max_current_a,
+                                          max_accel_torque);
 
         /*
         Power control term calculation.
@@ -222,7 +225,7 @@ public:
         ir_ = motor_params.rotor_inertia_kg_m2 *
               (2.0f / (float)motor_params.num_poles) *
               (2.0f / (float)motor_params.num_poles);
-        kq0_ = motor_params.phi_v_s_per_rad;
+        set_phi_v_s_per_rad(motor_params.phi_v_s_per_rad);
     }
 
     float __attribute__((optimize("O3")))

@@ -63,14 +63,14 @@ static struct param_t param_config_[NUM_PARAMS] = {
     speeds.
     */
     {PARAM_MOTOR_NUM_POLES, PARAM_TYPE_INT, "motor_num_poles",
-        14.0f, 2.0f, 40.0f},
+        2.0f, 2.0f, 40.0f},
 
     /*
     Motor current limit in amps. This determines the maximum current
     controller setpoint, as well as the maximum allowable current setpoint
     slew rate.
     */
-    {PARAM_MOTOR_CURRENT_LIMIT, PARAM_TYPE_FLOAT, "motor_current_limit",
+    {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "motor_i_max",
         10.0f, 1.0f, 40.0f},
 
     /*
@@ -81,15 +81,15 @@ static struct param_t param_config_[NUM_PARAMS] = {
     determine the actual motor voltage limit, divide the motor's rated maximum
     power by the motor current limit.
     */
-    {PARAM_MOTOR_VOLTAGE_LIMIT, PARAM_TYPE_FLOAT, "motor_voltage_limit",
+    {PARAM_MOTOR_V_MAX, PARAM_TYPE_FLOAT, "motor_v_max",
         14.8f, 0.5f, 27.0f},
 
     /*
-    Motor maximum rated RPM. This limits the upper end of the PWM setpoint
-    range if it's lower than KV multiplied by Vbus.
+    Acceleration voltage limit in volts. In conjunction with the motor's
+    resistance, determines the maximum acceleration torque.
     */
-    {PARAM_MOTOR_RPM_MAX, PARAM_TYPE_INT, "motor_rpm_max",
-        20000.0f, 500.0f, 40000.0f},
+    {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "motor_v_accel",
+        0.3f, 0.01f, 1.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
@@ -114,25 +114,12 @@ static struct param_t param_config_[NUM_PARAMS] = {
         5e-5f, 10e-6f, 10e-3f},
 
     /*
-    Acceleration torque limit in amps. Determines the maximum difference
-    between the torque setpoint and the load torque, and therefore the amount
-    of torque available for acceleration.
-
-    This is a critical factor in smooth start-up into high-inertia systems. If
-    start-up is rough, lower this parameter and/or control_accel_gain. If
-    controller response is too slow, increase this parameter and/or
-    control_accel_gain.
-    */
-    {PARAM_CONTROL_ACCEL_TORQUE_MAX, PARAM_TYPE_FLOAT, "control_accel_torque_max",
-        1.0f, 0.1f, 40.0f},
-
-    /*
     Speed controller acceleration gain. A gain of 0.0 results in no torque
     output proportional to the required acceleration, whiel a gain of 1.0
     results in a full-scale acceleration torque output for an error of
     100 rad/s electrical.
     */
-    {PARAM_CONTROL_ACCEL_GAIN, PARAM_TYPE_FLOAT, "control_accel_gain",
+    {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "ctl_p_gain",
         0.4f, 0.0f, 1.0f},
 
     /*
@@ -140,27 +127,26 @@ static struct param_t param_config_[NUM_PARAMS] = {
     target time to accelerate from near zero to full throttle, subject to
     the overall current limits and load inertia.
     */
-    {PARAM_CONTROL_ACCEL_TIME, PARAM_TYPE_FLOAT, "control_accel_time",
+    {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "ctl_i_time",
         0.3f, 0.01f, 1.0f},
 
     /*
     If non-zero, the motor will rotate at this speed in rpm when any command
     is received with a setpoint below the minimum.
     */
-    {PARAM_CONTROL_IDLE_SPEED, PARAM_TYPE_FLOAT, "control_idle_speed",
+    {PARAM_CONTROL_RPM_IDLE, PARAM_TYPE_FLOAT, "ctl_rpm_idle",
         30.0f, 0.0f, 200.0f},
 
     /*
-    The time taken to transition from control_idle_speed to motor's minimum
-    speed--which is (Kv * 1.0) rpm--when a valid setpoint is received.
+    The rate at which the motor accelerates during open-loop mode, in rpm/s.
     */
-    {PARAM_CONTROL_SPINUP_TIME, PARAM_TYPE_FLOAT, "control_spinup_time",
-        3.0f, 0.1f, 10.0f},
+    {PARAM_CONTROL_SPINUP_RATE, PARAM_TYPE_FLOAT, "ctl_spinup_rate",
+        500.0f, 100.0f, 10000.0f},
 
     /*
     Rotation direction of the motor: 0 is normal, 1 is reverse.
     */
-    {PARAM_CONTROL_DIRECTION, PARAM_TYPE_INT, "control_direction",
+    {PARAM_CONTROL_DIRECTION, PARAM_TYPE_INT, "ctl_dir",
         0.0f, 0.0f, 1.0f},
 
     /*
@@ -229,18 +215,15 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
         _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV], params.num_poles);
     params.rotor_inertia_kg_m2 = params_[PARAM_MOTOR_INERTIA];
 
-    params.accel_current_a = params_[PARAM_CONTROL_ACCEL_TORQUE_MAX];
-    params.max_current_a = params_[PARAM_MOTOR_CURRENT_LIMIT];
-    params.max_voltage_v = params_[PARAM_MOTOR_VOLTAGE_LIMIT];
+    params.accel_voltage_v = params_[PARAM_MOTOR_V_ACCEL];
+    params.max_current_a = params_[PARAM_MOTOR_I_MAX];
+    params.max_voltage_v = params_[PARAM_MOTOR_V_MAX];
     params.min_speed_rad_per_s = 1.0f / params.phi_v_s_per_rad;
-    params.max_speed_rad_per_s =
-        _rad_per_s_from_rpm(params_[PARAM_MOTOR_RPM_MAX], params.num_poles);
     params.idle_speed_rad_per_s =
-        _rad_per_s_from_rpm(params_[PARAM_CONTROL_IDLE_SPEED],
+        _rad_per_s_from_rpm(params_[PARAM_CONTROL_RPM_IDLE],
                             params.num_poles);
     params.spinup_rate_rad_per_s2 =
-        _rad_per_s_from_rpm(params.min_speed_rad_per_s /
-                                params_[PARAM_CONTROL_SPINUP_TIME],
+        _rad_per_s_from_rpm(params_[PARAM_CONTROL_SPINUP_RATE],
                             params.num_poles);
 }
 
@@ -249,9 +232,8 @@ void Configuration::read_control_params(
     struct control_params_t& params
 ) {
     params.bandwidth_hz = 50.0f;
-    params.max_accel_torque_a = params_[PARAM_CONTROL_ACCEL_TORQUE_MAX];
-    params.accel_gain = params_[PARAM_CONTROL_ACCEL_GAIN];
-    params.accel_time_s = params_[PARAM_CONTROL_ACCEL_TIME];
+    params.accel_gain = params_[PARAM_CONTROL_P_GAIN];
+    params.accel_time_s = params_[PARAM_CONTROL_I_TIME];
 }
 
 

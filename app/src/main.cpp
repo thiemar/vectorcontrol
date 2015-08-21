@@ -62,7 +62,6 @@ struct controller_state_t {
     float internal_speed_setpoint;
     float current_setpoint;
     float closed_loop_frac;
-    float min_speed_rad_per_s;
     float idle_speed_rad_per_s;
     float spinup_rate_rad_per_s2;
     float accel_current_a;
@@ -90,6 +89,7 @@ volatile static struct audio_state_t g_audio_state;
 /* Bus and output voltage for reporting purposes */
 volatile static float g_vbus_v;
 volatile static float g_v_dq_v[2];
+volatile static float g_phi_v_s_per_rad;
 
 /* Motor parameter estimation state -- only used on startup */
 volatile static float g_i_samples[4];
@@ -190,8 +190,8 @@ control_cb(
 ) {
     float v_dq_v[2], phase, audio_v, current_setpoint, power_setpoint,
           speed_setpoint, internal_speed_setpoint, closed_loop_frac,
-          idle_speed_rad_per_s, min_speed_rad_per_s, accel_current_a,
-          spinup_rate_rad_per_s2, new_closed_loop_frac;
+          idle_speed_rad_per_s, accel_current_a, spinup_rate_rad_per_s2,
+          new_closed_loop_frac, phi;
     struct motor_state_t motor_state;
     enum controller_mode_t mode;
 
@@ -201,10 +201,12 @@ control_cb(
     internal_speed_setpoint = g_controller_state.internal_speed_setpoint;
     closed_loop_frac = g_controller_state.closed_loop_frac;
 
-    min_speed_rad_per_s = g_controller_state.min_speed_rad_per_s;
     idle_speed_rad_per_s = g_controller_state.idle_speed_rad_per_s;
     accel_current_a = g_controller_state.accel_current_a;
     spinup_rate_rad_per_s2 = g_controller_state.spinup_rate_rad_per_s2;
+
+    v_dq_v[0] = g_v_dq_v[0];
+    v_dq_v[1] = g_v_dq_v[1];
 
     /* Calculate audio component */
     if (g_audio_state.off_time) {
@@ -225,6 +227,10 @@ control_cb(
                                       internal_speed_setpoint,
                                       closed_loop_frac);
     g_estimator.get_state_estimate(motor_state);
+
+    /* Get the latest phi estimate */
+    phi = g_estimator.get_phi_estimate();
+    g_speed_controller.set_phi_v_s_per_rad(phi);
 
     /*
     Handle stop condition -- set Vd, Vq to zero and hope the resulting hard
@@ -299,14 +305,14 @@ control_cb(
         } else if (closed_loop_frac < 1.0f) {
             /*
             Work out the transition value between open-loop and closed-loop
-            operation based on the motor's current speed.
+            operation based on the square of the output voltage.
 
             Don't allow closed_loop_frac to decrease, even if the angular
             velocity drops.
             */
             new_closed_loop_frac =
-                std::abs(motor_state.angular_velocity_rad_per_s /
-                         min_speed_rad_per_s) * 4.0f - 3.0f;
+                (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1]) * 8.0f - 7.0f;
+
             if (new_closed_loop_frac > 1.0f) {
                 closed_loop_frac = 1.0f;
             } else if (new_closed_loop_frac >= closed_loop_frac) {
@@ -358,6 +364,7 @@ control_cb(
     g_v_dq_v[0] = v_dq_v[0];
     g_v_dq_v[1] = v_dq_v[1];
     g_vbus_v = vbus_v;
+    g_phi_v_s_per_rad = phi;
 }
 
 
@@ -476,10 +483,12 @@ static void __attribute__((noreturn)) node_run(
     foc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
         PARAM_FOC_ESCSTATUS_INTERVAL) * 0.001f);
 
-    g_controller_state.min_speed_rad_per_s = motor_params.min_speed_rad_per_s;
-    g_controller_state.idle_speed_rad_per_s = motor_params.idle_speed_rad_per_s;
-    g_controller_state.spinup_rate_rad_per_s2 = motor_params.spinup_rate_rad_per_s2;
-    g_controller_state.accel_current_a = motor_params.accel_current_a;
+    g_controller_state.idle_speed_rad_per_s =
+        motor_params.idle_speed_rad_per_s;
+    g_controller_state.spinup_rate_rad_per_s2 =
+        motor_params.spinup_rate_rad_per_s2;
+    g_controller_state.accel_current_a =
+        motor_params.accel_voltage_v / motor_params.rs_r;
 
     while (true) {
         current_time = g_controller_state.time;
@@ -753,7 +762,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.hfi_dq[0] = motor_state.angular_acceleration_rad_per_s2 *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles);
                 /* Power */
-                msg.hfi_dq[1] = motor_params.phi_v_s_per_rad *
+                msg.hfi_dq[1] = g_phi_v_s_per_rad *
                                 motor_state.i_dq_a[1] *
                                 motor_state.angular_velocity_rad_per_s -
                                 motor_params.rotor_inertia_kg_m2 *
@@ -823,7 +832,7 @@ static void __attribute__((noreturn)) node_run(
         /* Update the controller mode and setpoint */
         if (!g_controller_state.fault && got_setpoint) {
             if (mode == CONTROLLER_SPEED &&
-                    std::abs(setpoint) >= motor_params.min_speed_rad_per_s) {
+                    std::abs(setpoint) >= 60.0f) {
                 g_controller_state.speed_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_SPEED;
                 g_controller_state.last_setpoint_update = current_time;
@@ -862,7 +871,7 @@ int main(void) {
     struct control_params_t control_params;
     struct motor_params_t motor_params;
     uint32_t i;
-    float i_samples[4], v_samples[4], rs_r, ls_h, limit_speed;
+    float i_samples[4], v_samples[4], rs_r, ls_h;
     uint8_t node_id;
 
     hal_reset();
@@ -925,23 +934,14 @@ int main(void) {
     configuration.set_param_value_by_index(PARAM_MOTOR_LS, ls_h);
 
     /* Initialize the system with the motor parameters */
-    g_estimator.set_params(motor_params, control_params,
-                           hal_control_t_s);
+    g_estimator.set_control_params(control_params.bandwidth_hz,
+                                   hal_control_t_s);
+    g_estimator.set_motor_params(rs_r, ls_h, motor_params.phi_v_s_per_rad,
+                                 hal_control_t_s);
     g_current_controller.set_params(motor_params, control_params,
                                     hal_control_t_s);
     g_speed_controller.set_params(motor_params, control_params,
                                   hal_control_t_s);
-    g_speed_controller.set_current_limit_a(motor_params.max_current_a);
-
-    /*
-    Calculate the motor's maximum (electrical) speed based on Vbus at startup
-    time, the maximum modulation limit, and the motor's flux linkage.
-    */
-    limit_speed = std::min(0.95f * g_vbus_v, motor_params.max_voltage_v) /
-                  motor_params.phi_v_s_per_rad;
-    if (motor_params.max_speed_rad_per_s > limit_speed) {
-        motor_params.max_speed_rad_per_s = limit_speed;
-    }
 
     /* Clear audio state */
     g_audio_state.off_time = 0;

@@ -28,6 +28,7 @@ by hal.cpp
 
 #include <stm32_dac.h>
 #include <stm32f10xxx_dma.h>
+#include <stm32f30xxx_adc.h>
 
 /*
 ESC revision 2 board pin definitions - STM32F302
@@ -85,7 +86,7 @@ always be odd; 1 results in an update event every PWM cycle, and 3 results
 in an update event every 2 PWM cycles.
 */
 const uint32_t hal_pwm_control_rate_div =
-    hal_pwm_frequency_hz < 40000 ? 1u : 3u;
+    hal_pwm_frequency_hz < 32000u ? 1u : 3u;
 
 
 /* Work out the ADC sampling time in nanoseconds */
@@ -503,8 +504,8 @@ static void hal_run_calibration_() {
     /* ADC_ClearFlag(ADC1, ADC_FLAG_JEOS); */
     putreg32(ADC_INT_JEOS, STM32_ADC1_ISR);
 
-    /* Sample the three shunts 16384 times each (takes ~6 ms) */
-    for (i = 0; i < 16384u; i++) {
+    /* Sample the three shunts 65536 times each (takes ~24 ms) */
+    for (i = 0; i < 65536u; i++) {
         /* Trigger the injected conversion sequence */
         putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_JADSTART, STM32_ADC1_CR);
 
@@ -528,15 +529,15 @@ static void hal_run_calibration_() {
     value from the readings. This makes the output values signed 12-bit packed
     into the LSBs of a 16-bit register, with sign extension.
     */
-    putreg32(ADC_OFR_OFFSETY(offset[0] / 16384u) |
+    putreg32(ADC_OFR_OFFSETY(offset[0] / 65536u) |
              ADC_OFR_OFFSETY_CH(HAL_ADC_PHASE_A_CHANNEL) | ADC_OFR_OFFSETY_EN,
              STM32_ADC1_OFR1);
 
-    putreg32(ADC_OFR_OFFSETY(offset[1] / 16384u) |
+    putreg32(ADC_OFR_OFFSETY(offset[1] / 65536u) |
              ADC_OFR_OFFSETY_CH(HAL_ADC_PHASE_B_CHANNEL) | ADC_OFR_OFFSETY_EN,
              STM32_ADC1_OFR2);
 
-    putreg32(ADC_OFR_OFFSETY(offset[2] / 16384u) |
+    putreg32(ADC_OFR_OFFSETY(offset[2] / 65536u) |
              ADC_OFR_OFFSETY_CH(HAL_ADC_PHASE_C_CHANNEL) | ADC_OFR_OFFSETY_EN,
              STM32_ADC1_OFR3);
 

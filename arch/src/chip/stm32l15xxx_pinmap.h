@@ -40,6 +40,7 @@
  * Included Files
  ************************************************************************************/
 
+
 #include "stm32_gpio.h"
 
 /************************************************************************************
@@ -51,7 +52,7 @@
  * Drivers, however, will use the pin selection without the numeric suffix.
  * Additional definitions are required in the board.h file.  For example, if
  * CAN1_RX connects vis PA11 on some board, then the following definitions should
- * appear inthe board.h header file for that board:
+ * appear in the board.h header file for that board:
  *
  * #define GPIO_I2C1_SCL GPIO_I2C1_SCL_1
  *
@@ -97,6 +98,12 @@
 #define GPIO_ADC1_IN23      (GPIO_ANALOG | GPIO_PORTE | GPIO_PIN8)
 #define GPIO_ADC1_IN24      (GPIO_ANALOG | GPIO_PORTE | GPIO_PIN9)
 #define GPIO_ADC1_IN25      (GPIO_ANALOG | GPIO_PORTE | GPIO_PIN10)
+
+#define GPIO_ADC1_IN27      (GPIO_ANALOG | GPIO_PORTF | GPIO_PIN6)
+#define GPIO_ADC1_IN28      (GPIO_ANALOG | GPIO_PORTF | GPIO_PIN7)
+#define GPIO_ADC1_IN29      (GPIO_ANALOG | GPIO_PORTF | GPIO_PIN8)
+#define GPIO_ADC1_IN30      (GPIO_ANALOG | GPIO_PORTF | GPIO_PIN9)
+#define GPIO_ADC1_IN31      (GPIO_ANALOG | GPIO_PORTF | GPIO_PIN10)
 
 /* DAC */
 
@@ -312,10 +319,10 @@
 
 /* RTC */
 
-#define GPIO_RTC_OUT       (GPIO_ALT | GPIO_AF0 | GPIO_PORTC | GPIO_PIN13)
-#define GPIO_RTC_REFIN     (GPIO_ALT | GPIO_AF0 | GPIO_PORTB | GPIO_PIN15)
-#define GPIO_RTC_TAMP1     (GPIO_ALT | GPIO_AF0 | GPIO_PORTC | GPIO_PIN13)
-#define GPIO_RTC_TS        (GPIO_ALT | GPIO_AF0 | GPIO_PORTC | GPIO_PIN13)
+#define GPIO_RTC_OUT        (GPIO_ALT | GPIO_AF0 | GPIO_PORTC | GPIO_PIN13)
+#define GPIO_RTC_REFIN      (GPIO_ALT | GPIO_AF0 | GPIO_PORTB | GPIO_PIN15)
+#define GPIO_RTC_TAMP1      (GPIO_ALT | GPIO_AF0 | GPIO_PORTC | GPIO_PIN13)
+#define GPIO_RTC_TS         (GPIO_ALT | GPIO_AF0 | GPIO_PORTC | GPIO_PIN13)
 
 /* SPI */
 

@@ -63,7 +63,7 @@ StateEstimator::update_state_estimate(
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
           b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d, acceleration,
-          i_dq_a[2], last_angle, next_angle;
+          i_dq_a[2], last_angle, next_angle, b, vs, is, phi;
 
     /* Update the Idq estimate based on the theta estimate for time t */
     sin_cos(sin_theta, cos_theta, state_estimate_.angle_rad);
@@ -110,8 +110,9 @@ StateEstimator::update_state_estimate(
               P(1,1) + g_process_noise[1];
 
     /* These values are used a few times */
-    b_est_sin_theta = b_ * sin_theta;
-    b_est_cos_theta = b_ * cos_theta;
+    b = b_ * phi_estimate_v_s_per_rad_;
+    b_est_sin_theta = b * sin_theta;
+    b_est_cos_theta = b * cos_theta;
 
     /* Set up the Hessian (H) */
     H(0,0) = b_est_sin_theta;
@@ -209,6 +210,24 @@ StateEstimator::update_state_estimate(
     update[0] = K(0,0) * innovation[0] + K(1,0) * innovation[1];
     update[1] = K(0,1) * innovation[0] + K(1,1) * innovation[1];
 
+#undef Pm
+#undef P
+#undef M
+#undef Mt
+#undef K
+#undef Kt
+#undef H
+#undef s20
+#undef s15
+#undef s14
+#undef s13
+#undef s12
+#undef s11
+#undef s10
+#undef s8
+#undef s5
+#undef s3
+
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
     state_estimate_.angle_rad += update[1] * closed_loop_frac;
     state_estimate_.angle_rad +=
@@ -231,44 +250,43 @@ StateEstimator::update_state_estimate(
     state_estimate_.angular_velocity_rad_per_s +=
         acceleration * angular_velocity_lpf_coeff_;
 
-    /* Constrain angle to 0 .. 2 * pi */
-    if (state_estimate_.angle_rad > 2.0f * (float)M_PI) {
-        state_estimate_.angle_rad -= 2.0f * (float)M_PI;
-    } else if (state_estimate_.angle_rad < 0.0f) {
-        state_estimate_.angle_rad += 2.0f * (float)M_PI;
-    }
-
     next_angle = state_estimate_.angle_rad +
                  2.0f * state_estimate_.angular_velocity_rad_per_s * t_;
+
+    /* Constrain angle to 0 .. 2 * pi */
     if (next_angle > 2.0f * (float)M_PI) {
         next_angle -= 2.0f * (float)M_PI;
+        if (state_estimate_.angle_rad > 2.0f * (float)M_PI) {
+            state_estimate_.angle_rad -= 2.0f * (float)M_PI;
+        }
     } else if (next_angle < 0.0f) {
         next_angle += 2.0f * (float)M_PI;
+        if (state_estimate_.angle_rad < 0.0f) {
+            state_estimate_.angle_rad += 2.0f * (float)M_PI;
+        }
     }
 
     sin_cos(next_sin_theta_, next_cos_theta_, next_angle);
 
-#undef Pm
-#undef P
-#undef M
-#undef Mt
-#undef K
-#undef Kt
-#undef H
-#undef s20
-#undef s15
-#undef s14
-#undef s13
-#undef s12
-#undef s11
-#undef s10
-#undef s8
-#undef s5
-#undef s3
-
     /* Track the last values for the next iteration */
     last_i_ab_a_[0] = i_ab_a[0];
     last_i_ab_a_[1] = i_ab_a[1];
+
+    /*
+    During open-loop mode (closed_loop_frac < 1.0), we estimate the value of
+    phi (the back-EMF constant).
+    */
+    if (closed_loop_frac < 1.0f) {
+        vs = __VSQRTF(v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
+        is = __VSQRTF(i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
+
+        if (vs > 0.1f && state_estimate_.angular_velocity_rad_per_s > 1.0f) {
+            phi = (vs - is * rs_r_) /
+                  state_estimate_.angular_velocity_rad_per_s;
+            phi_estimate_v_s_per_rad_ += (phi - phi_estimate_v_s_per_rad_) *
+                                         angular_velocity_lpf_coeff_ * 0.1f;
+        }
+    }
 }
 
 

@@ -15,10 +15,10 @@ SIZE     := $(CC_BIN)arm-none-eabi-size
 
 PYTHON   := python
 
-BOARD := px4esc_1_6
-BOARDNAME := org.pixhawk.px4esc-v1
-#BOARD := s2740vc_1_0
-#BOARDNAME := com.thiemar.s2740vc-v1
+#BOARD := px4esc_1_6
+#BOARDNAME := org.pixhawk.px4esc-v1
+BOARD := s2740vc_1_0
+BOARDNAME := com.thiemar.s2740vc-v1
 
 
 ##############################################################################
@@ -68,7 +68,7 @@ PROJECT_BUILD     = $(BUILD)$(PROJECT)/
 MCU_CC_FLAGS      = $(CORTEX_M4_HWFP_CC_FLAGS)
 MCU_LIB_PATH      = $(CORTEX_M4_HWFP_LIB_PATH)
 DEBUG_LEVEL       = 3
-OPTIM_FLAGS       = -O3 # -flto
+OPTIM_FLAGS       = -O3 #-flto
 LINKER_SCRIPT     = $(PROJECT)/$(PROJECT)_$(BOARD).ld
 PROJECT_OBJECTS   = $(addprefix $(PROJECT_BUILD), \
 					  main.o _cxx.o configuration.o can.o controller.o \
