@@ -442,7 +442,7 @@ static void __attribute__((noreturn)) node_run(
     size_t length, i;
     uint32_t message_id, current_time, node_status_time, esc_status_time,
              foc_status_time, node_status_interval, esc_status_interval,
-             foc_status_interval, last_tx_time;
+             foc_status_interval;
     uint8_t filter_id, foc_status_transfer_id, node_status_transfer_id,
             esc_status_transfer_id, esc_index, message[8],
             broadcast_filter_id, service_filter_id;
@@ -458,7 +458,7 @@ static void __attribute__((noreturn)) node_run(
 
     broadcast_filter_id = service_filter_id = 0xFFu;
 
-    foc_status_time = node_status_time = esc_status_time = last_tx_time = 0u;
+    foc_status_time = node_status_time = esc_status_time = 0u;
 
     wants_bootloader_restart = false;
 
@@ -737,10 +737,9 @@ static void __attribute__((noreturn)) node_run(
         }
 
         /* Transmit service responses if available */
-        if (current_time > last_tx_time + 1u && can_is_ready(1u) &&
+        if (can_is_ready(1u) &&
                 service_manager.transmit_frame(message_id, length, message)) {
             can_tx(1u, message_id, length, message);
-            last_tx_time = current_time;
         }
 
         if (broadcast_manager.is_tx_done() && service_manager.is_tx_done() &&
@@ -823,10 +822,9 @@ static void __attribute__((noreturn)) node_run(
         }
 
         /* Transmit broadcast CAN frames if available */
-        if (current_time > last_tx_time + 1u && can_is_ready(0u) &&
+        if (can_is_ready(0u) &&
                 broadcast_manager.transmit_frame(message_id, length, message)) {
             can_tx(0u, message_id, length, message);
-            last_tx_time = current_time;
         }
 
         /* Update the controller mode and setpoint */

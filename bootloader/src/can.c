@@ -236,8 +236,8 @@ uint8_t can_tx(uint32_t message_id, size_t length, const uint8_t *message,
 	memcpy(data, message, sizeof(data));
 
 	/*
-     * Just block while waiting for the mailbox. Give it an extra 0.75 ms per
-     * frame to avoid an issue Ben was seeing with packets going missing on a USBtin. */
+     * Just block while waiting for the mailbox.
+     */
 
     uint32_t mask = CAN_TSR_TME0 << mailbox;
 	uint32_t cnt = CAN_TX_TIMEOUT_MS;
@@ -253,9 +253,6 @@ uint8_t can_tx(uint32_t message_id, size_t length, const uint8_t *message,
 	        }
 	    }
 	}
-
-    #define WAIT_TX_READY_MS ((TIMER_HRT_CYCLES_PER_MS-(TIMER_HRT_CYCLES_PER_MS/4))
-    while (timer_hrt_elapsed(begin, timer_hrt_read()) < WAIT_TX_READY_MS));
 
 	/*
 	 * To allow detection of completion  - Set the LEC to

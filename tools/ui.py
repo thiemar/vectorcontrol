@@ -67,6 +67,7 @@ except:
 
 
 NOTIFY_SOCKETS = set()
+JSON_LOG_FILE = None
 
 
 UAVCAN_NODE_INFO = {}
@@ -392,7 +393,7 @@ def uavcan_value_from_obj(uavcan_value, obj):
 
 
 def send_all(datatype, node_id, payload):
-    global NOTIFY_SOCKETS
+    global NOTIFY_SOCKETS, JSON_LOG_FILE
 
     message = json.dumps({
         "datatype": datatype,
@@ -402,6 +403,10 @@ def send_all(datatype, node_id, payload):
 
     for socket in NOTIFY_SOCKETS:
         socket.write_message(message)
+
+    if JSON_LOG_FILE:
+        with open(JSON_LOG_FILE, "a") as f:
+            f.write(message + "\n")
 
 
 class MessageRelayMonitor(uavcan.node.Monitor):
@@ -782,6 +787,8 @@ if __name__ == "__main__":
     cmd_group.add_option("-s", "--bus-speed", dest="bus_speed",
                          default=1000000, help="set CAN bus speed",
                          metavar="NODE_ID")
+    cmd_group.add_option("-l", "--log", dest="log_path", default=None,
+                         help="log UAVCAN messages to PATH", metavar="PATH")
 
     cmd_group = OptionGroup(parser, "UAVCAN options")
     cmd_group.add_option("--dsdl", dest="dsdl_path", action="append",
@@ -799,6 +806,9 @@ if __name__ == "__main__":
         firmware_dir = options.firmware
     else:
         firmware_dir = None
+
+    if options.log_path:
+        JSON_LOG_FILE = options.log_path
 
     @gen.coroutine
     def enumerate_device(this_node, node_id, response):
