@@ -28,6 +28,7 @@ by hal.cpp
 
 #include <algorithm>
 #include <stm32_dac.h>
+#include <stm32_adc.h>
 
 /*
 PX4ESC 1.6 board pin definitions - STM32F446RE
