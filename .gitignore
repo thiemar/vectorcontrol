@@ -34,3 +34,5 @@ core
 *.pyc
 .DS_Store
 /Debug/
+/build
+/firmware

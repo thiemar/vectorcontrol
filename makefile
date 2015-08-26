@@ -4,6 +4,9 @@
 # GCC_BASE = /usr/local/opt/gcc-arm-none-eabi/
 
 CC_BIN := $(shell dirname `which arm-none-eabi-gcc`)/
+ifneq (,$(findstring ccache,$(CC_BIN)))
+CC_BIN :=
+endif
 CC_LIB  := $(CC_BIN)../arm-none-eabi/lib/
 CC_INC  := $(CC_BIN)../arm-none-eabi/include/
 AS       := $(CC_BIN)arm-none-eabi-as
@@ -15,11 +18,16 @@ SIZE     := $(CC_BIN)arm-none-eabi-size
 
 PYTHON   := python
 
-#BOARD := px4esc_1_6
-#BOARDNAME := org.pixhawk.px4esc-v1
-BOARD := s2740vc_1_0
+#BOARD :BOARD= px4esc_1_6
+BOARD ?= s2740vc_1_0
+ifeq ($(BOARD), s2740vc_1_0)
 BOARDNAME := com.thiemar.s2740vc-v1
-
+else ifeq ($(BOARD), px4esc_1_6)
+BOARDNAME := org.pixhawk.px4esc-v1
+else
+$(error BOARD needs to be set to one of s2740vc_1_0 or px4esc_1_6)
+endif
+$(info %%% Building $(BOARD))
 
 ##############################################################################
 # Custom options for cortex-m and cortex-r processors
