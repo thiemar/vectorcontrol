@@ -288,7 +288,6 @@ inline static void board_initialize(void)
     stm32_configgpio(GPIO_CAN_RX_2);
     stm32_configgpio(GPIO_CAN_TX_2);
     stm32_configgpio(GPIO_CAN_SILENT);
-    stm32_configgpio(GPIO_DAC1_OUT);
     stm32_configgpio(GPIO_PWMA_DISABLED);
     stm32_configgpio(GPIO_PWMB_DISABLED);
     stm32_configgpio(GPIO_PWMC_DISABLED);
@@ -296,6 +295,7 @@ inline static void board_initialize(void)
     stm32_configgpio(GPIO_ADC1_CH2);
     stm32_configgpio(GPIO_ADC1_CH3);
     stm32_configgpio(GPIO_ADC1_CH4);
+    stm32_configgpio(GPIO_DAC1_OUT);
 }
 
 /************************************************************************************

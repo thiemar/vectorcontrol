@@ -392,8 +392,8 @@ static void hal_init_adc_() {
     Init DAC for the current sense voltage reference (1.65 V) -- no special
     features, just enable it and write the data.
     */
-    putreg32(0x800u, STM32_DAC_DHR12RD);
-    putreg32(DAC_CR_EN1, STM32_DAC_CR);
+    putreg32(getreg32(STM32_DAC_CR) | DAC_CR_EN, STM32_DAC_CR);
+    putreg32(0x800u, STM32_DAC_DHR12R1);
 
     /* Enable the ADC voltage regulator */
     putreg32(getreg32(STM32_ADC1_CR) & ~ADC_CR_ADVREGEN_MASK, STM32_ADC1_CR);
