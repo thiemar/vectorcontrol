@@ -20,12 +20,12 @@
 # Lights control command.
 #
 
-SingleLightCommand[<32] commands
+SingleLightCommand[<=20] commands
 ******************************************************************************/
 
 /********************* DSDL signature source definition ***********************
 uavcan.equipment.indication.LightsCommand
-uavcan.equipment.indication.SingleLightCommand[<=31] commands
+uavcan.equipment.indication.SingleLightCommand[<=20] commands
 ******************************************************************************/
 
 #undef commands
@@ -49,7 +49,7 @@ struct UAVCAN_EXPORT LightsCommand_
 
     struct FieldTypes
     {
-        typedef ::uavcan::Array< ::uavcan::equipment::indication::SingleLightCommand, ::uavcan::ArrayModeDynamic, 31 > commands;
+        typedef ::uavcan::Array< ::uavcan::equipment::indication::SingleLightCommand, ::uavcan::ArrayModeDynamic, 20 > commands;
     };
 
     enum
@@ -80,7 +80,7 @@ struct UAVCAN_EXPORT LightsCommand_
          * This check shall never be performed in user code because MaxBitLen value
          * actually depends on the nested types, thus it is not invariant.
          */
-        ::uavcan::StaticAssert<749 == MaxBitLen>::check();
+        ::uavcan::StaticAssert<485 == MaxBitLen>::check();
 #endif
     }
 
@@ -167,7 +167,7 @@ int LightsCommand_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& cod
 template <int _tmpl>
 ::uavcan::DataTypeSignature LightsCommand_<_tmpl>::getDataTypeSignature()
 {
-    ::uavcan::DataTypeSignature signature(0xF5B2E7766677760AULL);
+    ::uavcan::DataTypeSignature signature(0xB918CEDB4B81242DULL);
 
     FieldTypes::commands::extendDataTypeSignature(signature);
 

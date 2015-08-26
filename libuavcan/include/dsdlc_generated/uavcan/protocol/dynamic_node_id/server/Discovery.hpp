@@ -15,6 +15,8 @@
 
 /******************************* Source text **********************************
 #
+# THIS DEFINITION IS SUBJECT TO CHANGE.
+#
 # This message is used by allocation servers to find each other's node ID.
 # Please refer to the specification for details.
 #

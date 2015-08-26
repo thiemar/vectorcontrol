@@ -20,24 +20,26 @@
 
 uint8 hardpoint_id
 
-float16 cargo_weight           # Newton
-float16 cargo_weight_variance
+float16 payload_weight           # Newton
+float16 payload_weight_variance
 
+#
 # Meaning is the same as for the command field in the Command message
+#
 uint16 status
 ******************************************************************************/
 
 /********************* DSDL signature source definition ***********************
 uavcan.equipment.hardpoint.Status
 saturated uint8 hardpoint_id
-saturated float16 cargo_weight
-saturated float16 cargo_weight_variance
+saturated float16 payload_weight
+saturated float16 payload_weight_variance
 saturated uint16 status
 ******************************************************************************/
 
 #undef hardpoint_id
-#undef cargo_weight
-#undef cargo_weight_variance
+#undef payload_weight
+#undef payload_weight_variance
 #undef status
 
 namespace uavcan
@@ -60,8 +62,8 @@ struct UAVCAN_EXPORT Status_
     struct FieldTypes
     {
         typedef ::uavcan::IntegerSpec< 8, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > hardpoint_id;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > cargo_weight;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > cargo_weight_variance;
+        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > payload_weight;
+        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > payload_weight_variance;
         typedef ::uavcan::IntegerSpec< 16, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > status;
     };
 
@@ -69,8 +71,8 @@ struct UAVCAN_EXPORT Status_
     {
         MinBitLen
             = FieldTypes::hardpoint_id::MinBitLen
-            + FieldTypes::cargo_weight::MinBitLen
-            + FieldTypes::cargo_weight_variance::MinBitLen
+            + FieldTypes::payload_weight::MinBitLen
+            + FieldTypes::payload_weight_variance::MinBitLen
             + FieldTypes::status::MinBitLen
     };
 
@@ -78,8 +80,8 @@ struct UAVCAN_EXPORT Status_
     {
         MaxBitLen
             = FieldTypes::hardpoint_id::MaxBitLen
-            + FieldTypes::cargo_weight::MaxBitLen
-            + FieldTypes::cargo_weight_variance::MaxBitLen
+            + FieldTypes::payload_weight::MaxBitLen
+            + FieldTypes::payload_weight_variance::MaxBitLen
             + FieldTypes::status::MaxBitLen
     };
 
@@ -87,14 +89,14 @@ struct UAVCAN_EXPORT Status_
 
     // Fields
     typename ::uavcan::StorageType< typename FieldTypes::hardpoint_id >::Type hardpoint_id;
-    typename ::uavcan::StorageType< typename FieldTypes::cargo_weight >::Type cargo_weight;
-    typename ::uavcan::StorageType< typename FieldTypes::cargo_weight_variance >::Type cargo_weight_variance;
+    typename ::uavcan::StorageType< typename FieldTypes::payload_weight >::Type payload_weight;
+    typename ::uavcan::StorageType< typename FieldTypes::payload_weight_variance >::Type payload_weight_variance;
     typename ::uavcan::StorageType< typename FieldTypes::status >::Type status;
 
     Status_()
         : hardpoint_id()
-        , cargo_weight()
-        , cargo_weight_variance()
+        , payload_weight()
+        , payload_weight_variance()
         , status()
     {
         ::uavcan::StaticAssert<_tmpl == 0>::check();  // Usage check
@@ -153,8 +155,8 @@ bool Status_<_tmpl>::operator==(ParameterType rhs) const
 {
     return
         hardpoint_id == rhs.hardpoint_id &&
-        cargo_weight == rhs.cargo_weight &&
-        cargo_weight_variance == rhs.cargo_weight_variance &&
+        payload_weight == rhs.payload_weight &&
+        payload_weight_variance == rhs.payload_weight_variance &&
         status == rhs.status;
 }
 
@@ -163,8 +165,8 @@ bool Status_<_tmpl>::isClose(ParameterType rhs) const
 {
     return
         ::uavcan::areClose(hardpoint_id, rhs.hardpoint_id) &&
-        ::uavcan::areClose(cargo_weight, rhs.cargo_weight) &&
-        ::uavcan::areClose(cargo_weight_variance, rhs.cargo_weight_variance) &&
+        ::uavcan::areClose(payload_weight, rhs.payload_weight) &&
+        ::uavcan::areClose(payload_weight_variance, rhs.payload_weight_variance) &&
         ::uavcan::areClose(status, rhs.status);
 }
 
@@ -181,12 +183,12 @@ int Status_<_tmpl>::encode(ParameterType self, ::uavcan::ScalarCodec& codec,
     {
         return res;
     }
-    res = FieldTypes::cargo_weight::encode(self.cargo_weight, codec,  ::uavcan::TailArrayOptDisabled);
+    res = FieldTypes::payload_weight::encode(self.payload_weight, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
         return res;
     }
-    res = FieldTypes::cargo_weight_variance::encode(self.cargo_weight_variance, codec,  ::uavcan::TailArrayOptDisabled);
+    res = FieldTypes::payload_weight_variance::encode(self.payload_weight_variance, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
         return res;
@@ -208,12 +210,12 @@ int Status_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
     {
         return res;
     }
-    res = FieldTypes::cargo_weight::decode(self.cargo_weight, codec,  ::uavcan::TailArrayOptDisabled);
+    res = FieldTypes::payload_weight::decode(self.payload_weight, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
         return res;
     }
-    res = FieldTypes::cargo_weight_variance::decode(self.cargo_weight_variance, codec,  ::uavcan::TailArrayOptDisabled);
+    res = FieldTypes::payload_weight_variance::decode(self.payload_weight_variance, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
         return res;
@@ -228,11 +230,11 @@ int Status_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
 template <int _tmpl>
 ::uavcan::DataTypeSignature Status_<_tmpl>::getDataTypeSignature()
 {
-    ::uavcan::DataTypeSignature signature(0xB133CCCCE41D16FCULL);
+    ::uavcan::DataTypeSignature signature(0x624A519D42553D82ULL);
 
     FieldTypes::hardpoint_id::extendDataTypeSignature(signature);
-    FieldTypes::cargo_weight::extendDataTypeSignature(signature);
-    FieldTypes::cargo_weight_variance::extendDataTypeSignature(signature);
+    FieldTypes::payload_weight::extendDataTypeSignature(signature);
+    FieldTypes::payload_weight_variance::extendDataTypeSignature(signature);
     FieldTypes::status::extendDataTypeSignature(signature);
 
     return signature;
@@ -293,15 +295,15 @@ void YamlStreamer< ::uavcan::equipment::hardpoint::Status >::stream(Stream& s, :
     {
         s << "  ";
     }
-    s << "cargo_weight: ";
-    YamlStreamer< ::uavcan::equipment::hardpoint::Status::FieldTypes::cargo_weight >::stream(s, obj.cargo_weight, level + 1);
+    s << "payload_weight: ";
+    YamlStreamer< ::uavcan::equipment::hardpoint::Status::FieldTypes::payload_weight >::stream(s, obj.payload_weight, level + 1);
     s << '\n';
     for (int pos = 0; pos < level; pos++)
     {
         s << "  ";
     }
-    s << "cargo_weight_variance: ";
-    YamlStreamer< ::uavcan::equipment::hardpoint::Status::FieldTypes::cargo_weight_variance >::stream(s, obj.cargo_weight_variance, level + 1);
+    s << "payload_weight_variance: ";
+    YamlStreamer< ::uavcan::equipment::hardpoint::Status::FieldTypes::payload_weight_variance >::stream(s, obj.payload_weight_variance, level + 1);
     s << '\n';
     for (int pos = 0; pos < level; pos++)
     {

@@ -15,7 +15,6 @@
 # include <uavcan/debug.hpp>
 #endif
 
-
 namespace uavcan
 {
 /**
@@ -188,7 +187,7 @@ struct UAVCAN_EXPORT DefaultDataTypeRegistrator
 {
     DefaultDataTypeRegistrator()
     {
-#if UAVCAN_NO_GLOBAL_DATA_TYPE_REGISTRY == 0
+#if !UAVCAN_NO_GLOBAL_DATA_TYPE_REGISTRY
         const GlobalDataTypeRegistry::RegistrationResult res =
             GlobalDataTypeRegistry::instance().registerDataType<Type>(Type::DefaultDataTypeID);
 
@@ -196,7 +195,7 @@ struct UAVCAN_EXPORT DefaultDataTypeRegistrator
         {
             handleFatalError("Type reg failed");
         }
-#endif // UAVCAN_NO_GLOBAL_DATA_TYPE_REGISTRY
+#endif
     }
 };
 

@@ -15,22 +15,23 @@
 
 /******************************* Source text **********************************
 #
-# Global timestamp in hectomicroseconds (1 = 100 usec), 6 bytes.
+# Global timestamp in microseconds, 7 bytes.
+#
+# Use this data type for timestamp fields in messages, like follows:
+#   uavcan.Timestamp timestamp
 #
 
-uint48 UNKNOWN = 0
-uint48 USEC_PER_LSB = 100  # Timestamp resolution
-truncated uint48 husec     # Hectomicroseconds (10^-4)
+uint56 UNKNOWN = 0
+truncated uint56 usec     # Microseconds
 ******************************************************************************/
 
 /********************* DSDL signature source definition ***********************
 uavcan.Timestamp
-truncated uint48 husec
+truncated uint56 usec
 ******************************************************************************/
 
-#undef husec
+#undef usec
 #undef UNKNOWN
-#undef USEC_PER_LSB
 
 namespace uavcan
 {
@@ -43,36 +44,34 @@ struct UAVCAN_EXPORT Timestamp_
 
     struct ConstantTypes
     {
-        typedef ::uavcan::IntegerSpec< 48, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > UNKNOWN;
-        typedef ::uavcan::IntegerSpec< 48, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > USEC_PER_LSB;
+        typedef ::uavcan::IntegerSpec< 56, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > UNKNOWN;
     };
 
     struct FieldTypes
     {
-        typedef ::uavcan::IntegerSpec< 48, ::uavcan::SignednessUnsigned, ::uavcan::CastModeTruncate > husec;
+        typedef ::uavcan::IntegerSpec< 56, ::uavcan::SignednessUnsigned, ::uavcan::CastModeTruncate > usec;
     };
 
     enum
     {
         MinBitLen
-            = FieldTypes::husec::MinBitLen
+            = FieldTypes::usec::MinBitLen
     };
 
     enum
     {
         MaxBitLen
-            = FieldTypes::husec::MaxBitLen
+            = FieldTypes::usec::MaxBitLen
     };
 
     // Constants
     static const typename ::uavcan::StorageType< typename ConstantTypes::UNKNOWN >::Type UNKNOWN; // 0
-    static const typename ::uavcan::StorageType< typename ConstantTypes::USEC_PER_LSB >::Type USEC_PER_LSB; // 100
 
     // Fields
-    typename ::uavcan::StorageType< typename FieldTypes::husec >::Type husec;
+    typename ::uavcan::StorageType< typename FieldTypes::usec >::Type usec;
 
     Timestamp_()
-        : husec()
+        : usec()
     {
         ::uavcan::StaticAssert<_tmpl == 0>::check();  // Usage check
 
@@ -82,7 +81,7 @@ struct UAVCAN_EXPORT Timestamp_
          * This check shall never be performed in user code because MaxBitLen value
          * actually depends on the nested types, thus it is not invariant.
          */
-        ::uavcan::StaticAssert<48 == MaxBitLen>::check();
+        ::uavcan::StaticAssert<56 == MaxBitLen>::check();
 #endif
     }
 
@@ -129,14 +128,14 @@ template <int _tmpl>
 bool Timestamp_<_tmpl>::operator==(ParameterType rhs) const
 {
     return
-        husec == rhs.husec;
+        usec == rhs.usec;
 }
 
 template <int _tmpl>
 bool Timestamp_<_tmpl>::isClose(ParameterType rhs) const
 {
     return
-        ::uavcan::areClose(husec, rhs.husec);
+        ::uavcan::areClose(usec, rhs.usec);
 }
 
 template <int _tmpl>
@@ -147,7 +146,7 @@ int Timestamp_<_tmpl>::encode(ParameterType self, ::uavcan::ScalarCodec& codec,
     (void)codec;
     (void)tao_mode;
     int res = 1;
-    res = FieldTypes::husec::encode(self.husec, codec,  tao_mode);
+    res = FieldTypes::usec::encode(self.usec, codec,  tao_mode);
     return res;
 }
 
@@ -159,7 +158,7 @@ int Timestamp_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
     (void)codec;
     (void)tao_mode;
     int res = 1;
-    res = FieldTypes::husec::decode(self.husec, codec,  tao_mode);
+    res = FieldTypes::usec::decode(self.usec, codec,  tao_mode);
     return res;
 }
 
@@ -169,9 +168,9 @@ int Timestamp_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
 template <int _tmpl>
 ::uavcan::DataTypeSignature Timestamp_<_tmpl>::getDataTypeSignature()
 {
-    ::uavcan::DataTypeSignature signature(0x9231EF4D9AD8B388ULL);
+    ::uavcan::DataTypeSignature signature(0x5BD0B5C81087E0DULL);
 
-    FieldTypes::husec::extendDataTypeSignature(signature);
+    FieldTypes::usec::extendDataTypeSignature(signature);
 
     return signature;
 }
@@ -183,10 +182,6 @@ template <int _tmpl>
 template <int _tmpl>
 const typename ::uavcan::StorageType< typename Timestamp_<_tmpl>::ConstantTypes::UNKNOWN >::Type
     Timestamp_<_tmpl>::UNKNOWN = 0U; // 0
-
-template <int _tmpl>
-const typename ::uavcan::StorageType< typename Timestamp_<_tmpl>::ConstantTypes::USEC_PER_LSB >::Type
-    Timestamp_<_tmpl>::USEC_PER_LSB = 100U; // 100
 
 /*
  * Final typedef
@@ -225,8 +220,8 @@ void YamlStreamer< ::uavcan::Timestamp >::stream(Stream& s, ::uavcan::Timestamp:
             s << "  ";
         }
     }
-    s << "husec: ";
-    YamlStreamer< ::uavcan::Timestamp::FieldTypes::husec >::stream(s, obj.husec, level + 1);
+    s << "usec: ";
+    YamlStreamer< ::uavcan::Timestamp::FieldTypes::usec >::stream(s, obj.usec, level + 1);
 }
 
 }

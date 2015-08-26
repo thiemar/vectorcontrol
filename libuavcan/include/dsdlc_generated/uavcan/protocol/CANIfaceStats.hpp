@@ -15,12 +15,12 @@
 
 /******************************* Source text **********************************
 #
-# Single CAN iface statistics
+# Single CAN iface statistics.
 #
 
-uint48 frames_tx
-uint48 frames_rx
-uint48 errors
+uint48 frames_tx        # Number of transmitted CAN frames.
+uint48 frames_rx        # Number of received CAN frames.
+uint48 errors           # Number of errors in the CAN layer.
 ******************************************************************************/
 
 /********************* DSDL signature source definition ***********************

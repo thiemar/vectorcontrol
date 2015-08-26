@@ -261,7 +261,7 @@ struct UAVCAN_EXPORT Fix_
          * This check shall never be performed in user code because MaxBitLen value
          * actually depends on the nested types, thus it is not invariant.
          */
-        ::uavcan::StaticAssert<612 == MaxBitLen>::check();
+        ::uavcan::StaticAssert<628 == MaxBitLen>::check();
 #endif
     }
 

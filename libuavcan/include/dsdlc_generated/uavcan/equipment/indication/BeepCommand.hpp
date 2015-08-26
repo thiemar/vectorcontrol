@@ -15,8 +15,7 @@
 
 /******************************* Source text **********************************
 #
-# Nodes that are capable of making noise (e.g. ESC) should obey.
-# Use case: pre-arm warning sound, error indication.
+# Nodes that are capable of producing sounds should obey.
 #
 
 float16 frequency  # Hz

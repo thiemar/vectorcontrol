@@ -18,7 +18,7 @@
 
 /******************************* Source text **********************************
 #
-# Write a remote file.
+# Write into a remote file.
 # The server shall place the contents of the field 'data' into the file pointed by 'path' at the offset specified by
 # the field 'offset'.
 #
@@ -35,7 +35,9 @@
 #
 
 uint40 offset
+
 Path path
+
 uint8[<=192] data
 
 ---

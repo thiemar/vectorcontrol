@@ -16,7 +16,6 @@
 /******************************* Source text **********************************
 #
 # Body sideslip in radians.
-# Yaw right: +, yaw left: -
 #
 
 float16 sideslip_angle          # Radians

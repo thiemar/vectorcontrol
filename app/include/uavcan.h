@@ -38,10 +38,6 @@ SOFTWARE.
 class UAVCANTransferManager {
     uavcan::StaticTransferBuffer<256> tx_buffer_;
     uavcan::StaticTransferBuffer<256> rx_buffer_;
-    uavcan::BitStream tx_bitstream_;
-    uavcan::BitStream rx_bitstream_;
-    uavcan::ScalarCodec tx_codec_;
-    uavcan::ScalarCodec rx_codec_;
 
     bool tx_in_progress_;
     uint32_t tx_message_id_;
@@ -60,6 +56,10 @@ class UAVCANTransferManager {
 
     void start_tx_(void) {
         tx_in_progress_ = true;
+        tx_tail_ = 0u;
+        tx_offset_ = 0u;
+        tx_message_id_ = 0u;
+        tx_buffer_.reset();
     }
 
     uint8_t source_node_id_(uint32_t id) const {
@@ -96,10 +96,6 @@ public:
     UAVCANTransferManager(uint8_t node_id) :
         tx_buffer_(),
         rx_buffer_(),
-        tx_bitstream_(tx_buffer_),
-        rx_bitstream_(rx_buffer_),
-        tx_codec_(tx_bitstream_),
-        rx_codec_(rx_bitstream_),
         tx_in_progress_(false),
         tx_message_id_(0u),
         tx_offset_(0u),
@@ -175,7 +171,6 @@ public:
                 rx_in_progress_ = true;
             }
             rx_buffer_.reset();
-            rx_bitstream_.reset();
             if (length - 1u > offset) {
                 rx_buffer_.write(rx_buffer_.getMaxWritePos(), &data[offset],
                                  length - offset - 1u);
@@ -217,13 +212,7 @@ public:
 
             if (tx_offset_ >= tx_buffer_.getMaxWritePos()) {
                 /* Set last frame flag */
-                tx_tail_ = 0u;
                 tx_in_progress_ = false;
-                tx_offset_ = 0u;
-                tx_message_id_ = 0u;
-                tx_buffer_.reset();
-                tx_bitstream_.reset();
-
                 data[length - 1u] |= UAVCAN_EOF_BIT;
             }
 
@@ -255,7 +244,11 @@ public:
         const T& msg
     ) {
         start_tx_();
-        T::encode(msg, tx_codec_);
+
+        uavcan::BitStream bitstream(tx_buffer_);
+        uavcan::ScalarCodec codec(bitstream);
+        T::encode(msg, codec);
+
         tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
         tx_message_id_ = broadcast_message_id_(0u, msg.DefaultDataTypeID);
         tx_crc_ = T::getDataTypeSignature().toTransferCRC();
@@ -266,7 +259,11 @@ public:
         const typename T::Response& msg
     ) {
         start_tx_();
-        T::Response::encode(msg, tx_codec_);
+
+        uavcan::BitStream bitstream(tx_buffer_);
+        uavcan::ScalarCodec codec(bitstream);
+        T::Response::encode(msg, codec);
+
         tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
@@ -278,6 +275,9 @@ public:
     bool decode(
         T& msg
     ) {
-        return T::decode(msg, rx_codec_);
+        uavcan::BitStream bitstream(rx_buffer_);
+        uavcan::ScalarCodec codec(bitstream);
+
+        return T::decode(msg, codec);
     }
 };

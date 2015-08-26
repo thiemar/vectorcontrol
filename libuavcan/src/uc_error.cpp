@@ -24,7 +24,7 @@ void handleFatalError(const char* msg)
 #else
     (void)msg;
     UAVCAN_ASSERT(0);
-    while (1);
+    std::abort();
 #endif
 }
 

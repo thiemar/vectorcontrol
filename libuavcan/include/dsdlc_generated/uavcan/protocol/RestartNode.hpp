@@ -16,7 +16,9 @@
 /******************************* Source text **********************************
 #
 # Restart the node.
+#
 # Some nodes may require restart before the new configuration will be applied.
+#
 # The request should be rejected if magic_number does not equal MAGIC_NUMBER.
 #
 

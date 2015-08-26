@@ -15,23 +15,21 @@
 
 /******************************* Source text **********************************
 #
-# This message must never be published during normal operation. This message may
-# be published with high frequency (~10..100 Hz) to inform the network participants
-# that the system has encountered an unrecoverable fault (e.g. mission critical
-# node failure) and is not capable of further operation.
+# This message may be published periodically to inform network participants that the system has encountered
+# an unrecoverable fault and is not capable of further operation.
 #
-# Typical reaction to this message may include emergency motor/power shutdown,
-# safety parachute deployment, etc. Nodes that are expected to react to this message
-# should wait for at least MIN_MESSAGES subsequent messages with any reason text
-# from any sender published with the interval no higher than MAX_INTERVAL_MS before
+# Nodes that are expected to react to this message should wait for at least MIN_MESSAGES subsequent messages
+# with any reason text from any sender published with the interval no higher than MAX_INTERVAL_MS before
 # undertaking any emergency actions.
 #
 
 uint8 MIN_MESSAGES = 3
-uint16 MAX_INTERVAL_MS = 500
-uint16 BROADCASTING_PERIOD_MS = 100
 
-# Short description that would fit a single CAN frame
+uint16 MAX_INTERVAL_MS = 500
+
+#
+# Short description that would fit a single CAN frame.
+#
 uint8[<=7] reason_text
 ******************************************************************************/
 
@@ -43,7 +41,6 @@ saturated uint8[<=7] reason_text
 #undef reason_text
 #undef MIN_MESSAGES
 #undef MAX_INTERVAL_MS
-#undef BROADCASTING_PERIOD_MS
 
 namespace uavcan
 {
@@ -60,7 +57,6 @@ struct UAVCAN_EXPORT Panic_
     {
         typedef ::uavcan::IntegerSpec< 8, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > MIN_MESSAGES;
         typedef ::uavcan::IntegerSpec< 16, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > MAX_INTERVAL_MS;
-        typedef ::uavcan::IntegerSpec< 16, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > BROADCASTING_PERIOD_MS;
     };
 
     struct FieldTypes
@@ -83,7 +79,6 @@ struct UAVCAN_EXPORT Panic_
     // Constants
     static const typename ::uavcan::StorageType< typename ConstantTypes::MIN_MESSAGES >::Type MIN_MESSAGES; // 3
     static const typename ::uavcan::StorageType< typename ConstantTypes::MAX_INTERVAL_MS >::Type MAX_INTERVAL_MS; // 500
-    static const typename ::uavcan::StorageType< typename ConstantTypes::BROADCASTING_PERIOD_MS >::Type BROADCASTING_PERIOD_MS; // 100
 
     // Fields
     typename ::uavcan::StorageType< typename FieldTypes::reason_text >::Type reason_text;
@@ -204,10 +199,6 @@ const typename ::uavcan::StorageType< typename Panic_<_tmpl>::ConstantTypes::MIN
 template <int _tmpl>
 const typename ::uavcan::StorageType< typename Panic_<_tmpl>::ConstantTypes::MAX_INTERVAL_MS >::Type
     Panic_<_tmpl>::MAX_INTERVAL_MS = 500U; // 500
-
-template <int _tmpl>
-const typename ::uavcan::StorageType< typename Panic_<_tmpl>::ConstantTypes::BROADCASTING_PERIOD_MS >::Type
-    Panic_<_tmpl>::BROADCASTING_PERIOD_MS = 100U; // 100
 
 /*
  * Final typedef

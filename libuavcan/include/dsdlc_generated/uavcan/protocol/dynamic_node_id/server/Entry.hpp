@@ -15,17 +15,19 @@
 
 /******************************* Source text **********************************
 #
+# THIS DEFINITION IS SUBJECT TO CHANGE.
+#
 # One dynamic node ID allocation entry.
 # This type is a part of the Raft consensus algorithm.
 # Please refer to the specification for details.
 #
 
-uint32 term
+uint32 term             # Refer to the Raft paper for explanation.
 
-uint8[16] unique_id
+uint8[16] unique_id     # Unique ID of this allocation.
 
 void1
-uint7 node_id
+uint7 node_id           # Node ID of this allocation.
 ******************************************************************************/
 
 /********************* DSDL signature source definition ***********************

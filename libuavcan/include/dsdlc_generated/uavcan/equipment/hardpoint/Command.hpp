@@ -20,7 +20,9 @@
 
 uint8 hardpoint_id
 
+#
 # Either a binary command (0 - release, 1+ - hold) or bitmask
+#
 uint16 command
 ******************************************************************************/
 

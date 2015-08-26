@@ -18,15 +18,15 @@
 /******************************* Source text **********************************
 #
 # Actuator commands.
-# The system supports up to 256 actuators; up to 31 of them can be commanded with one message.
+# The system supports up to 256 actuators; up to 15 of them can be commanded with one message.
 #
 
-Command[<32] commands
+Command[<=15] commands
 ******************************************************************************/
 
 /********************* DSDL signature source definition ***********************
 uavcan.equipment.actuator.ArrayCommand
-uavcan.equipment.actuator.Command[<=31] commands
+uavcan.equipment.actuator.Command[<=15] commands
 ******************************************************************************/
 
 #undef commands
@@ -50,7 +50,7 @@ struct UAVCAN_EXPORT ArrayCommand_
 
     struct FieldTypes
     {
-        typedef ::uavcan::Array< ::uavcan::equipment::actuator::Command, ::uavcan::ArrayModeDynamic, 31 > commands;
+        typedef ::uavcan::Array< ::uavcan::equipment::actuator::Command, ::uavcan::ArrayModeDynamic, 15 > commands;
     };
 
     enum
@@ -81,7 +81,7 @@ struct UAVCAN_EXPORT ArrayCommand_
          * This check shall never be performed in user code because MaxBitLen value
          * actually depends on the nested types, thus it is not invariant.
          */
-        ::uavcan::StaticAssert<997 == MaxBitLen>::check();
+        ::uavcan::StaticAssert<484 == MaxBitLen>::check();
 #endif
     }
 
@@ -168,7 +168,7 @@ int ArrayCommand_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& code
 template <int _tmpl>
 ::uavcan::DataTypeSignature ArrayCommand_<_tmpl>::getDataTypeSignature()
 {
-    ::uavcan::DataTypeSignature signature(0xEBF7EA5E2F6FF9B0ULL);
+    ::uavcan::DataTypeSignature signature(0x26EBF643995F91A0ULL);
 
     FieldTypes::commands::extendDataTypeSignature(signature);
 
