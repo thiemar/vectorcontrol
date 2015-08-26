@@ -25,34 +25,11 @@ SOFTWARE.
 
 #include "uavcan/transport/transfer_buffer.hpp"
 #include "uavcan/transport/crc.hpp"
-#include "uavcan/protocol/param/ExecuteOpcode.hpp"
-#include "uavcan/protocol/param/GetSet.hpp"
-#include "uavcan/protocol/file/BeginFirmwareUpdate.hpp"
-#include "uavcan/protocol/GetNodeInfo.hpp"
-#include "uavcan/protocol/NodeStatus.hpp"
-#include "uavcan/protocol/RestartNode.hpp"
-#include "uavcan/equipment/esc/RawCommand.hpp"
-#include "uavcan/equipment/esc/RPMCommand.hpp"
-#include "uavcan/equipment/esc/Status.hpp"
-#include "uavcan/equipment/esc/FOCStatus.hpp"
-#include "uavcan/equipment/indication/BeepCommand.hpp"
 
 
 #define UAVCAN_SOF_BIT 0x80u
 #define UAVCAN_EOF_BIT 0x40u
 #define UAVCAN_TOGGLE_BIT 0x20u
-
-
-enum uavcan_dtid_filter_id_t {
-    UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE = 0u,
-    UAVCAN_PROTOCOL_PARAM_GETSET,
-    UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE,
-    UAVCAN_PROTOCOL_GETNODEINFO,
-    UAVCAN_PROTOCOL_RESTARTNODE,
-    UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
-    UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
-    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND
-};
 
 
 #define UAVCAN_REQUEST_TIMEOUT 100u
@@ -83,8 +60,6 @@ class UAVCANTransferManager {
 
     void start_tx_(void) {
         tx_in_progress_ = true;
-        tx_buffer_.reset();
-        tx_bitstream_.reset();
     }
 
     uint8_t source_node_id_(uint32_t id) const {
@@ -246,6 +221,8 @@ public:
                 tx_in_progress_ = false;
                 tx_offset_ = 0u;
                 tx_message_id_ = 0u;
+                tx_buffer_.reset();
+                tx_bitstream_.reset();
 
                 data[length - 1u] |= UAVCAN_EOF_BIT;
             }
@@ -263,136 +240,44 @@ public:
     }
 
     /* Encoders */
-
-    void encode_nodestatus(
+    template<typename T>
+    void encode_message(
         uint8_t transfer_id,
-        const uavcan::protocol::NodeStatus& msg
+        const T& msg
     ) {
-        start_tx_();
-        uavcan::protocol::NodeStatus::encode(msg, tx_codec_);
-        tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
-        tx_message_id_ = broadcast_message_id_(0u, msg.DefaultDataTypeID);
-        tx_crc_ = uavcan::protocol::NodeStatus::getDataTypeSignature().toTransferCRC();
+        encode_message(transfer_id, msg.DefaultDataTypeID, msg);
     }
 
-    void encode_esc_status(
-        uint8_t transfer_id,
-        const uavcan::equipment::esc::Status& msg
-    ) {
-        start_tx_();
-        uavcan::equipment::esc::Status::encode(msg, tx_codec_);
-        tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
-        tx_message_id_ = broadcast_message_id_(0u, msg.DefaultDataTypeID);
-        tx_crc_ = uavcan::equipment::esc::Status::getDataTypeSignature().toTransferCRC();
-    }
-
-    void encode_foc_status(
+    template<typename T>
+    void encode_message(
         uint8_t transfer_id,
         uint16_t dtid,
-        const uavcan::equipment::esc::FOCStatus& msg
+        const T& msg
     ) {
         start_tx_();
-        uavcan::equipment::esc::FOCStatus::encode(msg, tx_codec_);
+        T::encode(msg, tx_codec_);
         tx_tail_ = (uint8_t)((transfer_id & 0x1Fu) | UAVCAN_SOF_BIT);
-        tx_message_id_ = broadcast_message_id_(0u, dtid);
-        tx_crc_ = uavcan::equipment::esc::FOCStatus::getDataTypeSignature().toTransferCRC();
+        tx_message_id_ = broadcast_message_id_(0u, msg.DefaultDataTypeID);
+        tx_crc_ = T::getDataTypeSignature().toTransferCRC();
     }
 
-    void encode_executeopcode_response(
-        const uavcan::protocol::param::ExecuteOpcode::Response& msg
+    template<typename T>
+    void encode_response(
+        const typename T::Response& msg
     ) {
         start_tx_();
-        uavcan::protocol::param::ExecuteOpcode::Response::encode(
-            msg, tx_codec_);
+        T::Response::encode(msg, tx_codec_);
         tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
         rx_tail_ = 0u;
         tx_message_id_ = response_message_id_(rx_message_id_);
-        tx_crc_ = uavcan::protocol::param::ExecuteOpcode::getDataTypeSignature().toTransferCRC();
-    }
-
-    void encode_getset_response(
-        const uavcan::protocol::param::GetSet::Response& msg
-    ) {
-        start_tx_();
-        uavcan::protocol::param::GetSet::Response::encode(msg, tx_codec_);
-        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
-        rx_tail_ = 0u;
-        tx_message_id_ = response_message_id_(rx_message_id_);
-        tx_crc_ = uavcan::protocol::param::GetSet::getDataTypeSignature().toTransferCRC();
-    }
-
-    void encode_beginfirmwareupdate_response(
-        const uavcan::protocol::file::BeginFirmwareUpdate::Response& msg
-    ) {
-        start_tx_();
-        uavcan::protocol::file::BeginFirmwareUpdate::Response::encode(
-            msg, tx_codec_);
-        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
-        rx_tail_ = 0u;
-        tx_message_id_ = response_message_id_(rx_message_id_);
-        tx_crc_ = uavcan::protocol::file::BeginFirmwareUpdate::getDataTypeSignature().toTransferCRC();
-    }
-
-    void encode_getnodeinfo_response(
-        const uavcan::protocol::GetNodeInfo::Response& msg
-    ) {
-        start_tx_();
-        uavcan::protocol::GetNodeInfo::Response::encode(msg, tx_codec_);
-        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
-        rx_tail_ = 0u;
-        tx_message_id_ = response_message_id_(rx_message_id_);
-        tx_crc_ = uavcan::protocol::GetNodeInfo::getDataTypeSignature().toTransferCRC();
-    }
-
-    void encode_restartnode_response(
-        const uavcan::protocol::RestartNode::Response& msg
-    ) {
-        start_tx_();
-        uavcan::protocol::RestartNode::Response::encode(msg, tx_codec_);
-        tx_tail_ = (uint8_t)((rx_tail_ & 0x1Fu) | UAVCAN_SOF_BIT);
-        rx_tail_ = 0u;
-        tx_message_id_ = response_message_id_(rx_message_id_);
-        tx_crc_ = uavcan::protocol::RestartNode::getDataTypeSignature().toTransferCRC();
+        tx_crc_ = T::getDataTypeSignature().toTransferCRC();
     }
 
     /* Decoders */
-
-    bool decode_esc_rawcommand(
-        uavcan::equipment::esc::RawCommand& msg
+    template<typename T>
+    bool decode(
+        T& msg
     ) {
-        return uavcan::equipment::esc::RawCommand::decode(msg, rx_codec_);
-    }
-
-    bool decode_esc_rpmcommand(
-        uavcan::equipment::esc::RPMCommand& msg
-    ) {
-        return uavcan::equipment::esc::RPMCommand::decode(msg, rx_codec_);
-    }
-
-    bool decode_indication_beepcommand (
-        uavcan::equipment::indication::BeepCommand& msg
-    ) {
-        return uavcan::equipment::indication::BeepCommand::decode(
-            msg, rx_codec_);
-    }
-
-    bool decode_executeopcode_request(
-        uavcan::protocol::param::ExecuteOpcode::Request& msg
-    ) {
-        return uavcan::protocol::param::ExecuteOpcode::Request::decode(
-            msg, rx_codec_);
-    }
-
-    bool decode_getset_request(
-        uavcan::protocol::param::GetSet::Request& msg
-    ) {
-        return uavcan::protocol::param::GetSet::Request::decode(
-            msg, rx_codec_);
-    }
-
-    bool decode_restartnode_request(
-        uavcan::protocol::RestartNode::Request& msg
-    ) {
-        return uavcan::protocol::RestartNode::Request::decode(msg, rx_codec_);
+        return T::decode(msg, rx_codec_);
     }
 };

@@ -35,6 +35,31 @@ SOFTWARE.
 #include "uavcan.h"
 
 
+#include "uavcan/protocol/param/ExecuteOpcode.hpp"
+#include "uavcan/protocol/param/GetSet.hpp"
+#include "uavcan/protocol/file/BeginFirmwareUpdate.hpp"
+#include "uavcan/protocol/GetNodeInfo.hpp"
+#include "uavcan/protocol/NodeStatus.hpp"
+#include "uavcan/protocol/RestartNode.hpp"
+#include "uavcan/equipment/esc/RawCommand.hpp"
+#include "uavcan/equipment/esc/RPMCommand.hpp"
+#include "uavcan/equipment/esc/Status.hpp"
+#include "uavcan/equipment/esc/FOCStatus.hpp"
+#include "uavcan/equipment/indication/BeepCommand.hpp"
+
+
+enum uavcan_dtid_filter_id_t {
+    UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE = 0u,
+    UAVCAN_PROTOCOL_PARAM_GETSET,
+    UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE,
+    UAVCAN_PROTOCOL_GETNODEINFO,
+    UAVCAN_PROTOCOL_RESTARTNODE,
+    UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
+    UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
+    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND
+};
+
+
 /*
 "Owned" by identification_cb / control_cb (only one will be running at a given
 stage in execution).
@@ -527,7 +552,7 @@ static void __attribute__((noreturn)) node_run(
 
         if (broadcast_manager.is_rx_done()) {
             if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RAWCOMMAND &&
-                    broadcast_manager.decode_esc_rawcommand(raw_cmd) &&
+                    broadcast_manager.decode(raw_cmd) &&
                     esc_index < raw_cmd.cmd.size()) {
                 got_setpoint = true;
                 mode = CONTROLLER_POWER;
@@ -536,14 +561,14 @@ static void __attribute__((noreturn)) node_run(
                            (motor_params.max_voltage_v *
                             motor_params.max_current_a);
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
-                        broadcast_manager.decode_esc_rpmcommand(rpm_cmd) &&
+                        broadcast_manager.decode(rpm_cmd) &&
                         esc_index < rpm_cmd.rpm.size()) {
                 got_setpoint = true;
                 mode = CONTROLLER_SPEED;
                 setpoint = (float)rpm_cmd.rpm[esc_index] * (1.0f / 60.0f) *
                           (float)motor_params.num_poles * (float)M_PI;
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
-                       broadcast_manager.decode_indication_beepcommand(beep_cmd)) {
+                       broadcast_manager.decode(beep_cmd)) {
                 /* Set up audio generation -- aim for 0.5 A */
                 g_audio_state.off_time =
                     (uint32_t)(beep_cmd.duration / hal_control_t_s);
@@ -598,7 +623,7 @@ static void __attribute__((noreturn)) node_run(
         */
         if (service_manager.is_rx_done() && service_manager.is_tx_done()) {
             if (service_filter_id == UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE &&
-                    service_manager.decode_executeopcode_request(xo_req)) {
+                    service_manager.decode(xo_req)) {
                 /*
                 Return OK if the opcode is understood and the controller is
                 stopped, otherwise reject.
@@ -622,9 +647,9 @@ static void __attribute__((noreturn)) node_run(
                     configuration.write_params();
                     xo_resp.ok = true;
                 }
-                service_manager.encode_executeopcode_response(xo_resp);
+                service_manager.encode_response<uavcan::protocol::param::ExecuteOpcode>(xo_resp);
             } else if (service_filter_id == UAVCAN_PROTOCOL_PARAM_GETSET &&
-                       service_manager.decode_getset_request(gs_req)) {
+                       service_manager.decode(gs_req)) {
                 uavcan::protocol::param::GetSet::Response resp;
 
                 if (!gs_req.name.empty()) {
@@ -665,7 +690,7 @@ static void __attribute__((noreturn)) node_run(
                     }
                 }
 
-                service_manager.encode_getset_response(resp);
+                service_manager.encode_response<uavcan::protocol::param::GetSet>(resp);
             } else if (service_filter_id == UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE) {
                 uavcan::protocol::file::BeginFirmwareUpdate::Response resp;
 
@@ -680,7 +705,7 @@ static void __attribute__((noreturn)) node_run(
                 } else {
                     resp.error = resp.ERROR_INVALID_MODE;
                 }
-                service_manager.encode_beginfirmwareupdate_response(resp);
+                service_manager.encode_response<uavcan::protocol::file::BeginFirmwareUpdate>(resp);
             } else if (service_filter_id == UAVCAN_PROTOCOL_GETNODEINFO) {
                 uavcan::protocol::GetNodeInfo::Response resp;
 
@@ -714,9 +739,9 @@ static void __attribute__((noreturn)) node_run(
                 /* Set the hardware name */
                 resp.name = HW_UAVCAN_NAME;
 
-                service_manager.encode_getnodeinfo_response(resp);
+                service_manager.encode_response<uavcan::protocol::GetNodeInfo>(resp);
             } else if (service_filter_id == UAVCAN_PROTOCOL_RESTARTNODE &&
-                    service_manager.decode_restartnode_request(rn_req)) {
+                    service_manager.decode(rn_req)) {
                 uavcan::protocol::RestartNode::Response resp;
 
                 /*
@@ -730,7 +755,7 @@ static void __attribute__((noreturn)) node_run(
                 } else {
                     resp.ok = false;
                 }
-                service_manager.encode_restartnode_response(resp);
+                service_manager.encode_response<uavcan::protocol::RestartNode>(resp);
             }
 
             service_manager.receive_acknowledge();
@@ -779,7 +804,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.rpm_setpoint = g_controller_state.speed_setpoint *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles);
                 msg.esc_index = esc_index;
-                broadcast_manager.encode_foc_status(
+                broadcast_manager.encode_message(
                     foc_status_transfer_id++, foc_status_dtid, msg);
                 foc_status_time = current_time;
             } else if (esc_status_interval &&
@@ -800,7 +825,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.power_rating_pct = (uint8_t)(100.0f * (is_a * vs_v) /
                     (motor_params.max_current_a * motor_params.max_voltage_v));
                 msg.esc_index = esc_index;
-                broadcast_manager.encode_esc_status(
+                broadcast_manager.encode_message(
                     esc_status_transfer_id++, msg);
                 esc_status_time = current_time;
             } else if (current_time - node_status_time >=
@@ -815,7 +840,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.sub_mode = 0u;
                 msg.vendor_specific_status_code =
                     (uint16_t)g_controller_state.mode;
-                broadcast_manager.encode_nodestatus(
+                broadcast_manager.encode_message(
                     node_status_transfer_id++, msg);
                 node_status_time = current_time;
             }

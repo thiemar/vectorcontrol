@@ -241,7 +241,6 @@ uint8_t can_tx(uint32_t message_id, size_t length, const uint8_t *message,
 
     uint32_t mask = CAN_TSR_TME0 << mailbox;
 	uint32_t cnt = CAN_TX_TIMEOUT_MS;
-	time_hrt_cycles_t begin = timer_hrt_read();
 
 	timer_hrt_clear_wrap();
 
