@@ -1,0 +1,15 @@
+#
+# FOC ESC extended status.
+#
+
+float16[2] i_dq              # Ampere
+float16 i_setpoint           # Ampere
+
+float16[2] v_dq              # Volt
+float16 power                # Watt
+
+float16 acceleration         # rpm/s
+float16 rpm
+float16 rpm_setpoint
+
+uint5 esc_index

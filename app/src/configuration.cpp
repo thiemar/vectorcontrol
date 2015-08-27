@@ -63,7 +63,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     speeds.
     */
     {PARAM_MOTOR_NUM_POLES, PARAM_TYPE_INT, "motor_num_poles",
-        2.0f, 2.0f, 40.0f},
+        10.0f, 2.0f, 40.0f},
 
     /*
     Motor current limit in amps. This determines the maximum current
@@ -89,7 +89,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     resistance, determines the maximum acceleration torque.
     */
     {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "motor_v_accel",
-        0.3f, 0.01f, 1.0f},
+        0.4f, 0.01f, 1.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
@@ -153,14 +153,14 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Interval in microseconds at which FOC ESC status messages should be
     sent. Zero disables publication.
     */
-    {PARAM_FOC_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
-        "uavcan.pubp-uavcan.equipment.esc.FOCStatus",
+    {PARAM_THIEMAR_STATUS_INTERVAL, PARAM_TYPE_INT,
+        "uavcan.pubp-thiemar.equipment.esc.Status",
         50e3, 0, 1e6f},
 
     /* Data type ID of the custom ESC status message. */
-    {PARAM_FOC_ESCSTATUS_ID, PARAM_TYPE_INT,
-        "uavcan.dtid-uavcan.equipment.esc.FOCStatus",
-        1035, 1, 65535},
+    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT,
+        "uavcan.dtid-thiemar.equipment.esc.Status",
+        11034, 1, 65535},
 
     /*
     Interval in microseconds at which UAVCAN standard ESC status messages
@@ -168,12 +168,17 @@ static struct param_t param_config_[NUM_PARAMS] = {
     */
     {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
         "uavcan.pubp-uavcan.equipment.esc.Status",
-        200e3f, 0, 1e6f},
+        50e3f, 0, 1e6f},
 
     /* Index of this ESC in throttle command messages. */
     {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT,
         "uavcan.id-uavcan.equipment.esc-esc_index",
         0.0f, 0.0f, 15.0f},
+
+    /* Data type ID of the custom ESC thrust power command message. */
+    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT,
+        "uavcan.dtid-thiemar.equipment.esc.ThrustPowerCommand",
+        11031, 1, 65535},
 };
 
 

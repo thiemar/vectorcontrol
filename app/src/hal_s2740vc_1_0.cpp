@@ -44,7 +44,7 @@ PIN   PORT   NUMBER    FUNCTION
   8      A        1    ADC1_IN2 - Phase B current sense
   9      A        2    ADC1_IN3 - Phase C current sense
  10      A        3    ADC1_IN4 - VSENSE
- 11      A        4    -
+ 11      A        4    DAC1_OUT1 - Vref
  12      A        5    -
  13      A        6    -
  14      A        7    -

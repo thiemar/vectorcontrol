@@ -234,10 +234,11 @@ public:
 
         if (control_power_) {
             /* Eqn 17 from the paper */
-            power =
-                (kq0_ * state.i_dq_a[1] * state.angular_velocity_rad_per_s) -
-                (ir_ * state.angular_velocity_rad_per_s *
-                    state.angular_acceleration_rad_per_s2);
+            power = state.i_dq_a[1] -
+                    (ir_ * state.angular_acceleration_rad_per_s2) / kq0_;
+            //    (kq0_ * state.i_dq_a[1] * state.angular_velocity_rad_per_s) -
+            //    (ir_ * state.angular_velocity_rad_per_s *
+            //        state.angular_acceleration_rad_per_s2);
             error = power_setpoint_w_ - power;
             kp = power_kp_;
             ki = power_ki_;

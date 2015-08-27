@@ -791,14 +791,14 @@ if __name__ == "__main__":
                          help="log UAVCAN messages to PATH", metavar="PATH")
 
     cmd_group = OptionGroup(parser, "UAVCAN options")
-    cmd_group.add_option("--dsdl", dest="dsdl_path", action="append",
+    cmd_group.add_option("--dsdl", dest="dsdl_paths", action="append",
                          metavar="PATH", help="load DSDL files from PATH")
     cmd_group.add_option("--firmware", dest="firmware", metavar="PATH",
                          help="use firmware images in PATH to update nodes")
 
     options, args = parser.parse_args()
 
-    uavcan.load_dsdl(options.dsdl_path)
+    uavcan.load_dsdl(options.dsdl_paths + ["../dsdl/thiemar"])
 
     ioloop = tornado.ioloop.IOLoop.instance()
 
@@ -887,7 +887,7 @@ if __name__ == "__main__":
             # CAN<->WebSocket bridge
             (uavcan.protocol.NodeStatus, MessageRelayMonitor),
             (uavcan.equipment.esc.Status, MessageRelayMonitor),
-            (uavcan.equipment.esc.FOCStatus, MessageRelayMonitor),
+            (uavcan.thirdparty.thiemar.equipment.esc.Status, MessageRelayMonitor),
             (uavcan.equipment.air_data.TrueAirspeed, MessageRelayMonitor),
             (uavcan.equipment.air_data.IndicatedAirspeed,
                 MessageRelayMonitor),

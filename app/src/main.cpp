@@ -44,7 +44,8 @@ SOFTWARE.
 #include "uavcan/equipment/esc/RawCommand.hpp"
 #include "uavcan/equipment/esc/RPMCommand.hpp"
 #include "uavcan/equipment/esc/Status.hpp"
-#include "uavcan/equipment/esc/FOCStatus.hpp"
+#include "thiemar/equipment/esc/Status.hpp"
+#include "thiemar/equipment/esc/ThrustPowerCommand.hpp"
 #include "uavcan/equipment/indication/BeepCommand.hpp"
 
 
@@ -56,7 +57,8 @@ enum uavcan_dtid_filter_id_t {
     UAVCAN_PROTOCOL_RESTARTNODE,
     UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
     UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
-    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND
+    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND,
+    THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND
 };
 
 
@@ -156,7 +158,7 @@ extern "C" void control_cb(
 );
 
 
-static void node_init(uint8_t node_id);
+static void node_init(uint8_t node_id, Configuration& configuration);
 static void node_run(
     uint8_t node_id,
     Configuration& configuration,
@@ -349,10 +351,10 @@ control_cb(
             speed controller's current output as we transition out of
             open-loop mode.
             */
-            current_setpoint =
-                (internal_speed_setpoint > 0.0f ?
-                    accel_current_a : -accel_current_a) * (1.0f - closed_loop_frac) +
-                current_setpoint * closed_loop_frac;
+            current_setpoint = (1.0f - closed_loop_frac) *
+                               (internal_speed_setpoint > 0.0f ?
+                                    accel_current_a : -accel_current_a) +
+                               current_setpoint * closed_loop_frac;
         }
 
         /* Update the stator current controller setpoint. */
@@ -373,7 +375,7 @@ control_cb(
     g_estimator.get_est_v_alpha_beta_from_v_dq(out_v_ab_v, v_dq_v);
 
     /*
-    Could look at low-passing these too, based on the FOC status output rate
+    Could look at low-passing these, based on the FOC status output rate
     */
     g_controller_state.internal_speed_setpoint = internal_speed_setpoint;
     g_controller_state.closed_loop_frac = closed_loop_frac;
@@ -422,7 +424,7 @@ void systick_cb(void) {
 }
 
 
-static void node_init(uint8_t node_id) {
+static void node_init(uint8_t node_id, Configuration& configuration) {
     can_set_dtid_filter(
         1u, UAVCAN_PROTOCOL_PARAM_EXECUTEOPCODE, true,
         uavcan::protocol::param::ExecuteOpcode::DefaultDataTypeID,
@@ -455,6 +457,11 @@ static void node_init(uint8_t node_id) {
     can_set_dtid_filter(
         0u, UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND, false,
         uavcan::equipment::indication::BeepCommand::DefaultDataTypeID,
+        node_id);
+    can_set_dtid_filter(
+        0u, THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND, false,
+        (uint16_t)configuration.get_param_value_by_index(
+            PARAM_THIEMAR_THRUSTPOWERCOMMAND_ID),
         node_id);
 }
 
@@ -490,7 +497,7 @@ static void __attribute__((noreturn)) node_run(
     esc_index = (uint8_t)
         configuration.get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
     foc_status_dtid = (uint16_t)
-        configuration.get_param_value_by_index(PARAM_FOC_ESCSTATUS_ID);
+        configuration.get_param_value_by_index(PARAM_THIEMAR_STATUS_ID);
 
     UAVCANTransferManager broadcast_manager(node_id);
     UAVCANTransferManager service_manager(node_id);
@@ -498,6 +505,7 @@ static void __attribute__((noreturn)) node_run(
     uavcan::equipment::esc::RawCommand raw_cmd;
     uavcan::equipment::esc::RPMCommand rpm_cmd;
     uavcan::equipment::indication::BeepCommand beep_cmd;
+    thiemar::equipment::esc::ThrustPowerCommand power_cmd;
     uavcan::protocol::param::ExecuteOpcode::Request xo_req;
     uavcan::protocol::param::GetSet::Request gs_req;
     uavcan::protocol::RestartNode::Request rn_req;
@@ -506,7 +514,7 @@ static void __attribute__((noreturn)) node_run(
     esc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
         PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 0.001f);
     foc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
-        PARAM_FOC_ESCSTATUS_INTERVAL) * 0.001f);
+        PARAM_THIEMAR_STATUS_INTERVAL) * 0.001f);
 
     g_controller_state.idle_speed_rad_per_s =
         motor_params.idle_speed_rad_per_s;
@@ -538,6 +546,9 @@ static void __attribute__((noreturn)) node_run(
                 case UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND:
                     crc = uavcan::equipment::indication::BeepCommand::getDataTypeSignature().toTransferCRC();
                     break;
+                case THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND:
+                    crc = thiemar::equipment::esc::ThrustPowerCommand::getDataTypeSignature().toTransferCRC();
+                    break;
                 default:
                     break;
             }
@@ -558,7 +569,7 @@ static void __attribute__((noreturn)) node_run(
                 mode = CONTROLLER_POWER;
                 /* Scale 0-8191 to represent 0 to maximum power. */
                 setpoint = (float)raw_cmd.cmd[esc_index] * (1.0f / 8191.0f) *
-                           (motor_params.max_voltage_v *
+                           (/*motor_params.max_voltage_v * */
                             motor_params.max_current_a);
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
                         broadcast_manager.decode(rpm_cmd) &&
@@ -578,6 +589,12 @@ static void __attribute__((noreturn)) node_run(
                 g_audio_state.volume_v = std::min(
                     2.0f * motor_params.rs_r,
                     0.5f * std::min((float)g_vbus_v, motor_params.max_voltage_v));
+            } else if (broadcast_filter_id == THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND &&
+                    broadcast_manager.decode(power_cmd) &&
+                    esc_index < power_cmd.thrust_power.size()) {
+                got_setpoint = true;
+                mode = CONTROLLER_POWER;
+                setpoint = power_cmd.thrust_power[esc_index];
             }
 
             broadcast_manager.receive_acknowledge();
@@ -775,35 +792,34 @@ static void __attribute__((noreturn)) node_run(
 
             if (foc_status_interval && current_time - foc_status_time >=
                     foc_status_interval) {
-                uavcan::equipment::esc::FOCStatus msg;
+                thiemar::equipment::esc::Status msg;
 
                 msg.i_dq[0] = motor_state.i_dq_a[0];
                 msg.i_dq[1] = motor_state.i_dq_a[1];
                 msg.i_setpoint = g_controller_state.current_setpoint;
+
                 msg.v_dq[0] = v_dq_v[0];
                 msg.v_dq[1] = v_dq_v[1];
-                /* Acceleration */
-                msg.hfi_dq[0] = motor_state.angular_acceleration_rad_per_s2 *
+
+                msg.power = g_phi_v_s_per_rad *
+                            motor_state.i_dq_a[1] *
+                            motor_state.angular_velocity_rad_per_s -
+                            motor_params.rotor_inertia_kg_m2 *
+                            motor_state.angular_velocity_rad_per_s *
+                            motor_state.angular_acceleration_rad_per_s2 *
+                            (2.0f / (float)motor_params.num_poles) *
+                            (2.0f / (float)motor_params.num_poles);
+
+                msg.acceleration =
+                    motor_state.angular_acceleration_rad_per_s2 *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles);
-                /* Power */
-                msg.hfi_dq[1] = g_phi_v_s_per_rad *
-                                motor_state.i_dq_a[1] *
-                                motor_state.angular_velocity_rad_per_s -
-                                motor_params.rotor_inertia_kg_m2 *
-                                motor_state.angular_velocity_rad_per_s *
-                                motor_state.angular_acceleration_rad_per_s2 *
-                                (2.0f / (float)motor_params.num_poles) *
-                                (2.0f / (float)motor_params.num_poles);
-                msg.consistency = 0;
-                msg.vbus = g_vbus_v;
-                msg.temperature = 273.15f + hal_get_temperature_degc();
-                msg.angle = (uint8_t)
-                    (motor_state.angle_rad * (0.5f / M_PI) * 255.0f);
                 msg.rpm = motor_state.angular_velocity_rad_per_s *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles);
                 msg.rpm_setpoint = g_controller_state.speed_setpoint *
                     60.0f / ((float)M_PI * (float)motor_params.num_poles);
+
                 msg.esc_index = esc_index;
+
                 broadcast_manager.encode_message(
                     foc_status_transfer_id++, foc_status_dtid, msg);
                 foc_status_time = current_time;
@@ -825,6 +841,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.power_rating_pct = (uint8_t)(100.0f * (is_a * vs_v) /
                     (motor_params.max_current_a * motor_params.max_voltage_v));
                 msg.esc_index = esc_index;
+
                 broadcast_manager.encode_message(
                     esc_status_transfer_id++, msg);
                 esc_status_time = current_time;
@@ -871,9 +888,20 @@ static void __attribute__((noreturn)) node_run(
                 g_controller_state.speed_setpoint =
                     g_controller_state.power_setpoint = 0.0f;
                 g_controller_state.last_setpoint_update = current_time;
-            } else {
-                /* g_controller_state.mode = CONTROLLER_STOPPING; */
             }
+        }
+
+        /*
+        Update the Kv parameter with the latest estimate of phi -- we don't
+        really need to do this in the main loop, but it can't hurt.
+        */
+        if (g_phi_v_s_per_rad > 0.0f &&
+                (g_controller_state.mode == CONTROLLER_SPEED ||
+                 g_controller_state.mode == CONTROLLER_POWER)) {
+            configuration.set_param_value_by_index(
+                PARAM_MOTOR_KV,
+                60.0f / ((float)M_PI * (float)motor_params.num_poles *
+                         g_phi_v_s_per_rad));
         }
 
         /*
@@ -984,6 +1012,6 @@ int main(void) {
     hal_set_low_frequency_callback(systick_cb);
 
     node_id = hal_get_can_node_id();
-    node_init(node_id);
+    node_init(node_id, configuration);
     node_run(node_id, configuration, motor_params);
 }

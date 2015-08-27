@@ -1,0 +1,6 @@
+#
+# Simple thrust power setpoint.
+# Negative values indicate reverse rotation.
+#
+
+float16[<=20] thrust_power    # Watt

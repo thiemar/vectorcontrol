@@ -29,7 +29,7 @@ var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
     deviceAirspeedCharts = {}, deviceLoadCharts = {}, activeESCs = {},
     escRpmSetpointFunctions = [], escRawSetpointFunctions = [],
-    lastUpdate = null;
+    escPowerSetpointFunctions = [], lastUpdate = null;
 
 function getParamValue(param) {
     if (param.real_value !== undefined) {
@@ -116,7 +116,8 @@ function connect() {
                                          nodeData[message.node_id] || []);
             }
 
-        } else if ((message.datatype == "uavcan.equipment.esc.FOCStatus" ||
+        } else if ((message.datatype == "thiemar.equipment.esc.Status" ||
+                   message.datatype == "uavcan.equipment.esc.Status" ||
                    message.datatype == "uavcan.equipment.air_data.TrueAirspeed" ||
                    message.datatype == "uavcan.equipment.air_data.IndicatedAirspeed" ||
                    message.datatype == "uavcan.equipment.hardpoint.Status") &&
@@ -127,13 +128,16 @@ function connect() {
             (30 seconds * 20 Hz). Update the charts once done.
             */
             if (!nodeData[message.node_id]) {
-                nodeData[message.node_id] = [];
+                nodeData[message.node_id] = {};
             }
-            nodeData[message.node_id].push(message.payload);
-            if (nodeData[message.node_id].length > 600) {
-                nodeData[message.node_id] =
-                    nodeData[message.node_id].slice(
-                        nodeData[message.node_id].length - 600);
+            if (!nodeData[message.node_id][message.datatype]) {
+                nodeData[message.node_id][message.datatype] = [];
+            }
+            nodeData[message.node_id][message.datatype].push(message.payload);
+            if (nodeData[message.node_id][message.datatype].length > 600) {
+                nodeData[message.node_id][message.datatype] =
+                    nodeData[message.node_id][message.datatype].slice(
+                        nodeData[message.node_id][message.datatype].length - 600);
             }
 
             if (!deviceAnimationCallbacks[message.node_id]) {
@@ -143,7 +147,8 @@ function connect() {
                     });
             }
 
-            if (message.datatype == "uavcan.equipment.esc.FOCStatus") {
+            if (message.datatype == "thiemar.equipment.esc.Status" ||
+                    message.datatype == "uavcan.equipment.esc.Status") {
                 ensureESCActive(message);
             }
         }
@@ -550,25 +555,19 @@ function setupOutputVoltageChart(device) {
         .range([0, width])
         .domain([0.0, 30.0]);
 
-    result.y0 = d3.scale.linear()
+    result.y = d3.scale.linear()
         .range([height, 0.0])
         .domain([-30.0, 30.0]);
-
-    result.y1 = d3.scale.linear()
-        .range([height, 0.0])
-        .domain([0, 1.0]);
 
     result.xAxis = d3.svg.axis()
         .scale(result.x)
         .orient("bottom")
         .ticks(30)
         .tickSize(-height, 0, 0);
-    result.yAxis0 = d3.svg.axis()
-        .scale(result.y0)
-        .orient("left");
-    result.yAxis1 = d3.svg.axis()
-        .scale(result.y1)
-        .orient("right");
+    result.yAxis = d3.svg.axis()
+        .scale(result.y)
+        .orient("left")
+        .tickSize(-width, 0, 0);
 
     result.chart = d3.select(svg)
         .attr("width", width + margin.left + margin.right)
@@ -587,8 +586,8 @@ function setupOutputVoltageChart(device) {
         .text("Time (s)");
 
     result.chart.append("g")
-        .attr("class", "y0 axis")
-        .call(result.yAxis0)
+        .attr("class", "y axis")
+        .call(result.yAxis)
     .append("text")
         .attr("x", -height / 2)
         .attr("y", -40)
@@ -596,26 +595,11 @@ function setupOutputVoltageChart(device) {
         .attr("transform", "rotate(-90)")
         .text("Output voltage (V)");
 
-    result.chart.append("g")
-        .attr("class", "y1 axis consistency")
-        .attr("transform", "translate(" + width + ", 0)")
-        .call(result.yAxis1)
-    .append("text")
-        .attr("x", -height / 2)
-        .attr("y", 40)
-        .style("text-anchor", "middle")
-        .attr("transform", "rotate(-90)")
-        .text("Estimator consistency");
-
     result.chart.append("clipPath")
         .attr("id", "clip")
     .append("rect")
         .attr("width", width)
         .attr("height", height);
-
-    result.chart.append("path")
-        .attr("class", "consistency-unit")
-        .attr('clip-path', 'url(#clip)');
 
     result.chart.append("path")
         .attr("class", "voltage-vd")
@@ -785,10 +769,10 @@ function updateVoltageTempChart(deviceId, device, data) {
     /* Vbus line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(d.vbus); });
+        .y(function(d) { return chart.y0(d.voltage); });
 
     chart.chart.select(".vbus")
-        .datum(data)
+        .datum(data["uavcan.equipment.esc.Status"])
         .attr("d", seriesData);
 
     /* Temperature line */
@@ -797,7 +781,7 @@ function updateVoltageTempChart(deviceId, device, data) {
         .y(function(d) { return chart.y1(d.temperature - 273.15); });
 
     chart.chart.select(".temperature")
-        .datum(data)
+        .datum(data["uavcan.equipment.esc.Status"])
         .attr("d", seriesData);
 }
 
@@ -818,7 +802,7 @@ function updateCurrentChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.i_setpoint); });
 
     chart.chart.select(".current-setpoint")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", current);
 
     /* Id line */
@@ -827,7 +811,7 @@ function updateCurrentChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.i_dq[0]); });
 
     chart.chart.select(".current-id")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", current);
 
     /* Iq line */
@@ -836,7 +820,7 @@ function updateCurrentChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.i_dq[1]); });
 
     chart.chart.select(".current-iq")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", current);
 }
 
@@ -862,7 +846,7 @@ function updateSpeedChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.rpm_setpoint); });
 
     chart.chart.select(".speed-setpoint")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", speed);
 
     /* Id line */
@@ -871,7 +855,7 @@ function updateSpeedChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.rpm); });
 
     chart.chart.select(".speed-actual")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", speed);
 }
 
@@ -884,19 +868,19 @@ function updateAccelPowerChart(deviceId, device, data) {
     /* Acceleration line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(d.hfi_dq[0]); });
+        .y(function(d) { return chart.y0(d.acceleration); });
 
     chart.chart.select(".hfi-d")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", seriesData);
 
     /* Power line */
     seriesData = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y1(d.hfi_dq[1]); });
+        .y(function(d) { return chart.y1(d.power); });
 
     chart.chart.select(".hfi-angle")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", seriesData);
 }
 
@@ -907,35 +891,26 @@ function updateOutputVoltageChart(deviceId, device, data) {
     chart = deviceOutputVoltageCharts[deviceId];
     maxVoltage = parseFloat(device.querySelector("input[name=motor_v_max]").value) || 27.0;
 
-    chart.y0.domain([-maxVoltage, maxVoltage]);
-    chart.yAxis0.scale(chart.y0);
-    chart.chart.select(".y0.axis").call(chart.yAxis0);
-
-    /* Consistency line */
-    consistency = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y1(d.consistency / 255.0); });
-
-    chart.chart.select(".consistency-unit")
-        .datum(data)
-        .attr("d", consistency);
+    chart.y.domain([-maxVoltage, maxVoltage]);
+    chart.yAxis.scale(chart.y);
+    chart.chart.select(".y.axis").call(chart.yAxis);
 
     /* Vd line */
     voltage = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(d.v_dq[0]); });
+        .y(function(d) { return chart.y(d.v_dq[0]); });
 
     chart.chart.select(".voltage-vd")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", voltage);
 
     /* Vq line */
     voltage = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(d.v_dq[1]); });
+        .y(function(d) { return chart.y(d.v_dq[1]); });
 
     chart.chart.select(".voltage-vq")
-        .datum(data)
+        .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", voltage);
 }
 
@@ -951,9 +926,7 @@ function updateAirspeedChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.true_airspeed); });
 
     chart.chart.select(".airspeed-tas")
-        .datum(data.filter(function(d) {
-            return d.true_airspeed !== undefined;
-        }))
+        .datum(data["uavcan.equipment.air_data.TrueAirspeed"])
         .attr("d", airspeed);
 
     /* IAS line */
@@ -962,9 +935,7 @@ function updateAirspeedChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.indicated_airspeed); });
 
     chart.chart.select(".airspeed-ias")
-        .datum(data.filter(function(d) {
-            return d.indicated_airspeed !== undefined;
-        }))
+        .datum(data["uavcan.equipment.air_data.IndicatedAirspeed"])
         .attr("d", airspeed);
 }
 
@@ -972,7 +943,7 @@ function updateAirspeedChart(deviceId, device, data) {
 function updateLoadChart(deviceId, device, data) {
     var load, chart;
 
-    chart = deviceLoadCharts[deviceId];
+    chart = deviceLoadCharts[deviceId]["uavcan.equipment.hardpoint.Status"];
 
     /* Load line */
     load = d3.svg.line()
@@ -980,29 +951,37 @@ function updateLoadChart(deviceId, device, data) {
         .y(function(d) { return chart.y(d.cargo_weight); });
 
     chart.chart.select(".load-n")
-        .datum(data)
+        .datum(data["uavcan.equipment.hardpoint.Status"])
         .attr("d", load);
 }
 
 
 function updateSetpoint() {
-    var rpmSetpoints = [], rawSetpoints = [],
+    var rpmSetpoints = [], rawSetpoints = [], powerSetpoints = [],
         time = (new Date()).valueOf() * 0.001,  /* seconds */
-        maxRpmIdx = -1, maxRawIdx = -1;
+        maxRpmIdx = -1, maxRawIdx = -1, maxPowerIdx = -1;
 
     for (var i = 0; i < 16; i++) {
         if (escRpmSetpointFunctions[i]) {
             rpmSetpoints.push(parseInt(escRpmSetpointFunctions[i](time), 10));
             rawSetpoints.push(0.0);
+            powerSetpoints.push(0.0);
             maxRpmIdx = i;
         } else if (escRawSetpointFunctions[i]) {
             rpmSetpoints.push(0.0);
             rawSetpoints.push(parseInt(escRawSetpointFunctions[i](time) *
                                        (8191.0 / 100.0), 10));
+            powerSetpoints.push(0.0);
             maxRawIdx = i;
+        } else if (escPowerSetpointFunctions[i]) {
+            rpmSetpoints.push(0.0);
+            rawSetpoints.push(0.0);
+            powerSetpoints.push(escPowerSetpointFunctions[i](time));
+            maxPowerIdx = i;
         } else {
             rpmSetpoints.push(0.0);
             rawSetpoints.push(0.0);
+            powerSetpoints.push(0.0);
         }
     }
 
@@ -1020,6 +999,15 @@ function updateSetpoint() {
             datatype: "uavcan.equipment.esc.RawCommand",
             payload: {
                 cmd: rawSetpoints.slice(0, maxRawIdx + 1)
+            }
+        }));
+    }
+
+    if (maxPowerIdx >= 0) {
+        ws.send(JSON.stringify({
+            datatype: "thiemar.equipment.esc.ThrustPowerCommand",
+            payload: {
+                thrust_power: powerSetpoints.slice(0, maxPowerIdx + 1)
             }
         }));
     }
@@ -1111,9 +1099,15 @@ function setupEventListeners() {
                 if (commandMode == "raw") {
                     escRpmSetpointFunctions[escIndex] = null;
                     escRawSetpointFunctions[escIndex] = func;
+                    escPowerSetpointFunctions[escIndex] = null;
                 } else if (commandMode == "rpm") {
                     escRpmSetpointFunctions[escIndex] = func;
                     escRawSetpointFunctions[escIndex] = null;
+                    escPowerSetpointFunctions[escIndex] = null;
+                } else if (commandMode == "power") {
+                    escRpmSetpointFunctions[escIndex] = null;
+                    escRawSetpointFunctions[escIndex] = null;
+                    escPowerSetpointFunctions[escIndex] = func;
                 }
 
                 event.target.value = "Stop";
