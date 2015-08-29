@@ -89,7 +89,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     resistance, determines the maximum acceleration torque.
     */
     {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "motor_v_accel",
-        0.4f, 0.01f, 1.0f},
+        0.5f, 0.01f, 1.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
@@ -120,7 +120,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     100 rad/s electrical.
     */
     {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "ctl_p_gain",
-        0.4f, 0.0f, 1.0f},
+        1.0f, 0.0f, 10.0f},
 
     /*
     Rise time of the speed controller's torque output; this determines the
@@ -128,7 +128,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     the overall current limits and load inertia.
     */
     {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "ctl_i_time",
-        0.3f, 0.01f, 1.0f},
+        0.5f, 0.01f, 1.0f},
 
     /*
     If non-zero, the motor will rotate at this speed in rpm when any command

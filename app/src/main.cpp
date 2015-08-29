@@ -290,6 +290,7 @@ control_cb(
             g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
         } else if (mode == CONTROLLER_IDLING) {
             /* Rotate at the idle speed */
+            closed_loop_frac = 0.0f;
             internal_speed_setpoint = idle_speed_rad_per_s;
             g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
         } else if (closed_loop_frac < 1.0f) {
@@ -332,19 +333,16 @@ control_cb(
         } else if (closed_loop_frac < 1.0f) {
             /*
             Work out the transition value between open-loop and closed-loop
-            operation based on the square of the output voltage.
-
-            Don't allow closed_loop_frac to decrease, even if the angular
-            velocity drops.
+            operation based on the square of the output voltage. Smooth the
+            transition out quite a bit to avoid false triggering.
             */
             new_closed_loop_frac =
                 (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1]) * 8.0f - 7.0f;
+            new_closed_loop_frac = std::max(0.0f, new_closed_loop_frac);
 
-            if (new_closed_loop_frac > 1.0f) {
-                closed_loop_frac = 1.0f;
-            } else if (new_closed_loop_frac >= closed_loop_frac) {
-                closed_loop_frac = new_closed_loop_frac;
-            }
+            closed_loop_frac +=
+                (new_closed_loop_frac - closed_loop_frac) * 0.0001f;
+            closed_loop_frac = std::min(closed_loop_frac, 1.0f);
 
             /*
             Interpolate between the initial acceleration current and the

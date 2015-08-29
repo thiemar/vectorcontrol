@@ -948,7 +948,7 @@ function updateLoadChart(deviceId, device, data) {
     /* Load line */
     load = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y(d.cargo_weight); });
+        .y(function(d) { return chart.y(d.payload_weight); });
 
     chart.chart.select(".load-n")
         .datum(data["uavcan.equipment.hardpoint.Status"])

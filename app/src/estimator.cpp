@@ -276,11 +276,11 @@ StateEstimator::update_state_estimate(
     During open-loop mode (closed_loop_frac < 1.0), we estimate the value of
     phi (the back-EMF constant).
     */
-    if (closed_loop_frac < 1.0f) {
+    if (0.5f < closed_loop_frac && closed_loop_frac < 1.0f) {
         vs = __VSQRTF(v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
         is = __VSQRTF(i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
 
-        if (vs > 0.1f && state_estimate_.angular_velocity_rad_per_s > 1.0f) {
+        if (vs > 0.5f && state_estimate_.angular_velocity_rad_per_s > 1.0f) {
             phi = (vs - is * rs_r_) /
                   state_estimate_.angular_velocity_rad_per_s;
             phi_estimate_v_s_per_rad_ += (phi - phi_estimate_v_s_per_rad_) *
