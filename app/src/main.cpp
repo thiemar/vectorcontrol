@@ -978,13 +978,14 @@ int main(void) {
     flash, but it does enable the measurements to be read via the
     parameter interfaces.
     */
-    configuration.set_param_value_by_index(PARAM_MOTOR_RS, rs_r);
-    configuration.set_param_value_by_index(PARAM_MOTOR_LS, ls_h);
+    configuration.set_param_value_by_index(PARAM_MOTOR_RS, motor_params.rs_r);
+    configuration.set_param_value_by_index(PARAM_MOTOR_LS, motor_params.ls_h);
 
     /* Initialize the system with the motor parameters */
     g_estimator.set_control_params(control_params.bandwidth_hz,
                                    hal_control_t_s);
-    g_estimator.set_motor_params(rs_r, ls_h, motor_params.phi_v_s_per_rad,
+    g_estimator.set_motor_params(motor_params.rs_r, motor_params.ls_h,
+                                 motor_params.phi_v_s_per_rad,
                                  hal_control_t_s);
     g_estimator.reset_state();
 
