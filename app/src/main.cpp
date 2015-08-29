@@ -272,7 +272,6 @@ control_cb(
         g_controller_state.fault = true;
         g_controller_state.mode = CONTROLLER_STOPPED;
     } else if (mode == CONTROLLER_STOPPED) {
-        g_estimator.reset_state();
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
 
@@ -987,6 +986,8 @@ int main(void) {
                                    hal_control_t_s);
     g_estimator.set_motor_params(rs_r, ls_h, motor_params.phi_v_s_per_rad,
                                  hal_control_t_s);
+    g_estimator.reset_state();
+
     g_current_controller.set_params(motor_params, control_params,
                                     hal_control_t_s);
     g_speed_controller.set_params(motor_params, control_params,

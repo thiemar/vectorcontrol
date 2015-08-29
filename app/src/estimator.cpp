@@ -229,11 +229,18 @@ StateEstimator::update_state_estimate(
 #undef s3
 
     /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
-    state_estimate_.angle_rad += update[1] * closed_loop_frac;
-    state_estimate_.angle_rad +=
-        (state_estimate_.angular_velocity_rad_per_s * t_) * closed_loop_frac;
-    state_estimate_.angle_rad +=
-        (speed_setpoint * t_) * (1.0f - closed_loop_frac);
+    if (closed_loop_frac > 0.0f || speed_setpoint != 0.0f) {
+        state_estimate_.angle_rad += update[1] * closed_loop_frac;
+        state_estimate_.angle_rad +=
+            (state_estimate_.angular_velocity_rad_per_s * t_) * closed_loop_frac;
+        state_estimate_.angle_rad +=
+            (speed_setpoint * t_) * (1.0f - closed_loop_frac);
+    } else {
+        state_estimate_.angle_rad += update[1];
+        state_estimate_.angle_rad +=
+            (state_estimate_.angular_velocity_rad_per_s * t_);
+    }
+
 
     /*
     Calculate filtered velocity estimate by differentiating successive
