@@ -36,7 +36,7 @@ SOFTWARE.
 #define FLASH_PARAM_VERSION 1u
 
 
-#define PARAM_NAME_MAX_LEN 46u
+#define PARAM_NAME_MAX_LEN 82u
 
 
 #include <algorithm>

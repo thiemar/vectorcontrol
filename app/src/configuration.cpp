@@ -154,12 +154,12 @@ static struct param_t param_config_[NUM_PARAMS] = {
     sent. Zero disables publication.
     */
     {PARAM_THIEMAR_STATUS_INTERVAL, PARAM_TYPE_INT,
-        "uavcan.pubp-thiemar.equipment.esc.Status",
+        "pubp_ext_status",
         50e3, 0, 1e6f},
 
     /* Data type ID of the custom ESC status message. */
     {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT,
-        "uavcan.dtid-thiemar.equipment.esc.Status",
+        "dtid_ext_status",
         11034, 1, 65535},
 
     /*
@@ -167,17 +167,17 @@ static struct param_t param_config_[NUM_PARAMS] = {
     should be sent. Zero disables publication.
     */
     {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
-        "uavcan.pubp-uavcan.equipment.esc.Status",
+        "pubp_status",
         50e3f, 0, 1e6f},
 
     /* Index of this ESC in throttle command messages. */
     {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT,
-        "uavcan.id-uavcan.equipment.esc-esc_index",
+        "esc_index",
         0.0f, 0.0f, 15.0f},
 
     /* Data type ID of the custom ESC thrust power command message. */
     {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT,
-        "uavcan.dtid-thiemar.equipment.esc.ThrustPowerCommand",
+        "dtid_pwr_cmd",
         11031, 1, 65535},
 };
 

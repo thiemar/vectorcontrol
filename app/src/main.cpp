@@ -584,7 +584,7 @@ static void __attribute__((noreturn)) node_run(
                     2.0f * (float)M_PI * hal_control_t_s *
                     std::max(100.0f, beep_cmd.frequency);
                 g_audio_state.volume_v = std::min(
-                    2.0f * motor_params.rs_r,
+                    0.5f,
                     0.5f * std::min((float)g_vbus_v, motor_params.max_voltage_v));
             } else if (broadcast_filter_id == THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND &&
                     broadcast_manager.decode(power_cmd) &&

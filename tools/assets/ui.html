@@ -570,19 +570,19 @@ SOFTWARE.
                     <h3>UAVCAN parameters</h3>
                     <label>
                         <span>Extended status ID</span>
-                        <input name="uavcan.dtid-thiemar.equipment.esc.Status" class="configuration" type="number" min="1" max="1023" step="1">
+                        <input name="dtid_ext_status" class="configuration" type="number" min="1" max="1023" step="1">
                     </label>
                     <label>
                         <span>Extended status interval (µs)</span>
-                        <input name="uavcan.pubp-thiemar.equipment.esc.Status" class="configuration" type="number" min="0" max="1000000" step="1000">
+                        <input name="pubp_ext_status" class="configuration" type="number" min="0" max="1000000" step="1000">
                     </label>
                     <label>
                         <span>ESC status interval (µs)</span>
-                        <input name="uavcan.pubp-uavcan.equipment.esc.Status" class="configuration" type="number" min="0" max="1000000" step="1000">
+                        <input name="pubp_status" class="configuration" type="number" min="0" max="1000000" step="1000">
                     </label>
                     <label>
                         <span>ESC index</span>
-                        <input name="uavcan.id-uavcan.equipment.esc-esc_index" class="configuration" type="number" min="0" max="15" step="1">
+                        <input name="esc_index" class="configuration" type="number" min="0" max="15" step="1">
                     </label>
 
                     <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
