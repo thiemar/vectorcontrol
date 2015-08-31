@@ -120,7 +120,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     100 rad/s electrical.
     */
     {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "ctl_p_gain",
-        0.1f, 0.0f, 10.0f},
+        1.0f, 0.0f, 10.0f},
 
     /*
     Rise time of the speed controller's torque output; this determines the
@@ -176,7 +176,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Motor/prop drag torque in N * m * s^2 / rad^2
     */
     {PARAM_MOTOR_DRAG_TORQUE, PARAM_TYPE_FLOAT, "motor_drag",
-        2e-7f, 0.0f, 1e-3f},
+        0.0f, 0.0f, 1e-3f},
 };
 
 
@@ -225,7 +225,7 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
 void Configuration::read_control_params(
     struct control_params_t& params
 ) {
-    params.bandwidth_hz = 50.0f;
+    params.bandwidth_hz = 75.0f;
     params.accel_gain = params_[PARAM_CONTROL_P_GAIN];
     params.accel_time_s = params_[PARAM_CONTROL_I_TIME];
 }

@@ -199,7 +199,7 @@ void control_cb(
     float v_dq_v[2], phase, audio_v, current_setpoint, power_setpoint,
           speed_setpoint, internal_speed_setpoint, closed_loop_frac,
           idle_speed_rad_per_s, accel_current_a, spinup_rate_rad_per_s2,
-          new_closed_loop_frac, phi;
+          new_closed_loop_frac, phi, temp;
     struct motor_state_t motor_state;
     enum controller_mode_t mode;
 
@@ -275,10 +275,11 @@ void control_cb(
         for closed-loop control -- spin up gradually until we reach the
         minimum closed-loop speed.
         */
-        internal_speed_setpoint +=
-            spinup_rate_rad_per_s2 * hal_control_t_s *
-            (speed_setpoint > 0.0f || power_setpoint > 0.0f ? 1.0f : -1.0f);
-        g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+        temp = spinup_rate_rad_per_s2 * hal_control_t_s *
+               (speed_setpoint > 0.0f || power_setpoint > 0.0f ?
+                    1.0f : -1.0f);
+        internal_speed_setpoint += temp;
+        g_speed_controller.set_speed_setpoint(internal_speed_setpoint + temp);
     } else if (mode == CONTROLLER_POWER) {
         /*
         In torque control mode, the torque input is used to limit the
@@ -347,9 +348,9 @@ void control_cb(
     based on the square of the output voltage. Smooth the transition out quite
     a bit to avoid false triggering.
     */
-    new_closed_loop_frac = 8.0f * (v_dq_v[0] * v_dq_v[0] +
+    new_closed_loop_frac = 10.0f * (v_dq_v[0] * v_dq_v[0] +
                             (v_dq_v[1] - audio_v) * (v_dq_v[1] - audio_v)) -
-                           7.0f;
+                           9.0f;
     if (new_closed_loop_frac < 0.0f) {
         new_closed_loop_frac = 0.0f;
     }

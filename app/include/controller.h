@@ -200,7 +200,7 @@ public:
 
         max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
 
-        speed_kp_ = float(1.0/128.0) * max_accel_torque *
+        speed_kp_ = float(1.0/512.0) * max_accel_torque *
                     control_params.accel_gain;
         speed_ki_ = t_s / control_params.accel_time_s;
 
@@ -244,6 +244,7 @@ public:
                        state.angular_velocity_rad_per_s) / kq0_;
             torque = state.i_dq_a[1] - feedforward_torque;
             error = power_setpoint_w_ - torque;
+            feedforward_torque = 0.0f;
             kp = power_kp_;
             ki = power_ki_;
         } else {
