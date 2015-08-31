@@ -76,7 +76,7 @@ PROJECT_BUILD     = $(BUILD)$(PROJECT)/
 MCU_CC_FLAGS      = $(CORTEX_M4_HWFP_CC_FLAGS)
 MCU_LIB_PATH      = $(CORTEX_M4_HWFP_LIB_PATH)
 DEBUG_LEVEL       =
-OPTIM_FLAGS       = -Os -flto
+OPTIM_FLAGS       = -Os -flto -ffast-math
 LINKER_SCRIPT     = $(PROJECT)/$(PROJECT)_$(BOARD).ld
 PROJECT_OBJECTS   = $(addprefix $(PROJECT_BUILD), \
 					  main.o _cxx.o configuration.o can.o controller.o \
