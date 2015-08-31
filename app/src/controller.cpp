@@ -29,8 +29,7 @@ SOFTWARE.
 #include "fixed.h"
 
 
-void __attribute__((optimize("O3")))
-DQCurrentController::update(
+void DQCurrentController::update(
     float out_v_dq_v[2],
     const float i_dq_a[2],
     float angular_velocity_rad_per_s,

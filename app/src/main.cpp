@@ -45,7 +45,6 @@ SOFTWARE.
 #include "uavcan/equipment/esc/RPMCommand.hpp"
 #include "uavcan/equipment/esc/Status.hpp"
 #include "thiemar/equipment/esc/Status.hpp"
-#include "thiemar/equipment/esc/ThrustPowerCommand.hpp"
 #include "uavcan/equipment/indication/BeepCommand.hpp"
 
 
@@ -140,7 +139,7 @@ Hard current limit -- exceeding this shuts down the motor immediately
 (possibly destroying the power stage depending on the reason for the
 over-current)
 */
-#define HARD_CURRENT_LIMIT_A 70.0f
+#define HARD_CURRENT_LIMIT_A 120.0f
 
 
 extern "C" int main(void);
@@ -166,8 +165,7 @@ static void node_run(
 );
 
 
-void __attribute__((optimize("O3")))
-identification_cb(
+void identification_cb(
     float out_v_ab_v[2],
     const float last_v_ab_v[2],
     const float i_ab_a[2],
@@ -208,8 +206,7 @@ identification_cb(
 }
 
 
-void __attribute__((optimize("O3")))
-control_cb(
+void control_cb(
     float out_v_ab_v[2],
     const float last_v_ab_v[2],
     const float i_ab_a[2],
@@ -271,7 +268,10 @@ control_cb(
 
         g_controller_state.fault = true;
         g_controller_state.mode = CONTROLLER_STOPPED;
-    } else if (mode == CONTROLLER_STOPPED) {
+    } else if (mode == CONTROLLER_STOPPED || (mode == CONTROLLER_STOPPING &&
+                 std::abs(last_v_ab_v[0]) < 0.1f &&
+                 std::abs(last_v_ab_v[1]) < 0.1f)) {
+        /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
         g_current_controller.reset_state();
         g_speed_controller.reset_state();
 
@@ -328,7 +328,8 @@ control_cb(
             Add a small amount of negative torque to ensure the motor actually
             shuts down.
             */
-            current_setpoint = internal_speed_setpoint > 0.0f ? -0.25f : 0.25f;
+            current_setpoint = internal_speed_setpoint > 0.0f ?
+                               -0.25f : 0.25f;
         } else if (closed_loop_frac < 1.0f) {
             /*
             Work out the transition value between open-loop and closed-loop
@@ -393,23 +394,9 @@ control_cb(
 
 
 void systick_cb(void) {
-    uint32_t state_time, state_last_setpoint_update;
-    enum controller_mode_t state_mode;
-
-    state_mode = g_controller_state.mode;
-    state_time = g_controller_state.time + 1u;
-    state_last_setpoint_update = g_controller_state.last_setpoint_update;
-
-    /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
-    if (std::abs(g_v_dq_v[0]) < 0.1f && std::abs(g_v_dq_v[1]) < 0.1f &&
-            state_mode == CONTROLLER_STOPPING) {
-        g_controller_state.mode = CONTROLLER_STOPPED;
-        g_controller_state.speed_setpoint = 0.0f;
-        g_controller_state.current_setpoint = 0.0f;
-    } else if ((state_mode == CONTROLLER_SPEED ||
-                state_mode == CONTROLLER_POWER ||
-                state_mode == CONTROLLER_IDLING) &&
-                state_time - state_last_setpoint_update > THROTTLE_TIMEOUT_MS) {
+    if (g_controller_state.mode != CONTROLLER_STOPPED &&
+            g_controller_state.time - g_controller_state.last_setpoint_update
+            > THROTTLE_TIMEOUT_MS) {
         /*
         Stop gracefully if the present command mode doesn't provide an
         updated setpoint in the required period.
@@ -417,7 +404,7 @@ void systick_cb(void) {
         g_controller_state.mode = CONTROLLER_STOPPING;
     }
 
-    g_controller_state.time = state_time;
+    g_controller_state.time++;
 }
 
 
@@ -454,11 +441,6 @@ static void node_init(uint8_t node_id, Configuration& configuration) {
     can_set_dtid_filter(
         0u, UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND, false,
         uavcan::equipment::indication::BeepCommand::DefaultDataTypeID,
-        node_id);
-    can_set_dtid_filter(
-        0u, THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND, false,
-        (uint16_t)configuration.get_param_value_by_index(
-            PARAM_THIEMAR_THRUSTPOWERCOMMAND_ID),
         node_id);
 }
 
@@ -502,7 +484,6 @@ static void __attribute__((noreturn)) node_run(
     uavcan::equipment::esc::RawCommand raw_cmd;
     uavcan::equipment::esc::RPMCommand rpm_cmd;
     uavcan::equipment::indication::BeepCommand beep_cmd;
-    thiemar::equipment::esc::ThrustPowerCommand power_cmd;
     uavcan::protocol::param::ExecuteOpcode::Request xo_req;
     uavcan::protocol::param::GetSet::Request gs_req;
     uavcan::protocol::RestartNode::Request rn_req;
@@ -542,9 +523,6 @@ static void __attribute__((noreturn)) node_run(
                     break;
                 case UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND:
                     crc = uavcan::equipment::indication::BeepCommand::getDataTypeSignature().toTransferCRC();
-                    break;
-                case THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND:
-                    crc = thiemar::equipment::esc::ThrustPowerCommand::getDataTypeSignature().toTransferCRC();
                     break;
                 default:
                     break;
@@ -586,12 +564,6 @@ static void __attribute__((noreturn)) node_run(
                 g_audio_state.volume_v = std::min(
                     0.5f,
                     0.5f * std::min((float)g_vbus_v, motor_params.max_voltage_v));
-            } else if (broadcast_filter_id == THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND &&
-                    broadcast_manager.decode(power_cmd) &&
-                    esc_index < power_cmd.thrust_power.size()) {
-                got_setpoint = true;
-                mode = CONTROLLER_POWER;
-                setpoint = power_cmd.thrust_power[esc_index];
             }
 
             broadcast_manager.receive_acknowledge();
@@ -919,7 +891,7 @@ int main(void) {
     struct control_params_t control_params;
     struct motor_params_t motor_params;
     uint32_t i;
-    float i_samples[4], v_samples[4], rs_r, ls_h;
+    float i_samples[4], v_samples[4];
     uint8_t node_id;
 
     hal_reset();
@@ -964,14 +936,7 @@ int main(void) {
     }
 
     ParameterEstimator::calculate_r_l_from_samples(
-        rs_r, ls_h, v_samples, i_samples);
-
-    if (!std::isnan(rs_r) && 1e-3f < rs_r && rs_r < 1.0f) {
-        motor_params.rs_r = rs_r;
-    }
-    if (!std::isnan(ls_h) && 5e-6f < ls_h && ls_h < 1e-2f) {
-        motor_params.ls_h = ls_h;
-    }
+        motor_params.rs_r, motor_params.ls_h, v_samples, i_samples);
 
     /*
     This is not strictly necessary as the values are never written to
@@ -982,17 +947,17 @@ int main(void) {
     configuration.set_param_value_by_index(PARAM_MOTOR_LS, motor_params.ls_h);
 
     /* Initialize the system with the motor parameters */
-    g_estimator.set_control_params(control_params.bandwidth_hz,
-                                   hal_control_t_s);
-    g_estimator.set_motor_params(motor_params.rs_r, motor_params.ls_h,
-                                 motor_params.phi_v_s_per_rad,
-                                 hal_control_t_s);
-    g_estimator.reset_state();
+    ((volatile StateEstimator)g_estimator).set_control_params(
+        control_params.bandwidth_hz, hal_control_t_s);
+    ((volatile StateEstimator)g_estimator).set_motor_params(
+        motor_params.rs_r, motor_params.ls_h, motor_params.phi_v_s_per_rad,
+        hal_control_t_s);
+    ((volatile StateEstimator)g_estimator).reset_state();
 
-    g_current_controller.set_params(motor_params, control_params,
-                                    hal_control_t_s);
-    g_speed_controller.set_params(motor_params, control_params,
-                                  hal_control_t_s);
+    ((volatile DQCurrentController)g_current_controller).set_params(
+        motor_params, control_params, hal_control_t_s);
+    ((volatile SpeedController)g_speed_controller).set_params(
+        motor_params, control_params, hal_control_t_s);
 
     /* Clear audio state */
     g_audio_state.off_time = 0;

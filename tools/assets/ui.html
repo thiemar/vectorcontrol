@@ -542,7 +542,11 @@ SOFTWARE.
                     </label>
                     <label>
                         <span>Inertia (kg m<sup>2</sup>)</span>
-                        <input name="motor_inertia" class="configuration" type="number" min="0.000001" max="0.001" step="0.000001">
+                        <input name="motor_inertia" class="configuration" type="number" min="0" max="0.001" step="0.000001">
+                    </label>
+                    <label>
+                        <span>Drag torque (N m s<sup>2</sup> / rad<sup>2</sup>)</span>
+                        <input name="motor_drag" class="configuration" type="number" min="0" max="0.001" step="0.00000001">
                     </label>
 
                     <h3>Control parameters</h3>

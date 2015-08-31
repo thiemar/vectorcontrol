@@ -60,8 +60,6 @@ struct motor_params_t {
     float max_current_a; /* RMS current limit in amps */
     float max_voltage_v; /* RMS voltage limit in volts */
     float accel_voltage_v; /* RMS initial open-loop voltage */
-    float min_speed_rad_per_s; /* Minimum controllable electrical angular
-                                  velocity in rad/s */
     float idle_speed_rad_per_s; /* Speed to spin at when armed but with zero
                                    setpoint, in rad/s */
     float spinup_rate_rad_per_s2; /* Rate at which to increase the motor speed
@@ -71,6 +69,8 @@ struct motor_params_t {
 
     /* Inertia of the motor and prop */
     float rotor_inertia_kg_m2;
+    /* Motor drag torque */
+    float drag_torque_n_m_s2_per_rad2;
 };
 
 
@@ -85,7 +85,7 @@ struct control_params_t {
 #define APPROXIMATE_EXP
 
 
-inline float __attribute__((optimize("O3")))
+inline float __attribute__((optimize("O3"),always_inline))
 fast_expf(float x) {
 #ifdef APPROXIMATE_EXP
 /*
@@ -141,7 +141,7 @@ Contact: Paul Mineiro <paul@mineiro.com>
 }
 
 
-inline float __attribute__((optimize("O3")))
+inline float __attribute__((optimize("O3"),always_inline))
 fast_sin(float x) {
     const float B = (float)(4.0 / M_PI);
     const float C = (float)(-4.0 / (M_PI * M_PI));
@@ -153,7 +153,7 @@ fast_sin(float x) {
 }
 
 
-inline void __attribute__((optimize("O3")))
+inline void __attribute__((optimize("O3"),always_inline))
 sin_cos(
     float& sinx,
     float& cosx,
@@ -190,7 +190,7 @@ sin_cos(
 }
 
 
-inline float __attribute__((optimize("O3")))
+inline float __attribute__((optimize("O3"),always_inline))
 __VSQRTF(float x) {
     float result;
     asm ("vsqrt.f32 %0, %1" : "=w" (result) : "w" (x) );

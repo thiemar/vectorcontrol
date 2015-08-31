@@ -39,8 +39,7 @@ const float g_process_noise[2] = { 20.0f, 1e-6f };
 const float g_measurement_noise[2] = { 0.02f, 0.02f };
 
 
-void __attribute__((optimize("O3")))
-StateEstimator::update_state_estimate(
+void StateEstimator::update_state_estimate(
     const float i_ab_a[2],
     const float v_ab_v[2],
     float speed_setpoint,
@@ -184,9 +183,9 @@ StateEstimator::update_state_estimate(
     // P(1,0) = std::numeric_limits<float>::signaling_NaN();
     P(1,1) = U(0,1) * Pm(0,1) + U(1,1) * Pm(1,1);
 
-    P(0,0) = std::min(P(0,0), 10000.0f);
-    P(0,1) = std::min(P(0,1), 1000.0f);
-    P(1,1) = std::min(P(1,1), 1000.0f);
+    P(0,0) = std::min(P(0,0), 100000.0f);
+    P(0,1) = std::min(P(0,1), 10000.0f);
+    P(1,1) = std::min(P(1,1), 10000.0f);
 
     /*
     Calculate the predicted measurement based on the supplied alpha-beta frame
@@ -228,14 +227,21 @@ StateEstimator::update_state_estimate(
 #undef s5
 #undef s3
 
-    /* Get the EKF-corrected state estimate for the last PWM cycle (time t) */
     if (closed_loop_frac > 0.0f || speed_setpoint != 0.0f) {
+        /*
+        Get the EKF-corrected state estimate for the last PWM cycle (time t).
+        */
         state_estimate_.angle_rad += update[1] * closed_loop_frac;
         state_estimate_.angle_rad +=
             (state_estimate_.angular_velocity_rad_per_s * t_) * closed_loop_frac;
         state_estimate_.angle_rad +=
             (speed_setpoint * t_) * (1.0f - closed_loop_frac);
     } else {
+        /*
+        The motor is not being actively controlled -- try to estimate angle
+        and angular velocity, but keep the state covariance in the startup
+        condition.
+        */
         state_estimate_.angle_rad += update[1];
         state_estimate_.angle_rad +=
             (state_estimate_.angular_velocity_rad_per_s * t_);
@@ -319,8 +325,7 @@ void ParameterEstimator::start_estimation(float t) {
 }
 
 
-void __attribute__((optimize("O3")))
-ParameterEstimator::update_parameter_estimate(
+void ParameterEstimator::update_parameter_estimate(
     const float i_ab_a[2],
     const float v_ab_v[2]
 ) {
@@ -400,8 +405,7 @@ ParameterEstimator::update_parameter_estimate(
 }
 
 
-void __attribute__((optimize("O3")))
-ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
+void ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
     /*
     Get alpha and beta voltage components for the latest phase angle. Only
     output a voltage for the first 12 out of 16 test cycles to give time for
@@ -449,10 +453,15 @@ void ParameterEstimator::calculate_r_l_from_samples(
     b = (4.0f * sum_xy - sum_x * sum_y) / (4.0f * sum_x_sq - sum_x * sum_x);
     a = 0.25f * (sum_y - b * sum_x);
 
-    if (a < 0.0f) {
-        a = 0.0f;
+    if (std::isnan(a) || a <= 1e-6f) {
+        r_r = 1e-3f;
+    } else {
+        r_r = __VSQRTF(a);
     }
 
-    r_r = std::max(__VSQRTF(a), 0.01f);
-    l_h = std::max(__VSQRTF(b), 10e-6f);
+    if (std::isnan(b) || b <= 1e-12f) {
+        l_h = 1e-6f;
+    } else {
+        l_h = __VSQRTF(b);
+    }
 }

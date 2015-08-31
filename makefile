@@ -75,8 +75,8 @@ PROJECT_SRC       = $(PROJECT)/src/
 PROJECT_BUILD     = $(BUILD)$(PROJECT)/
 MCU_CC_FLAGS      = $(CORTEX_M4_HWFP_CC_FLAGS)
 MCU_LIB_PATH      = $(CORTEX_M4_HWFP_LIB_PATH)
-DEBUG_LEVEL       = 3
-OPTIM_FLAGS       = -O3 #-flto
+DEBUG_LEVEL       =
+OPTIM_FLAGS       = -Os -flto
 LINKER_SCRIPT     = $(PROJECT)/$(PROJECT)_$(BOARD).ld
 PROJECT_OBJECTS   = $(addprefix $(PROJECT_BUILD), \
 					  main.o _cxx.o configuration.o can.o controller.o \
@@ -200,15 +200,15 @@ $(BL_BUILD)arch/%.o: $(ARCH_SRC)%.S
 
 $(BL_BUILD)arch/%.o: $(ARCH_SRC)%.c
 	@mkdir -p $(@D)
-	$(CC)  $(BL_CFLAGS) $(BL_CC_SYMBOLS) -std=gnu99 $(SYS_INC_PATHS) -o $@ $<
+	$(CC)  $(BL_CFLAGS) $(BL_CC_SYMBOLS) -std=gnu99 $(SYS_INC_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 $(BL_BUILD)%.o: $(BL_SRC)%.c
 	@mkdir -p $(@D)
-	$(CC)  $(BL_CFLAGS) $(BL_CC_SYMBOLS) -std=gnu99 $(BL_INCLUDE_PATHS) -o $@ $<
+	$(CC)  $(BL_CFLAGS) $(BL_CC_SYMBOLS) -std=gnu99 $(BL_INCLUDE_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 $(UAVCAN_BUILD)%.o: $(UAVCAN_SRC)%.cpp
 	@mkdir -p $(@D)
-	$(CPP) $(UAVCAN_CXXFLAGS) $(CC_SYMBOLS) -std=c++03 $(SYS_INC_PATHS) $(UAVCAN_INC_PATHS) -o $@ $<
+	$(CPP) $(UAVCAN_CXXFLAGS) $(CC_SYMBOLS) -std=c++03 $(SYS_INC_PATHS) $(UAVCAN_INC_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 $(PROJECT_BUILD)arch/%.o: $(ARCH_SRC)%.S
 	@mkdir -p $(@D)
@@ -216,7 +216,7 @@ $(PROJECT_BUILD)arch/%.o: $(ARCH_SRC)%.S
 
 $(PROJECT_BUILD)arch/%.o: $(ARCH_SRC)%.c
 	@mkdir -p $(@D)
-	$(CC)  $(CFLAGS) $(CC_SYMBOLS) -std=gnu99 $(SYS_INC_PATHS) -o $@ $<
+	$(CC)  $(CFLAGS) $(CC_SYMBOLS) -std=gnu99 $(SYS_INC_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.S
 	@mkdir -p $(@D)
@@ -224,11 +224,11 @@ $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.S
 
 $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.c
 	@mkdir -p $(@D)
-	$(CC)  $(CFLAGS) $(CC_SYMBOLS) -std=gnu99 $(INCLUDE_PATHS) -o $@ $<
+	$(CC)  $(CFLAGS) $(CC_SYMBOLS) -std=gnu99 $(INCLUDE_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.cpp
 	@mkdir -p $(@D)
-	$(CPP) $(CXXFLAGS) $(CC_SYMBOLS) -std=c++11 $(INCLUDE_PATHS) $(UAVCAN_INCLUDE_PATHS) -o $@ $<
+	$(CPP) $(CXXFLAGS) $(CC_SYMBOLS) -std=c++11 $(INCLUDE_PATHS) $(UAVCAN_INCLUDE_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 firmware/$(BL).elf: $(BL_OBJECTS) $(addprefix $(BL_BUILD)arch/, $(SYS_OBJECTS) up_exit.o)
 	@mkdir -p $(@D)

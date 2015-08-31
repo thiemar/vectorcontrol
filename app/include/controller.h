@@ -78,7 +78,7 @@ public:
         const struct motor_params_t& params,
         const struct control_params_t& control_params,
         float t_s
-    ) {
+    ) volatile {
         float bandwidth_rad_per_s;
 
         ls_h_ = params.ls_h;
@@ -150,6 +150,7 @@ protected:
 
     float ir_;  /* Rotor inertia in kg * m^2*/
     float kq0_; /* Torque constant in N*m / A */
+    float tw_; /* Drag torque in N*m / (rad/s)^2 */
 
     float current_limit_a_;
     float accel_current_limit_a_;
@@ -166,6 +167,7 @@ public:
         power_ki_(0.0f),
         ir_(0.0f),
         kq0_(0.0f),
+        tw_(0.0f),
         current_limit_a_(0.0f),
         accel_current_limit_a_(0.0f)
     {}
@@ -194,7 +196,7 @@ public:
         const struct motor_params_t& motor_params,
         const struct control_params_t& control_params,
         float t_s
-    ) {
+    ) volatile {
         float max_accel_torque;
 
         max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
@@ -225,24 +227,28 @@ public:
         ir_ = motor_params.rotor_inertia_kg_m2 *
               (2.0f / (float)motor_params.num_poles) *
               (2.0f / (float)motor_params.num_poles);
-        set_phi_v_s_per_rad(motor_params.phi_v_s_per_rad);
+        kq0_ = motor_params.phi_v_s_per_rad;
+
+        tw_ = motor_params.drag_torque_n_m_s2_per_rad2;
     }
 
-    float __attribute__((optimize("O3")))
-    update(const struct motor_state_t& state) {
-        float error, power, accel_torque_a, result_a, out_a, kp, ki;
+    float update(const struct motor_state_t& state) {
+        float error, torque, feedforward_torque, accel_torque_a, result_a,
+              out_a, kp, ki;
 
         if (control_power_) {
-            /* Eqn 17 from the paper */
-            power = state.i_dq_a[1] -
-                    (ir_ * state.angular_acceleration_rad_per_s2) / kq0_;
-            //    (kq0_ * state.i_dq_a[1] * state.angular_velocity_rad_per_s) -
-            //    (ir_ * state.angular_velocity_rad_per_s *
-            //        state.angular_acceleration_rad_per_s2);
-            error = power_setpoint_w_ - power;
+            /* Thrust torque control mode */
+            feedforward_torque =
+                /* ir_ * state.angular_acceleration_rad_per_s2 / kq0_ + */
+                (tw_ * state.angular_velocity_rad_per_s *
+                       state.angular_velocity_rad_per_s) / kq0_;
+            torque = state.i_dq_a[1] - feedforward_torque;
+            error = power_setpoint_w_ - torque;
             kp = power_kp_;
             ki = power_ki_;
         } else {
+            /* Speed control mode */
+            feedforward_torque = 0.0f;
             error = speed_setpoint_rad_per_s_ -
                     state.angular_velocity_rad_per_s;
             kp = speed_kp_;
@@ -260,7 +266,7 @@ public:
             accel_torque_a = -accel_current_limit_a_;
         }
 
-        out_a = accel_torque_a + integral_error_a_;
+        out_a = accel_torque_a + feedforward_torque + integral_error_a_;
 
         /* Limit output to maximum current */
         if (out_a > current_limit_a_) {

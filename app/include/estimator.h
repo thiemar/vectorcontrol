@@ -67,24 +67,19 @@ public:
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f)
     {
+        reset_state();
+    }
+
+    void reset_state() volatile {
         state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
         state_estimate_.i_dq_a[0] = state_estimate_.i_dq_a[1] = 0.0f;
-        state_covariance_[0] = state_covariance_[1] = state_covariance_[2] =
-            state_covariance_[3] = 0.0f;
-        last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
-    }
-
-    void reset_state() {
-        state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
-        state_estimate_.angular_velocity_rad_per_s = 0.0f;
-        state_estimate_.angle_rad = 0.0f;
         next_sin_theta_ = 0;
         next_cos_theta_ = 1.0f;
         last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
-        state_covariance_[0] = state_covariance_[2] = 100.0f;
-        state_covariance_[1] = state_covariance_[3] = 10.0f;
+        state_covariance_[0] = state_covariance_[2] = 10.0f;
+        state_covariance_[1] = state_covariance_[3] = 1.0f;
     }
 
     void update_state_estimate(
@@ -98,8 +93,7 @@ public:
         out_estimate = state_estimate_;
     }
 
-    void __attribute__((optimize("O3")))
-    get_est_v_alpha_beta_from_v_dq(
+    void get_est_v_alpha_beta_from_v_dq(
         float out_v_alpha_beta[2],
         const float in_v_dq[2]
     ) const {
@@ -116,7 +110,7 @@ public:
         float ls_h,
         float phi_v_s_per_rad,
         float t_s
-    ) {
+    ) volatile {
         a_ = 1.0f - rs_r / ls_h * t_s;
         b_ = 1.0f / ls_h * t_s;
         c_ = t_s / ls_h;
@@ -129,7 +123,7 @@ public:
     void set_control_params(
         float control_bandwidth_hz,
         float t_s
-    ) {
+    ) volatile {
         float wb;
 
         /*

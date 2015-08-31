@@ -181,8 +181,7 @@ static uint32_t board_vbus_lsb_;
 static uint32_t board_temp_lsb_;
 
 
-inline void __attribute__((optimize("O3")))
-hal_read_phase_shunts_(int16_t phase_shunt_signal_lsb[2]) {
+inline void hal_read_phase_shunts_(int16_t phase_shunt_signal_lsb[2]) {
     /* Direct reading of phase A and B current */
     if (phase_reverse_) {
         phase_shunt_signal_lsb[1] = (int16_t)getreg32(STM32_ADC1_JDR1);
@@ -194,8 +193,7 @@ hal_read_phase_shunts_(int16_t phase_shunt_signal_lsb[2]) {
 }
 
 
-inline void __attribute__((optimize("O3")))
-hal_update_timer_(const uint16_t phase_on_ticks[3]) {
+inline void hal_update_timer_(const uint16_t phase_on_ticks[3]) {
     uint16_t sample_ticks;
 
     sample_ticks = hal_pwm_half_period_ticks - 2u; //std::max(phase_on_ticks[0], phase_on_ticks[1]) +
@@ -219,8 +217,7 @@ hal_update_timer_(const uint16_t phase_on_ticks[3]) {
 }
 
 
-extern "C" void __attribute__((optimize("O3")))
-stm32_adc(void) {
+extern "C" void stm32_adc(void) {
 PERF_COUNT_START
     static float last_v_ab[2];
     static float prev_v_ab[2];

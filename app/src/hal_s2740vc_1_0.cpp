@@ -147,7 +147,7 @@ static uint32_t board_temp_lsb_;
 static void hal_init_dma_();
 
 
-inline void __attribute__((optimize("O3")))
+inline void
 hal_read_phase_shunts_(
     int16_t phase_shunt_signal_lsb[3],
     uint8_t phase_pwm_sector
@@ -198,8 +198,7 @@ hal_read_phase_shunts_(
 }
 
 
-inline void __attribute__((optimize("O3")))
-hal_update_timer_(
+inline void hal_update_timer_(
     uint8_t phase_pwm_sector,
     const uint16_t phase_on_ticks[3]
 ) {
@@ -265,8 +264,7 @@ hal_update_timer_(
 }
 
 
-extern "C" void __attribute__((optimize("O3")))
-stm32_adc12(void) {
+extern "C" void stm32_adc12(void) {
 PERF_COUNT_START
     static float last_v_ab[2];
     static float prev_v_ab[2];

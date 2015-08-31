@@ -111,7 +111,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     be 5.4 * 10e-5. Used by the aerodynamic power controller
     */
     {PARAM_MOTOR_INERTIA, PARAM_TYPE_FLOAT, "motor_inertia",
-        5e-5f, 10e-6f, 10e-3f},
+        5e-5f, 0.0f, 10e-3f},
 
     /*
     Speed controller acceleration gain. A gain of 0.0 results in no torque
@@ -131,17 +131,18 @@ static struct param_t param_config_[NUM_PARAMS] = {
         0.5f, 0.01f, 1.0f},
 
     /*
-    If non-zero, the motor will rotate at this speed in rpm when any command
-    is received with a setpoint below the minimum.
+    If non-zero, the motor will rotate at this electrical speed in Hz when any
+    command is received with a setpoint below the minimum.
     */
-    {PARAM_CONTROL_RPM_IDLE, PARAM_TYPE_FLOAT, "ctl_rpm_idle",
-        30.0f, 0.0f, 200.0f},
+    {PARAM_CONTROL_HZ_IDLE, PARAM_TYPE_FLOAT, "ctl_hz_idle",
+        3.5f, 0.0f, 100.0f},
 
     /*
-    The rate at which the motor accelerates during open-loop mode, in rpm/s.
+    The rate at which the motor accelerates during open-loop mode, in
+    electrical Hz/s.
     */
     {PARAM_CONTROL_SPINUP_RATE, PARAM_TYPE_FLOAT, "ctl_spinup_rate",
-        500.0f, 100.0f, 10000.0f},
+        50.0f, 5.0f, 1000.0f},
 
     /*
     Rotation direction of the motor: 0 is normal, 1 is reverse.
@@ -175,10 +176,11 @@ static struct param_t param_config_[NUM_PARAMS] = {
         "esc_index",
         0.0f, 0.0f, 15.0f},
 
-    /* Data type ID of the custom ESC thrust power command message. */
-    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT,
-        "dtid_pwr_cmd",
-        11031, 1, 65535},
+    /*
+    Motor/prop drag torque in N * m * s^2 / rad^2
+    */
+    {PARAM_MOTOR_DRAG_TORQUE, PARAM_TYPE_FLOAT, "motor_drag",
+        2e-7f, 0.0f, 1e-3f},
 };
 
 
@@ -219,17 +221,15 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
     params.phi_v_s_per_rad = 1.0f /
         _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV], params.num_poles);
     params.rotor_inertia_kg_m2 = params_[PARAM_MOTOR_INERTIA];
+    params.drag_torque_n_m_s2_per_rad2 = params_[PARAM_MOTOR_DRAG_TORQUE];
 
     params.accel_voltage_v = params_[PARAM_MOTOR_V_ACCEL];
     params.max_current_a = params_[PARAM_MOTOR_I_MAX];
     params.max_voltage_v = params_[PARAM_MOTOR_V_MAX];
-    params.min_speed_rad_per_s = 1.0f / params.phi_v_s_per_rad;
-    params.idle_speed_rad_per_s =
-        _rad_per_s_from_rpm(params_[PARAM_CONTROL_RPM_IDLE],
-                            params.num_poles);
-    params.spinup_rate_rad_per_s2 =
-        _rad_per_s_from_rpm(params_[PARAM_CONTROL_SPINUP_RATE],
-                            params.num_poles);
+    params.idle_speed_rad_per_s = 2.0f * (float)M_PI *
+                                  params_[PARAM_CONTROL_HZ_IDLE];
+    params.spinup_rate_rad_per_s2 = 2.0f * (float)M_PI *
+                                    params_[PARAM_CONTROL_SPINUP_RATE];
 }
 
 

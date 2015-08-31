@@ -29,8 +29,7 @@ SOFTWARE.
 #define SQRT3_Q 14
 
 
-inline uint8_t __attribute__((optimize("O3")))
-svm_duty_cycle_from_v_alpha_beta(
+inline uint8_t svm_duty_cycle_from_v_alpha_beta(
     uint16_t phase_oc_ticks[3],
     int16_t v_frac_alpha_q1p15,
     int16_t v_frac_beta_q1p15,
