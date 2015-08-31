@@ -157,7 +157,7 @@ inline void __attribute__((optimize("O3"),always_inline))
 sin_cos(
     float& sinx,
     float& cosx,
-    float x
+    float x /* x must be in the range [-pi, pi] */
 ) {
 #ifdef APPROXIMATE_SIN_COS
     const float B = (float)(4.0 / M_PI);
@@ -166,19 +166,14 @@ sin_cos(
 
     float y;
 
-    /* Move x to the range [-pi, pi] */
-    if (x > (float)M_PI) {
-        x -= (float)(2.0 * M_PI);
-    }
-
     y = B * x + C * x * std::abs(x);
     sinx = P * (y * std::abs(y) - y) + y;
 
     /* Calculate the cosine */
-    x += 0.5f * (float)M_PI;
-    if (x > (float)M_PI) {
-        x -= (float)(2.0 * M_PI);
+    if (x > float(0.5 * M_PI)) {
+        x -= float(2.0 * M_PI);
     }
+    x += float(0.5 * M_PI);
 
     y = B * x + C * x * std::abs(x);
     cosx = P * (y * std::abs(y) - y) + y;

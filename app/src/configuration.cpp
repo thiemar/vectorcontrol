@@ -63,7 +63,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     speeds.
     */
     {PARAM_MOTOR_NUM_POLES, PARAM_TYPE_INT, "motor_num_poles",
-        10.0f, 2.0f, 40.0f},
+        14.0f, 2.0f, 40.0f},
 
     /*
     Motor current limit in amps. This determines the maximum current
@@ -71,7 +71,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "motor_i_max",
-        10.0f, 1.0f, 40.0f},
+        40.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -93,18 +93,18 @@ static struct param_t param_config_[NUM_PARAMS] = {
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
-        60e-3f, 1e-3f, 1000e-3f},
+        1e-3f, 1e-3f, 1.0f},
 
     /* Motor inductance in henries. This is estimated on start-up. */
     {PARAM_MOTOR_LS, PARAM_TYPE_FLOAT, "motor_ls",
-        20e-6f, 1e-6f, 1000e-6f},
+        1e-3f, 1e-6f, 1e-3f},
 
     /*
     Motor KV in RPM per volt. This can be taken from the motor's spec sheet;
     accuracy will help control performance but a 20% error is fine.
     */
     {PARAM_MOTOR_KV, PARAM_TYPE_FLOAT, "motor_kv",
-        880.0f, 100.0f, 5000.0f},
+        1000.0f, 100.0f, 5000.0f},
 
     /*
     Motor + rotor inertia in kg * m^2. A standard value for a small quad might
@@ -154,26 +154,22 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Interval in microseconds at which FOC ESC status messages should be
     sent. Zero disables publication.
     */
-    {PARAM_THIEMAR_STATUS_INTERVAL, PARAM_TYPE_INT,
-        "pubp_ext_status",
+    {PARAM_THIEMAR_STATUS_INTERVAL, PARAM_TYPE_INT, "pubp_ext_status",
         50e3, 0, 1e6f},
 
     /* Data type ID of the custom ESC status message. */
-    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT,
-        "dtid_ext_status",
+    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT, "dtid_ext_status",
         11034, 1, 65535},
 
     /*
     Interval in microseconds at which UAVCAN standard ESC status messages
     should be sent. Zero disables publication.
     */
-    {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT,
-        "pubp_status",
+    {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT, "pubp_status",
         50e3f, 0, 1e6f},
 
     /* Index of this ESC in throttle command messages. */
-    {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT,
-        "esc_index",
+    {PARAM_UAVCAN_ESC_INDEX, PARAM_TYPE_INT, "esc_index",
         0.0f, 0.0f, 15.0f},
 
     /*
@@ -182,11 +178,6 @@ static struct param_t param_config_[NUM_PARAMS] = {
     {PARAM_MOTOR_DRAG_TORQUE, PARAM_TYPE_FLOAT, "motor_drag",
         2e-7f, 0.0f, 1e-3f},
 };
-
-
-inline static float _rad_per_s_from_rpm(float rpm, uint32_t num_poles) {
-    return rpm / 60.0f * (2.0f * (float)M_PI * (float)(num_poles >> 1u));
-}
 
 
 Configuration::Configuration(void) {
@@ -216,19 +207,17 @@ Configuration::Configuration(void) {
 void Configuration::read_motor_params(struct motor_params_t& params) {
     params.num_poles = (uint32_t)params_[PARAM_MOTOR_NUM_POLES];
 
-    params.rs_r = params_[PARAM_MOTOR_RS];
-    params.ls_h = params_[PARAM_MOTOR_LS];
-    params.phi_v_s_per_rad = 1.0f /
-        _rad_per_s_from_rpm(params_[PARAM_MOTOR_KV], params.num_poles);
+    params.rs_r = params.ls_h = params.phi_v_s_per_rad = 1e-3f;
+
     params.rotor_inertia_kg_m2 = params_[PARAM_MOTOR_INERTIA];
     params.drag_torque_n_m_s2_per_rad2 = params_[PARAM_MOTOR_DRAG_TORQUE];
 
     params.accel_voltage_v = params_[PARAM_MOTOR_V_ACCEL];
     params.max_current_a = params_[PARAM_MOTOR_I_MAX];
     params.max_voltage_v = params_[PARAM_MOTOR_V_MAX];
-    params.idle_speed_rad_per_s = 2.0f * (float)M_PI *
+    params.idle_speed_rad_per_s = float(2.0 * M_PI) *
                                   params_[PARAM_CONTROL_HZ_IDLE];
-    params.spinup_rate_rad_per_s2 = 2.0f * (float)M_PI *
+    params.spinup_rate_rad_per_s2 = float(2.0 * M_PI) *
                                     params_[PARAM_CONTROL_SPINUP_RATE];
 }
 
@@ -242,34 +231,19 @@ void Configuration::read_control_params(
 }
 
 
-static size_t _get_param_name_len(const char* name) {
-    size_t i;
-
-    for (i = 0; i < PARAM_NAME_MAX_LEN; i++) {
-        if (name[i] == 0) {
-            return i + 1u;
-        }
-    }
-
-    return 0;
-}
-
-
 static size_t _find_param_index_by_name(
     const char* name,
     struct param_t params[],
     size_t num_params
 ) {
-    size_t i, name_len;
-
-    name_len = _get_param_name_len(name);
-    if (name_len <= 1) {
-        return num_params;
-    }
+    size_t i, j;
 
     for (i = 0; i < num_params; i++) {
-        if (memcmp(params[i].name, name, name_len) == 0) {
-            return i;
+        for (j = 0; j < PARAM_NAME_MAX_LEN &&
+                    params[i].name[j] == name[j]; j++) {
+            if (name[j] == 0) {
+                return i;
+            }
         }
     }
 

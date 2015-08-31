@@ -208,7 +208,7 @@ $(BL_BUILD)%.o: $(BL_SRC)%.c
 
 $(UAVCAN_BUILD)%.o: $(UAVCAN_SRC)%.cpp
 	@mkdir -p $(@D)
-	$(CPP) $(UAVCAN_CXXFLAGS) $(CC_SYMBOLS) -std=c++03 $(SYS_INC_PATHS) $(UAVCAN_INC_PATHS) -Wa,-ahls=$@.lst -o $@ $<
+	$(CPP) $(UAVCAN_CXXFLAGS) $(CC_SYMBOLS) -std=c++0x $(SYS_INC_PATHS) $(UAVCAN_INC_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 $(PROJECT_BUILD)arch/%.o: $(ARCH_SRC)%.S
 	@mkdir -p $(@D)
@@ -228,7 +228,7 @@ $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.c
 
 $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.cpp
 	@mkdir -p $(@D)
-	$(CPP) $(CXXFLAGS) $(CC_SYMBOLS) -std=c++11 $(INCLUDE_PATHS) $(UAVCAN_INCLUDE_PATHS) -Wa,-ahls=$@.lst -o $@ $<
+	$(CPP) $(CXXFLAGS) $(CC_SYMBOLS) -std=c++0x $(INCLUDE_PATHS) $(UAVCAN_INCLUDE_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
 firmware/$(BL).elf: $(BL_OBJECTS) $(addprefix $(BL_BUILD)arch/, $(SYS_OBJECTS) up_exit.o)
 	@mkdir -p $(@D)

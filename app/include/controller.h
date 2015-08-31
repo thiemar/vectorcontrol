@@ -56,7 +56,7 @@ public:
         kp_(0.0f),
         ki_(0.0f),
         ls_h_(0.0f),
-        v_limit_v_(0.1f),
+        v_limit_v_(0.125f),
         accel_current_limit_a_(0.0f)
     {}
 
@@ -87,8 +87,7 @@ public:
         Convert control bandwidth to rad/s. Current controller bandwidth will
         be set to 10x this value.
         */
-        bandwidth_rad_per_s = 2.0f * (float)M_PI *
-                              control_params.bandwidth_hz;
+        bandwidth_rad_per_s = float(2.0 * M_PI) * control_params.bandwidth_hz;
 
         /*
         Parameter selection described in:
@@ -201,7 +200,8 @@ public:
 
         max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
 
-        speed_kp_ = 0.01f * max_accel_torque * control_params.accel_gain;
+        speed_kp_ = float(1.0/128.0) * max_accel_torque *
+                    control_params.accel_gain;
         speed_ki_ = t_s / control_params.accel_time_s;
 
         power_kp_ = max_accel_torque * control_params.accel_gain;
@@ -233,7 +233,7 @@ public:
     }
 
     float update(const struct motor_state_t& state) {
-        float error, torque, feedforward_torque, accel_torque_a, result_a,
+        float error, torque, feedforward_torque, accel_torque_a,
               out_a, kp, ki;
 
         if (control_power_) {
@@ -262,7 +262,8 @@ public:
 
         if (accel_torque_a > accel_current_limit_a_) {
             accel_torque_a = accel_current_limit_a_;
-        } else if (accel_torque_a < -accel_current_limit_a_) {
+        }
+        if (accel_torque_a < -accel_current_limit_a_) {
             accel_torque_a = -accel_current_limit_a_;
         }
 
@@ -270,18 +271,17 @@ public:
 
         /* Limit output to maximum current */
         if (out_a > current_limit_a_) {
-            result_a = current_limit_a_;
-        } else if (out_a < -current_limit_a_) {
-            result_a = -current_limit_a_;
-        } else {
-            result_a = out_a;
+            out_a = current_limit_a_;
+        }
+        if (out_a < -current_limit_a_) {
+            out_a = -current_limit_a_;
         }
 
         /*
         Limit integral term accumulation when the output current is saturated.
         */
-        integral_error_a_ += ki * (result_a - integral_error_a_);
+        integral_error_a_ += ki * (out_a - integral_error_a_);
 
-        return result_a;
+        return out_a;
     }
 };

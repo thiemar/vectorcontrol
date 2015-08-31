@@ -110,6 +110,11 @@ const float hal_vbus_gain_v_per_v = 1.0f / (20.0f + 1.0f);
 const uint32_t hal_adc_full_scale_lsb = 1u << 12u;
 const float hal_adc_v_per_lsb =
     hal_nominal_mcu_vdd_v / (float)hal_adc_full_scale_lsb;
+const uint32_t hal_adc_calibration_sample_count_log2 = 20u;
+const uint32_t hal_adc_calibration_sample_count =
+    (1u << hal_adc_calibration_sample_count_log2);
+const uint32_t hal_adc_calibration_sample_round =
+    hal_adc_calibration_sample_count >> 1u;
 
 
 /* This is a signed quantity so can go +/- 1.65 V of the 1.65 V reference */
@@ -138,6 +143,10 @@ static volatile uint16_t adc_conversion_results_[2];
 
 /* Vbus in raw ADC units (1/LSB) */
 static uint32_t board_vbus_lsb_;
+
+
+/* Cached inverse vbus value */
+static volatile float vbus_inv_;
 
 
 /* Board temperature in raw ADC units (1/LSB) */
@@ -178,8 +187,8 @@ hal_read_phase_shunts_(
             Phase A current is not observable -- reconstruct:
             IA = -IC - IB
             */
-            phase_shunt_signal_lsb[0] = (int16_t)(-phase_shunt_signal_lsb[2] -
-                                                   phase_shunt_signal_lsb[1]);
+            phase_shunt_signal_lsb[0] = int16_t(-phase_shunt_signal_lsb[2] -
+                                                phase_shunt_signal_lsb[1]);
             break;
 
         case 2:
@@ -188,8 +197,8 @@ hal_read_phase_shunts_(
             Phase B current is not observable -- reconstruct:
             IB = -IC - IA
             */
-            phase_shunt_signal_lsb[1] = (int16_t)(-phase_shunt_signal_lsb[2] -
-                                                   phase_shunt_signal_lsb[0]);
+            phase_shunt_signal_lsb[1] = int16_t(-phase_shunt_signal_lsb[2] -
+                                                phase_shunt_signal_lsb[0]);
             break;
 
         default:
@@ -221,20 +230,18 @@ inline void hal_update_timer_(
     /* Polarity of CC4 is active high */
     putreg32(getreg32(STM32_TIM1_CCER) & ~ATIM_CCER_CC4P, STM32_TIM1_CCER);
 
-    if ((uint16_t)(period_ticks - phase1_ticks) >
-            hal_adc_settling_time_ticks) {
-        sample_ticks = (uint16_t)(period_ticks - 1u);
+    if (uint16_t(period_ticks - phase1_ticks) > hal_adc_settling_time_ticks) {
+        sample_ticks = uint16_t(period_ticks - 1u);
     } else {
-        duty_delta_ticks = (uint16_t)(phase1_ticks - phase2_ticks);
-        sample_ticks = (uint16_t)phase1_ticks;
+        duty_delta_ticks = uint16_t(phase1_ticks - phase2_ticks);
+        sample_ticks = uint16_t(phase1_ticks);
 
         /* Check which side of the crossing point we should sample */
-        if (duty_delta_ticks > (uint16_t)(period_ticks - phase1_ticks) * 2u) {
-            sample_ticks =
-                (uint16_t)(sample_ticks - hal_adc_sample_time_ticks);
+        if (duty_delta_ticks > uint16_t(period_ticks - phase1_ticks) << 1u) {
+            sample_ticks = uint16_t(sample_ticks - hal_adc_sample_time_ticks);
         } else {
             sample_ticks =
-                (uint16_t)(sample_ticks + hal_adc_settling_time_ticks);
+                uint16_t(sample_ticks + hal_adc_settling_time_ticks);
 
             if (sample_ticks >= period_ticks) {
                 /* Make polarity of CC4 active low */
@@ -242,7 +249,7 @@ inline void hal_update_timer_(
                          STM32_TIM1_CCER);
 
                 sample_ticks =
-                    (uint16_t)((2u * period_ticks) - sample_ticks - 1u);
+                    uint16_t(hal_pwm_period_ticks - 3u - sample_ticks);
             }
         }
     }
@@ -276,9 +283,6 @@ PERF_COUNT_START
     float out_v_ab[2], i_ab[2];
     float temp;
 
-    /* Clear TIM1 update flag so failure to meet deadline can be detected */
-    putreg32(getreg32(STM32_TIM1_SR) & ~ATIM_SR_UIF, STM32_TIM1_SR);
-
     hal_read_phase_shunts_(phase_current_lsb, prev_pwm_sector);
 
     /*
@@ -289,16 +293,16 @@ PERF_COUNT_START
 
     Multiply by 8 because the phase current readings are right-aligned.
     */
-    i_ab[0] = (float)phase_current_lsb[0] *
-              (hal_full_scale_current_a * 8.0f / 32768.0f);
-    temp = (float)phase_current_lsb[1] *
-           (hal_full_scale_current_a * 8.0f / 32768.0f);
+    i_ab[0] = float(phase_current_lsb[0]) *
+              float(hal_full_scale_current_a * 8.0 / 32768.0);
+    temp = float(phase_current_lsb[1]) *
+           float(hal_full_scale_current_a * 8.0 / 32768.0);
     i_ab[1] = (0.57735026919f * i_ab[0] + 1.15470053838f * temp);
 
+    out_v_ab[0] = out_v_ab[1] = 0.0f;
+
     if (high_frequency_task_) {
-        high_frequency_task_(out_v_ab, prev_v_ab, i_ab, vbus_v_);
-    } else {
-        out_v_ab[0] = out_v_ab[1] = 0.0f;
+        high_frequency_task_(out_v_ab, last_v_ab, i_ab, vbus_v_);
     }
 
     prev_v_ab[0] = last_v_ab[0];
@@ -313,10 +317,11 @@ PERF_COUNT_START
     Convert alpha-beta frame voltage fractions to SVM output compare values
     for each phase.
     */
+    temp = vbus_inv_;
     last_pwm_sector = svm_duty_cycle_from_v_alpha_beta(
         phase_oc,
-        (int16_t)__SSAT((int32_t)(vbus_inv_ * out_v_ab[0]), 16),
-        (int16_t)__SSAT((int32_t)(vbus_inv_ * out_v_ab[1]), 16),
+        int16_t(__SSAT(int32_t(temp * out_v_ab[0]), 16u)),
+        int16_t(__SSAT(int32_t(temp * out_v_ab[1]), 16u)),
         hal_pwm_period_ticks);
 
     /* Update the timer */
@@ -400,7 +405,7 @@ static void hal_init_adc_() {
 
     /* Worst-case regulator delay is 10 us */
     for (volatile uint32_t x = 0;
-         x < 10 * hal_core_frequency_hz / 1000000u; x++);
+         x < 10u * hal_core_frequency_hz / 1000000u; x++);
 
     /* ADC12 common config: independent, sync clock/1, DMA mode 1, one shot */
     putreg32(ADC_CCR_DUAL_IND | ADC_CCR_MDMA_10_12 | ADC_CCR_CKMODE_SYNCH_DIV1,
@@ -493,9 +498,6 @@ static void hal_run_calibration_() {
     size_t i;
     uint32_t offset[3] = {0, 0, 0};
 
-    /* Ensure MOSFETs are turned off before we start */
-    hal_set_pwm_state(HAL_PWM_STATE_LOW);
-
     /* Don't need end-of-conversion interrupts */
     putreg32(getreg32(STM32_ADC1_IER) & ~ADC_INT_JEOS, STM32_ADC1_IER);
 
@@ -503,7 +505,7 @@ static void hal_run_calibration_() {
     putreg32(ADC_INT_JEOS, STM32_ADC1_ISR);
 
     /* Sample the three shunts 65536 times each (takes ~24 ms) */
-    for (i = 0; i < 65536u; i++) {
+    for (i = 0; i < hal_adc_calibration_sample_count; i++) {
         /* Trigger the injected conversion sequence */
         putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_JADSTART, STM32_ADC1_CR);
 
@@ -517,9 +519,9 @@ static void hal_run_calibration_() {
         putreg32(ADC_INT_JEOS, STM32_ADC1_ISR);
 
         /* Get injected conversion values */
-        offset[0] += (int16_t)getreg32(STM32_ADC1_JDR1);
-        offset[1] += (int16_t)getreg32(STM32_ADC1_JDR2);
-        offset[2] += (int16_t)getreg32(STM32_ADC1_JDR3);
+        offset[0] += getreg16(STM32_ADC1_JDR1);
+        offset[1] += getreg16(STM32_ADC1_JDR2);
+        offset[2] += getreg16(STM32_ADC1_JDR3);
     }
 
     /*
@@ -527,15 +529,18 @@ static void hal_run_calibration_() {
     value from the readings. This makes the output values signed 12-bit packed
     into the LSBs of a 16-bit register, with sign extension.
     */
-    putreg32(ADC_OFR_OFFSETY(offset[0] / 65536u) |
+    putreg32(ADC_OFR_OFFSETY((offset[0] + hal_adc_calibration_sample_round) >>
+                             hal_adc_calibration_sample_count_log2) |
              ADC_OFR_OFFSETY_CH(HAL_ADC_PHASE_A_CHANNEL) | ADC_OFR_OFFSETY_EN,
              STM32_ADC1_OFR1);
 
-    putreg32(ADC_OFR_OFFSETY(offset[1] / 65536u) |
+    putreg32(ADC_OFR_OFFSETY((offset[1] + hal_adc_calibration_sample_round) >>
+                             hal_adc_calibration_sample_count_log2) |
              ADC_OFR_OFFSETY_CH(HAL_ADC_PHASE_B_CHANNEL) | ADC_OFR_OFFSETY_EN,
              STM32_ADC1_OFR2);
 
-    putreg32(ADC_OFR_OFFSETY(offset[2] / 65536u) |
+    putreg32(ADC_OFR_OFFSETY((offset[2] + hal_adc_calibration_sample_round) >>
+                             hal_adc_calibration_sample_count_log2) |
              ADC_OFR_OFFSETY_CH(HAL_ADC_PHASE_C_CHANNEL) | ADC_OFR_OFFSETY_EN,
              STM32_ADC1_OFR3);
 
@@ -559,7 +564,7 @@ static bool hal_adc_periodic_() {
     /* TS_CAL_2 is the temperature sensor reading at 110 deg C */
     static uint16_t ts_cal_2 = *((volatile uint16_t*)(0x1FFFF7C2));
     static float ts_deg_c_per_lsb = (110.0f - 30.0f) /
-                                    (float)(ts_cal_2 - ts_cal_1);
+                                    float(ts_cal_2 - ts_cal_1);
     float temp;
 
     /* Check if the last VBUS and temperature conversion is done */
@@ -574,8 +579,8 @@ static bool hal_adc_periodic_() {
         } else {
             board_vbus_lsb_ = adc_conversion_results_[0] << 7;
         }
-        temp = (float)(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
-               (1.0f / 32768.0f);
+        temp = float(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
+               float(1.0 / 32768.0);
         vbus_v_ = temp;
         if (temp > 6.0f) {
             vbus_inv_ = 32768.0f / temp;
@@ -590,7 +595,7 @@ static bool hal_adc_periodic_() {
             board_temp_lsb_ = adc_conversion_results_[1] << 7;
         }
         temp = 30.0f +
-               (float)((int32_t)(board_temp_lsb_ >> 7) - (int32_t)ts_cal_1) *
+               float(int32_t(board_temp_lsb_ >> 7) - int32_t(ts_cal_1)) *
                ts_deg_c_per_lsb;
         temp_degc_ = temp;
 
@@ -613,9 +618,6 @@ void hal_reset(void) {
     board_initialize();
 
     hal_init_sys_();
-    hal_init_tim_();
-    hal_init_dma_();
-    hal_init_adc_();
 
     /*
     Read bootloader auto-baud and node ID values, then set up the node. We've
@@ -626,6 +628,16 @@ void hal_reset(void) {
         up_systemreset();
     }
     can_init(bootloader_app_shared_.bus_speed);
+
+    /* Initialize timer, DMA and ADC */
+    hal_init_tim_();
+    hal_init_dma_();
+    hal_init_adc_();
+
+    /* Set up the PWM outputs -- TIM1 MOE is disabled */
+    stm32_configgpio(GPIO_PWMA_ENABLED);
+    stm32_configgpio(GPIO_PWMB_ENABLED);
+    stm32_configgpio(GPIO_PWMC_ENABLED);
 
     /* Calibrate the current shunt sensor offsets */
     hal_run_calibration_();
@@ -640,30 +652,18 @@ void hal_reset(void) {
 
     /* Trigger an ADC conversion to start the high-frequency task */
     putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_JADSTART, STM32_ADC1_CR);
-
-    /* Enable PWM generation from TIM1 */
-    putreg32(getreg32(STM32_TIM1_BDTR) | ATIM_BDTR_MOE, STM32_TIM1_BDTR);
 }
 
 
 void hal_set_pwm_state(enum hal_pwm_state_t state) {
     if (state == pwm_state_) {
         /* No change -- ignore */
-    } else if (state == HAL_PWM_STATE_OFF) {
-        /* Tri-state the drive pins to force the MOSFET drivers off */
-        stm32_configgpio(GPIO_PWMA_DISABLED);
-        stm32_configgpio(GPIO_PWMB_DISABLED);
-        stm32_configgpio(GPIO_PWMC_DISABLED);
-    } else if (state == HAL_PWM_STATE_LOW) {
-        /* Force all outputs low */
-        stm32_configgpio(GPIO_PWMA_LOW);
-        stm32_configgpio(GPIO_PWMB_LOW);
-        stm32_configgpio(GPIO_PWMC_LOW);
+    } else if (state == HAL_PWM_STATE_OFF || state == HAL_PWM_STATE_LOW) {
+        /* Clear BDTR to force all outputs low */
+        putreg32(0u, STM32_TIM1_BDTR);
     } else if (state == HAL_PWM_STATE_RUNNING) {
-        /* Take PWM output pins out of tri-state */
-        stm32_configgpio(GPIO_PWMA_ENABLED);
-        stm32_configgpio(GPIO_PWMB_ENABLED);
-        stm32_configgpio(GPIO_PWMC_ENABLED);
+        /* Enable main timer output */
+        putreg32(ATIM_BDTR_MOE, STM32_TIM1_BDTR);
     }
 
     pwm_state_ = state;

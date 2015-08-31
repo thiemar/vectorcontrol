@@ -53,16 +53,15 @@ void DQCurrentController::update(
     */
     float ed_a, eq_a, vd_v, vq_v, ccd_v, ccq_v, v_max, v_mag, scale;
 
-    v_max = std::min(v_limit_v_, vbus_v * 0.95f);
-
     /* Calculate Idq error */
     ed_a = 0.0f - i_dq_a[0];
     eq_a = i_setpoint_a_ - i_dq_a[1];
 
-    /* Limit error */
+    /* Limit error -- use conditional instructions to avoid branching */
     if (eq_a > accel_current_limit_a_) {
         eq_a = accel_current_limit_a_;
-    } else if (eq_a < -accel_current_limit_a_) {
+    }
+    if (eq_a < -accel_current_limit_a_) {
         eq_a = -accel_current_limit_a_;
     }
 
@@ -81,11 +80,10 @@ void DQCurrentController::update(
     Limit the absolute value of Vdq to vbus * maximum modulation.
     */
     v_mag = __VSQRTF(vd_v * vd_v + vq_v * vq_v);
-    if (v_mag > v_max) {
-        scale = v_max / v_mag;
-        vd_v *= scale;
-        vq_v *= scale;
-    }
+    v_max = std::min(v_limit_v_, vbus_v * 0.95f);
+    scale = v_mag > v_max ? v_max / v_mag : 1.0f;
+    vd_v *= scale;
+    vq_v *= scale;
 
     /*
     Anti-windup calculation for the integral term; if desired |Vdq| is greater

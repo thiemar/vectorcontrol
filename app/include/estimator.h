@@ -131,9 +131,9 @@ public:
         the controller bandwidth; current control bandwidth is one decade
         higher than speed control bandwidth.
         */
-        wb = 2.0f * (float)M_PI * control_bandwidth_hz;
-        i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 50.0f);
-        angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s);
+        wb = float(2.0 * M_PI) * control_bandwidth_hz;
+        i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 10.0f);
+        angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 2.0f);
     }
 };
 
@@ -142,20 +142,18 @@ class ParameterEstimator {
     float sample_voltages_[4];
     float sample_currents_[4];
 
-    float open_loop_angular_velocity_rad_per_s_;
+    float open_loop_angular_velocity_rad_per_u_;
     float open_loop_angle_rad_;
 
     float v_;
-    float t_;
     uint16_t test_idx_;
     uint16_t open_loop_test_samples_;
 
 public:
     ParameterEstimator():
-        open_loop_angular_velocity_rad_per_s_(0.0f),
+        open_loop_angular_velocity_rad_per_u_(0.0f),
         open_loop_angle_rad_(0.0f),
         v_(0.0f),
-        t_(0.0f),
         test_idx_(0),
         open_loop_test_samples_(0)
     {
@@ -178,15 +176,5 @@ public:
         return test_idx_ == 4;
     }
 
-    void get_samples(float out_v[4], float out_i[4]) {
-        memcpy(out_v, sample_voltages_, sizeof(sample_voltages_));
-        memcpy(out_i, sample_currents_, sizeof(sample_currents_));
-    }
-
-    static void calculate_r_l_from_samples(
-        float& r_r,
-        float& l_h,
-        const float v_sq[4],
-        const float i_sq[4]
-    );
+    void calculate_r_l(float& r_r, float& l_h);
 };

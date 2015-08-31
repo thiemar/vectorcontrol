@@ -225,10 +225,10 @@ PERF_COUNT_START
     int16_t phase_current_lsb[2];
     uint16_t phase_oc[3];
     float out_v_ab[2], i_ab[2];
-    float temp;
+    float temp, vbus_inv;
 
     /* Clear TIM1 update flag so failure to meet deadline can be detected */
-    putreg32(getreg32(STM32_TIM1_SR) & ~ATIM_SR_UIF, STM32_TIM1_SR);
+    //putreg32(getreg32(STM32_TIM1_SR) & ~ATIM_SR_UIF, STM32_TIM1_SR);
     /* Disable JEXTEN to prevent re-triggering */
     putreg32(getreg32(STM32_ADC1_CR2) & ~ADC_CR2_JEXTEN_MASK, STM32_ADC1_CR2);
 
@@ -239,13 +239,13 @@ PERF_COUNT_START
     } else {
         board_vbus_lsb_ = getreg16(STM32_ADC3_JDR1) << 7;
     }
-    temp = (float)(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
-           (1.0f / 32768.0f);
+    temp = float(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
+           float(1.0 / 32768.0);
     vbus_v_ = temp;
     if (temp > 6.0f) {
-        vbus_inv_ = 32768.0f / temp;
+        vbus_inv = 32768.0f / temp;
     } else {
-        vbus_inv_ = 0.0f;
+        vbus_inv = 0.0f;
     }
 
     hal_read_phase_shunts_(phase_current_lsb);
@@ -258,10 +258,10 @@ PERF_COUNT_START
 
     Multiply by 8 because the phase current readings are right-aligned.
     */
-    i_ab[0] = (float)phase_current_lsb[0] *
-              (hal_full_scale_current_a * 8.0f / 32768.0f);
-    temp = (float)phase_current_lsb[1] *
-           (hal_full_scale_current_a * 8.0f / 32768.0f);
+    i_ab[0] = float(phase_current_lsb[0]) *
+              float(hal_full_scale_current_a * 8.0 / 32768.0);
+    temp = float(phase_current_lsb[1]) *
+           float(hal_full_scale_current_a * 8.0 / 32768.0);
     i_ab[1] = (0.57735026919f * i_ab[0] + 1.15470053838f * temp);
 
     if (high_frequency_task_) {
@@ -282,8 +282,8 @@ PERF_COUNT_START
     */
     (void)svm_duty_cycle_from_v_alpha_beta(
         phase_oc,
-        (int16_t)__SSAT((int32_t)(vbus_inv_ * out_v_ab[0]), 16),
-        (int16_t)__SSAT((int32_t)(vbus_inv_ * out_v_ab[1]), 16),
+        int16_t(__SSAT(int32_t(vbus_inv * out_v_ab[0]), 16u)),
+        int16_t(__SSAT(int32_t(vbus_inv * out_v_ab[1]), 16u)),
         hal_pwm_period_ticks);
 
     /* Update the timer */
@@ -368,7 +368,7 @@ static void hal_init_adc_() {
 
     /* Give some time for the clock to settle or something */
     for (volatile uint32_t x = 0;
-         x < 10 * hal_core_frequency_hz / 1000000u; x++);
+         x < 10u * hal_core_frequency_hz / 1000000u; x++);
 
     /*
     ADC1, ADC2, ADC3 config: no continuous conversion mode,
@@ -483,7 +483,7 @@ static bool hal_adc_periodic_() {
     /* TS_CAL_2 is the temperature sensor reading at 110 deg C */
     static uint16_t ts_cal_2 = *((volatile uint16_t*)(0x1FFFF7C2));
     static float ts_deg_c_per_lsb = (110.0f - 30.0f) /
-                                    (float)(ts_cal_2 - ts_cal_1);
+                                    float(ts_cal_2 - ts_cal_1);
     float temp;
 
     /* Check if the last temperature conversion is done */
@@ -499,7 +499,7 @@ static bool hal_adc_periodic_() {
             board_temp_lsb_ = getreg32(STM32_ADC3_DR) << 7;
         }
         temp = 30.0f +
-               (float)((int32_t)(board_temp_lsb_ >> 7) - (int32_t)ts_cal_1) *
+               float(int32_t(board_temp_lsb_ >> 7) - int32_t(ts_cal_1)) *
                ts_deg_c_per_lsb;
         temp_degc_ = temp;
 
@@ -525,8 +525,6 @@ void hal_reset(void) {
     stm32_gpiowrite(GPIO_DC_CAL, 0u);
 
     hal_init_sys_();
-    hal_init_tim_();
-    hal_init_adc_();
 
     /*
     Read bootloader auto-baud and node ID values, then set up the node. We've
@@ -537,6 +535,10 @@ void hal_reset(void) {
         up_systemreset();
     }
     can_init(bootloader_app_shared_.bus_speed);
+
+    /* Initialize timer and ADC */
+    hal_init_tim_();
+    hal_init_adc_();
 
     /* Calibrate the current shunt sensor offsets */
     hal_run_calibration_();

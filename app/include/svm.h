@@ -95,9 +95,9 @@ inline uint8_t svm_duty_cycle_from_v_alpha_beta(
             break;
     }
 
-    phase_oc_ticks[0] = (uint16_t)__USAT(tmpa, 16);
-    phase_oc_ticks[1] = (uint16_t)__USAT(tmpb, 16);
-    phase_oc_ticks[2] = (uint16_t)__USAT(tmpc, 16);
+    phase_oc_ticks[0] = uint16_t(__USAT(tmpa, 16u));
+    phase_oc_ticks[1] = uint16_t(__USAT(tmpb, 16u));
+    phase_oc_ticks[2] = uint16_t(__USAT(tmpc, 16u));
 
     return sector;
 }

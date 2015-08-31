@@ -50,7 +50,6 @@ static struct bootloader_app_shared_t bootloader_app_shared_;
 
 /* ADC measurements */
 static volatile float vbus_v_;
-static volatile float vbus_inv_;
 static volatile float temp_degc_;
 
 
@@ -73,7 +72,7 @@ __esc_assert_func (
     const char __attribute__((unused)) *func,
     const char __attribute__((unused)) *failedexpr
 ) {
-    hal_set_pwm_state(HAL_PWM_STATE_OFF);
+    hal_set_pwm_state(HAL_PWM_STATE_LOW);
     while (1);
 }
 
@@ -86,7 +85,7 @@ extern "C" void sched_process_timer(void) {
 extern "C" void
 __attribute__((noreturn))
 default_handler(void) {
-    hal_set_pwm_state(HAL_PWM_STATE_OFF);
+    hal_set_pwm_state(HAL_PWM_STATE_LOW);
     while (1);
 }
 
@@ -142,7 +141,7 @@ void hal_set_pwm_reverse(bool reverse) {
 
 
 void hal_restart(void) {
-    hal_set_pwm_state(HAL_PWM_STATE_OFF);
+    hal_set_pwm_state(HAL_PWM_STATE_LOW);
     up_systemreset();
 }
 

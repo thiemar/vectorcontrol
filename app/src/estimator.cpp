@@ -73,9 +73,6 @@ void StateEstimator::update_state_estimate(
     state_estimate_.i_dq_a[1] += (i_dq_a[1] - state_estimate_.i_dq_a[1]) *
                                  i_dq_lpf_coeff_;
 
-    /* Store the original angle */
-    last_angle = state_estimate_.angle_rad;
-
 #define Pm(i,j) covariance_temp[i * STATE_DIM + j]
 #define P(i,j) state_covariance_[i * STATE_DIM + j]
 #define M(i,j) measurement_covariance[i * MEASUREMENT_DIM + j]
@@ -183,9 +180,9 @@ void StateEstimator::update_state_estimate(
     // P(1,0) = std::numeric_limits<float>::signaling_NaN();
     P(1,1) = U(0,1) * Pm(0,1) + U(1,1) * Pm(1,1);
 
-    P(0,0) = std::min(P(0,0), 100000.0f);
-    P(0,1) = std::min(P(0,1), 10000.0f);
-    P(1,1) = std::min(P(1,1), 10000.0f);
+    P(0,0) = std::min(P(0,0), 10000.0f);
+    P(0,1) = std::min(P(0,1), 1000.0f);
+    P(1,1) = std::min(P(1,1), 1000.0f);
 
     /*
     Calculate the predicted measurement based on the supplied alpha-beta frame
@@ -227,26 +224,22 @@ void StateEstimator::update_state_estimate(
 #undef s5
 #undef s3
 
-    if (closed_loop_frac > 0.0f || speed_setpoint != 0.0f) {
-        /*
-        Get the EKF-corrected state estimate for the last PWM cycle (time t).
-        */
-        state_estimate_.angle_rad += update[1] * closed_loop_frac;
-        state_estimate_.angle_rad +=
-            (state_estimate_.angular_velocity_rad_per_s * t_) * closed_loop_frac;
-        state_estimate_.angle_rad +=
-            (speed_setpoint * t_) * (1.0f - closed_loop_frac);
-    } else {
-        /*
-        The motor is not being actively controlled -- try to estimate angle
-        and angular velocity, but keep the state covariance in the startup
-        condition.
-        */
-        state_estimate_.angle_rad += update[1];
-        state_estimate_.angle_rad +=
-            (state_estimate_.angular_velocity_rad_per_s * t_);
-    }
+    /* Store the original angle */
+    last_angle = state_estimate_.angle_rad;
 
+    /*
+    Get the EKF-corrected state estimate for the last PWM cycle (time t).
+
+    While the motor is not being actively controlled (speed_setpoint == 0) try
+    to estimate angle and angular velocity.
+    */
+    state_estimate_.angle_rad +=
+        update[1] * (speed_setpoint != 0.0f ? closed_loop_frac : 1.0f);
+    state_estimate_.angle_rad +=
+        (state_estimate_.angular_velocity_rad_per_s * t_) *
+        (speed_setpoint != 0.0f ? closed_loop_frac : 1.0f);
+    state_estimate_.angle_rad +=
+        speed_setpoint * t_ * (1.0f - closed_loop_frac);
 
     /*
     Calculate filtered velocity estimate by differentiating successive
@@ -256,27 +249,36 @@ void StateEstimator::update_state_estimate(
     */
     acceleration = ((state_estimate_.angle_rad - last_angle) * t_inv_ -
                      state_estimate_.angular_velocity_rad_per_s);
-    state_estimate_.angular_acceleration_rad_per_s2 +=
-        angular_velocity_lpf_coeff_ * 0.1f *
-        ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) -
-            state_estimate_.angular_acceleration_rad_per_s2);
     state_estimate_.angular_velocity_rad_per_s +=
         acceleration * angular_velocity_lpf_coeff_;
+    state_estimate_.angular_acceleration_rad_per_s2 +=
+        angular_velocity_lpf_coeff_ * float(1.0/64.0) *
+        ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) -
+            state_estimate_.angular_acceleration_rad_per_s2);
 
     next_angle = state_estimate_.angle_rad +
-                 2.0f * state_estimate_.angular_velocity_rad_per_s * t_;
+                 state_estimate_.angular_velocity_rad_per_s * t_;
 
-    /* Constrain angle to 0 .. 2 * pi */
-    if (next_angle > 2.0f * (float)M_PI) {
-        next_angle -= 2.0f * (float)M_PI;
-        if (state_estimate_.angle_rad > 2.0f * (float)M_PI) {
-            state_estimate_.angle_rad -= 2.0f * (float)M_PI;
-        }
-    } else if (next_angle < 0.0f) {
-        next_angle += 2.0f * (float)M_PI;
-        if (state_estimate_.angle_rad < 0.0f) {
-            state_estimate_.angle_rad += 2.0f * (float)M_PI;
-        }
+    /*
+    Constrain angle to +/- pi -- use conditional instructions to avoid
+    branching
+    */
+    if (state_estimate_.angle_rad > float(M_PI)) {
+        state_estimate_.angle_rad -= float(2.0 * M_PI);
+    }
+    if (state_estimate_.angle_rad < -float(M_PI)) {
+        state_estimate_.angle_rad += float(2.0 * M_PI);
+    }
+
+    /*
+    Constrain next angle to +/- pi -- use conditional instructions to avoid
+    branching
+    */
+    if (next_angle > float(M_PI)) {
+        next_angle -= float(2.0 * M_PI);
+    }
+    if (next_angle < -float(M_PI)) {
+        next_angle += float(2.0 * M_PI);
     }
 
     sin_cos(next_sin_theta_, next_cos_theta_, next_angle);
@@ -293,35 +295,34 @@ void StateEstimator::update_state_estimate(
         vs = __VSQRTF(v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
         is = __VSQRTF(i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
 
-        if (vs > 0.5f && state_estimate_.angular_velocity_rad_per_s > 1.0f) {
-            phi = (vs - is * rs_r_) /
-                  state_estimate_.angular_velocity_rad_per_s;
-            phi_estimate_v_s_per_rad_ += (phi - phi_estimate_v_s_per_rad_) *
-                                         angular_velocity_lpf_coeff_ * 0.1f;
-        }
+        phi = (vs - is * rs_r_) / state_estimate_.angular_velocity_rad_per_s;
+        phi_estimate_v_s_per_rad_ += (phi - phi_estimate_v_s_per_rad_) *
+                                     angular_velocity_lpf_coeff_ *
+                                     float(1.0/128.0);
     }
 }
 
 
-#define PE_START_ANGULAR_VELOCITY 5000.0f
-#define PE_START_V_V 0.25f
-#define PE_MIN_V_V 0.03125f
-#define PE_MAX_V_V 0.5f
-#define PE_MIN_I_A 0.2f
-#define PE_MAX_I_A 1.0f
-#define PE_TEST_SAMPLES 1024u
+#define PE_START_ANGULAR_VELOCITY 10000.0f
+#define PE_MIN_V_V float(1.0/128.0)
+#define PE_START_V_V float(1.0/8.0)
+#define PE_MAX_V_V float(1.0/2.0)
+#define PE_MIN_I_A float(1.0/4.0)
+#define PE_MAX_I_A float(2.0)
+#define PE_TEST_SAMPLES 2048u
 
 
 void ParameterEstimator::start_estimation(float t) {
     open_loop_angle_rad_ = 0.0f;
     open_loop_test_samples_ = 0;
-    open_loop_angular_velocity_rad_per_s_ = PE_START_ANGULAR_VELOCITY;
+    open_loop_angular_velocity_rad_per_u_ = PE_START_ANGULAR_VELOCITY * t;
     v_ = PE_START_V_V;
-    t_ = t;
     test_idx_ = 0;
 
-    memset(sample_currents_, 0, sizeof(sample_currents_));
-    memset(sample_voltages_, 0, sizeof(sample_voltages_));
+    sample_voltages_[0] = sample_voltages_[1] = sample_voltages_[2] =
+        sample_voltages_[3] = 0.0f;
+    sample_currents_[0] = sample_currents_[1] = sample_currents_[2] =
+        sample_currents_[3] = 0.0f;
 }
 
 
@@ -337,16 +338,14 @@ void ParameterEstimator::update_parameter_estimate(
     Run four tests, each at half the frequency of the previous one.
 
     If the current during a test is less than the minimum, double the voltage
-    and repeat (as many times as necessary). Follow the same procedure to
-    increase voltage if necessary.
+    and repeat (as many times as necessary). If the current is greater than
+    the maximum, halve the voltage and repeat.
 
     At the end of the process, determine R and L by linear regression of the
     four impedance readings against the test frequencies.
     */
-    float next_angle_rad;
-
-    /* Early exit if the test is complete */
-    if (test_idx_ >= 4 || v_ < PE_MIN_V_V * 0.5f) {
+    if (test_idx_ >= 4 || v_ < PE_MIN_V_V || v_ > PE_MAX_V_V) {
+        /* Early exit if the test is complete */
         return;
     }
 
@@ -371,18 +370,14 @@ void ParameterEstimator::update_parameter_estimate(
             v_ *= 2.0f;
             sample_currents_[test_idx_] = sample_voltages_[test_idx_] = 0.0f;
         } else {
-            /*
-            Current was OK -- halve test voltage, test frequency and test
-            cycle count for the next test.
-            */
-            open_loop_angular_velocity_rad_per_s_ *= 0.5f;
+            /* Current was OK -- halve test frequency for the next test */
+            open_loop_angular_velocity_rad_per_u_ *= 0.5f;
 
             /* Increment the test number */
             test_idx_++;
         }
 
         open_loop_test_samples_ = 0;
-        open_loop_angle_rad_ = 0.0f;
     } else if (open_loop_test_samples_ >= 3 * PE_TEST_SAMPLES / 4) {
         /* Accumulate the squared current and voltage readings */
         sample_currents_[test_idx_] +=
@@ -391,17 +386,16 @@ void ParameterEstimator::update_parameter_estimate(
             (v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
     }
 
+    open_loop_test_samples_++;
+
     /*
     Increment the phase angle, and the cycle count if the angle has wrapped
     round to zero.
     */
-    next_angle_rad = open_loop_angle_rad_ +
-                     open_loop_angular_velocity_rad_per_s_ * t_;
-    if (next_angle_rad > 2.0f * (float)M_PI) {
-        next_angle_rad -= 2.0f * (float)M_PI;
+    open_loop_angle_rad_ += open_loop_angular_velocity_rad_per_u_;
+    if (open_loop_angle_rad_ > float(M_PI)) {
+        open_loop_angle_rad_ -= float(2.0 * M_PI);
     }
-    open_loop_angle_rad_ = next_angle_rad;
-    open_loop_test_samples_++;
 }
 
 
@@ -411,25 +405,18 @@ void ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
     output a voltage for the first 12 out of 16 test cycles to give time for
     the current to decay to zero.
     */
-    float v_dq[2];
-
-    v_dq[0] = test_idx_ < 4 ? v_ : 0.0f;
-    v_dq[1] = 0.0f;
-
+    float v_dq[2] = {v_, 0.0f};
     inverse_park_transform(v_ab_v, v_dq, open_loop_angle_rad_);
 }
 
 
-void ParameterEstimator::calculate_r_l_from_samples(
-    float& r_r,
-    float& l_h,
-    const float v_sq[4],
-    const float i_sq[4]
-) {
+void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     size_t idx;
     float z_sq, w_sq, sum_xy, sum_x, sum_y, sum_x_sq, a, b;
 
     sum_xy = sum_x = sum_y = sum_x_sq = 0;
+    w_sq = float(PE_START_ANGULAR_VELOCITY) *
+           float(PE_START_ANGULAR_VELOCITY);
 
     /*
     Run simple linear regression, and calculate a and b such that
@@ -439,15 +426,15 @@ void ParameterEstimator::calculate_r_l_from_samples(
 
     L is then sqrt(b) and R is sqrt(a).
     */
-    for (idx = 0; idx < 4; idx++) {
-        z_sq = v_sq[idx] / i_sq[idx];
-        w_sq = PE_START_ANGULAR_VELOCITY / (float)(1 << idx);
-        w_sq *= w_sq;
+    for (idx = 0; idx < 4u; idx++) {
+        z_sq = sample_voltages_[idx] / sample_currents_[idx];
 
-        sum_xy += w_sq * z_sq;
         sum_x += w_sq;
-        sum_y += z_sq;
         sum_x_sq += w_sq * w_sq;
+        sum_xy += w_sq * z_sq;
+        sum_y += z_sq;
+
+        w_sq *= 0.25f; /* Halve angular velocity for the next test */
     }
 
     b = (4.0f * sum_xy - sum_x * sum_y) / (4.0f * sum_x_sq - sum_x * sum_x);

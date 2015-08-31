@@ -82,7 +82,6 @@ enum controller_mode_t {
 
 struct controller_state_t {
     uint32_t time;
-    uint32_t last_setpoint_update;
     float power_setpoint;
     float speed_setpoint;
     float internal_speed_setpoint;
@@ -112,15 +111,16 @@ volatile static struct controller_state_t g_controller_state;
 volatile static struct motor_state_t g_motor_state;
 volatile static struct audio_state_t g_audio_state;
 
+
 /* Bus and output voltage for reporting purposes */
 volatile static float g_vbus_v;
 volatile static float g_v_dq_v[2];
 volatile static float g_phi_v_s_per_rad;
 
+
 /* Motor parameter estimation state -- only used on startup */
-volatile static float g_i_samples[4];
-volatile static float g_v_samples[4];
-volatile static bool g_parameter_estimator_done;
+volatile static float g_measured_rs_r;
+volatile static float g_measured_ls_h;
 
 
 /* Written to the firmware image in post-processing */
@@ -132,14 +132,6 @@ Throttle timeout -- if we don't receive a setpoint update in this long,
 we spin the motor down
 */
 #define THROTTLE_TIMEOUT_MS 200u
-
-
-/*
-Hard current limit -- exceeding this shuts down the motor immediately
-(possibly destroying the power stage depending on the reason for the
-over-current)
-*/
-#define HARD_CURRENT_LIMIT_A 120.0f
 
 
 extern "C" int main(void);
@@ -171,35 +163,27 @@ void identification_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float i_samples[4], v_samples[4];
-    size_t i;
+    float r, l;
 
-    /* Update the parameter estimate with those values */
-    g_parameter_estimator.update_parameter_estimate(i_ab_a,
-                                                    last_v_ab_v);
-    g_parameter_estimator.get_v_alpha_beta_v(out_v_ab_v);
-
-    if (g_parameter_estimator.is_estimation_complete()) {
-        g_parameter_estimator.get_samples(v_samples, i_samples);
-
-        for (i = 0; i < 4; i++) {
-            g_i_samples[i] = i_samples[i];
-            g_v_samples[i] = v_samples[i];
-        }
-        g_parameter_estimator_done = true;
-    }
-
-    /*
-    Handle stop condition -- set Vd, Vq to zero. Trigger at current limit.
-    */
-    if (i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1] >
-            HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A ||
-            g_controller_state.fault) {
+    /* Handle stop condition -- set Vd, Vq to zero. */
+    if (g_controller_state.fault) {
         g_controller_state.fault = true;
         g_controller_state.mode = CONTROLLER_STOPPED;
     }
+
     if (g_controller_state.mode == CONTROLLER_STOPPED) {
         out_v_ab_v[0] = out_v_ab_v[1] = 0.0f;
+    } else {
+        /* Update the parameter estimate with those values */
+        g_parameter_estimator.update_parameter_estimate(i_ab_a, last_v_ab_v);
+        g_parameter_estimator.get_v_alpha_beta_v(out_v_ab_v);
+
+        if (g_parameter_estimator.is_estimation_complete()) {
+            g_parameter_estimator.calculate_r_l(r, l);
+            g_measured_rs_r = r;
+            g_measured_ls_h = l;
+            g_controller_state.mode = CONTROLLER_STOPPED;
+        }
     }
 
     g_vbus_v = vbus_v;
@@ -231,22 +215,9 @@ void control_cb(
 
     v_dq_v[0] = g_v_dq_v[0];
     v_dq_v[1] = g_v_dq_v[1];
+    audio_v = 0.0f;
 
-    /* Calculate audio component */
-    if (g_audio_state.off_time) {
-        phase = g_audio_state.phase_rad;
-        phase += g_audio_state.angular_velocity_rad_per_u;
-        if (phase > (float)M_PI) {
-            phase -= (float)(2.0 * M_PI);
-        }
-        audio_v = g_audio_state.volume_v * (phase > 0.0f ? 1.0f : -1.0f);
-        g_audio_state.phase_rad = phase;
-        g_audio_state.off_time--;
-    } else {
-        audio_v = 0.0f;
-    }
-
-    /* Update the state estimate with those values */
+    /* Update the state estimate with the latest measurements */
     g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
                                       internal_speed_setpoint,
                                       closed_loop_frac);
@@ -256,114 +227,139 @@ void control_cb(
     phi = g_estimator.get_phi_estimate();
     g_speed_controller.set_phi_v_s_per_rad(phi);
 
-    /*
-    Handle stop condition -- set Vd, Vq to zero and hope the resulting hard
-    stop doesn't break anything. Trigger at current limit.
-    */
-    if (i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1] >
-            HARD_CURRENT_LIMIT_A * HARD_CURRENT_LIMIT_A ||
-            g_controller_state.fault) {
-        v_dq_v[0] = v_dq_v[1] = 0.0f;
-        closed_loop_frac = current_setpoint = internal_speed_setpoint = 0.0f;
-
+    if (g_controller_state.fault) {
+        g_estimator.reset_state();
         g_controller_state.fault = true;
         g_controller_state.mode = CONTROLLER_STOPPED;
-    } else if (mode == CONTROLLER_STOPPED || (mode == CONTROLLER_STOPPING &&
-                 std::abs(last_v_ab_v[0]) < 0.1f &&
-                 std::abs(last_v_ab_v[1]) < 0.1f)) {
-        /* Motor shutdown logic -- stop when back EMF drops below 0.1 V */
-        g_current_controller.reset_state();
-        g_speed_controller.reset_state();
+    } else if (g_audio_state.off_time) {
+        /* Calculate audio component */
+        audio_v = g_audio_state.volume_v;
+        phase = g_audio_state.phase_rad;
+        phase += g_audio_state.angular_velocity_rad_per_u;
 
-        v_dq_v[0] = 0.0f;
-        v_dq_v[1] = audio_v;
-        closed_loop_frac = current_setpoint = internal_speed_setpoint = 0.0f;
-    } else {
-        /* Update the speed controller setpoint */
-        if (mode == CONTROLLER_STOPPING) {
-            /*
-            When stopping, the speed controller setpoint tracks the current
-            angular velocity.
-            */
-            internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
-            g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
-        } else if (mode == CONTROLLER_IDLING) {
-            /* Rotate at the idle speed */
-            closed_loop_frac = 0.0f;
-            internal_speed_setpoint = idle_speed_rad_per_s;
-            g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
-        } else if (closed_loop_frac < 1.0f) {
-            /*
-            In power or speed control mode, but not yet spinning fast enough
-            for closed-loop control -- spin up gradually until we reach the
-            minimum closed-loop speed.
-            */
-            internal_speed_setpoint +=
-                spinup_rate_rad_per_s2 * hal_control_t_s *
-                (speed_setpoint > 0.0f || power_setpoint > 0.0f ? 1.0f : -1.0f);
-            g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
-        } else if (mode == CONTROLLER_POWER) {
-            /*
-            In torque control mode, the torque input is used to limit the
-            speed controller's output, and the speed controller setpoint
-            always requests acceleration or deceleration in the direction of
-            the requested torque.
-            */
-            internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
-            g_speed_controller.set_power_setpoint(power_setpoint);
-        } else /* mode == CONTROLLER_SPEED */ {
-            internal_speed_setpoint = speed_setpoint;
-            g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+        if (phase > float(M_PI)) {
+            phase -= float(2.0 * M_PI);
+        }
+        if (phase < 0.0f) {
+            audio_v = -audio_v;
         }
 
+        g_audio_state.phase_rad = phase;
+        g_audio_state.off_time--;
+    }
+
+    /*
+    Outer control loop -- speed or aerodynamic torque, plus spin-up and
+    spin-down routines.
+    */
+    if (mode == CONTROLLER_STOPPING) {
         /*
-        Update the current controller with the output of the speed controller
-        when in speed control mode, or a constant opposing torque when
-        stopping.
+        When stopping, the speed controller setpoint tracks the current
+        angular velocity.
         */
-        current_setpoint = g_speed_controller.update(motor_state);
+        internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
+        g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
 
-        if (mode == CONTROLLER_STOPPING) {
-            /*
-            Add a small amount of negative torque to ensure the motor actually
-            shuts down.
-            */
-            current_setpoint = internal_speed_setpoint > 0.0f ?
-                               -0.25f : 0.25f;
-        } else if (closed_loop_frac < 1.0f) {
-            /*
-            Work out the transition value between open-loop and closed-loop
-            operation based on the square of the output voltage. Smooth the
-            transition out quite a bit to avoid false triggering.
-            */
-            new_closed_loop_frac =
-                (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1]) * 8.0f - 7.0f;
-            new_closed_loop_frac = std::max(0.0f, new_closed_loop_frac);
-
-            closed_loop_frac +=
-                (new_closed_loop_frac - closed_loop_frac) * 0.0001f;
-            closed_loop_frac = std::min(closed_loop_frac, 1.0f);
-
-            /*
-            Interpolate between the initial acceleration current and the
-            speed controller's current output as we transition out of
-            open-loop mode.
-            */
-            current_setpoint = (1.0f - closed_loop_frac) *
-                               (internal_speed_setpoint > 0.0f ?
-                                    accel_current_a : -accel_current_a) +
-                               current_setpoint * closed_loop_frac;
+        /* Stop when back EMF drops below 0.1 V */
+        if (std::abs(v_dq_v[0]) < 0.1f && std::abs(v_dq_v[1]) < 0.1f) {
+            g_controller_state.mode = CONTROLLER_STOPPED;
         }
+    } else if (mode == CONTROLLER_IDLING) {
+        /* Rotate at the idle speed */
+        internal_speed_setpoint = idle_speed_rad_per_s;
+        g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+    } else if ((mode == CONTROLLER_POWER || mode == CONTROLLER_SPEED) &&
+                closed_loop_frac < 1.0f) {
+        /*
+        In power or speed control mode, but not yet spinning fast enough
+        for closed-loop control -- spin up gradually until we reach the
+        minimum closed-loop speed.
+        */
+        internal_speed_setpoint +=
+            spinup_rate_rad_per_s2 * hal_control_t_s *
+            (speed_setpoint > 0.0f || power_setpoint > 0.0f ? 1.0f : -1.0f);
+        g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+    } else if (mode == CONTROLLER_POWER) {
+        /*
+        In torque control mode, the torque input is used to limit the
+        speed controller's output, and the speed controller setpoint
+        always requests acceleration or deceleration in the direction of
+        the requested torque.
+        */
+        internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
+        g_speed_controller.set_power_setpoint(power_setpoint);
+    } else if (mode == CONTROLLER_SPEED) {
+        internal_speed_setpoint = speed_setpoint;
+        g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+    } else /* Normally: if (mode == CONTROLLER_STOPPED), but catch-all */ {
+        internal_speed_setpoint = 0.0f;
+        g_speed_controller.reset_state();
+    }
 
-        /* Update the stator current controller setpoint. */
-        g_current_controller.set_setpoint(current_setpoint);
+    /*
+    Update the current controller with the output of the speed controller
+    when in speed control mode, or a constant opposing torque when
+    stopping.
+    */
+    current_setpoint = g_speed_controller.update(motor_state);
 
-        /* Run the current controller and obtain new Vd and Vq outputs. */
-        g_current_controller.update(v_dq_v,
-                                    motor_state.i_dq_a,
-                                    motor_state.angular_velocity_rad_per_s,
-                                    vbus_v,
-                                    audio_v);
+    /*
+    Inner control loop -- adjust motor voltage to maintain the current
+    setpoint
+    */
+    if (mode == CONTROLLER_STOPPING) {
+        /*
+        Add a small amount of negative torque to ensure the motor actually
+        shuts down.
+        */
+        current_setpoint = internal_speed_setpoint > 0.0f ? -0.25f : 0.25f;
+    } else if (mode == CONTROLLER_IDLING) {
+        closed_loop_frac = 0.0f;
+        current_setpoint = internal_speed_setpoint > 0.0f ?
+                           accel_current_a : -accel_current_a;
+    } else if (mode == CONTROLLER_POWER || mode == CONTROLLER_SPEED) {
+        /*
+        Interpolate between the initial acceleration current and the speed
+        controller's current output as we transition out of open-loop mode.
+        */
+        current_setpoint += (1.0f - closed_loop_frac) *
+                            ((internal_speed_setpoint > 0.0f ?
+                                accel_current_a : -accel_current_a) -
+                             current_setpoint);
+    } else {
+        g_current_controller.reset_state();
+        closed_loop_frac = 0.0f;
+        current_setpoint = 0.0f;
+    }
+
+    /* Update the stator current controller setpoint. */
+    g_current_controller.set_setpoint(current_setpoint);
+
+    /* Run the current controller and obtain new Vd and Vq outputs. */
+    g_current_controller.update(v_dq_v,
+                                motor_state.i_dq_a,
+                                motor_state.angular_velocity_rad_per_s,
+                                vbus_v,
+                                audio_v);
+
+    /*
+    Work out the transition value between open-loop and closed-loop operation
+    based on the square of the output voltage. Smooth the transition out quite
+    a bit to avoid false triggering.
+    */
+    new_closed_loop_frac = 8.0f * (v_dq_v[0] * v_dq_v[0] +
+                            (v_dq_v[1] - audio_v) * (v_dq_v[1] - audio_v)) -
+                           7.0f;
+    if (new_closed_loop_frac < 0.0f) {
+        new_closed_loop_frac = 0.0f;
+    }
+
+    if (closed_loop_frac < 1.0f) {
+        closed_loop_frac +=
+            (new_closed_loop_frac - closed_loop_frac) * 0.0001f;
+    }
+    if (closed_loop_frac > 1.0f) {
+        closed_loop_frac = 1.0f;
     }
 
     /*
@@ -394,16 +390,6 @@ void control_cb(
 
 
 void systick_cb(void) {
-    if (g_controller_state.mode != CONTROLLER_STOPPED &&
-            g_controller_state.time - g_controller_state.last_setpoint_update
-            > THROTTLE_TIMEOUT_MS) {
-        /*
-        Stop gracefully if the present command mode doesn't provide an
-        updated setpoint in the required period.
-        */
-        g_controller_state.mode = CONTROLLER_STOPPING;
-    }
-
     g_controller_state.time++;
 }
 
@@ -453,12 +439,12 @@ static void __attribute__((noreturn)) node_run(
     size_t length, i;
     uint32_t message_id, current_time, node_status_time, esc_status_time,
              foc_status_time, node_status_interval, esc_status_interval,
-             foc_status_interval;
+             foc_status_interval, last_setpoint_update;
     uint8_t filter_id, foc_status_transfer_id, node_status_transfer_id,
             esc_status_transfer_id, esc_index, message[8],
             broadcast_filter_id, service_filter_id;
     enum controller_mode_t mode;
-    float setpoint, value, is_a, vs_v, v_dq_v[2];
+    float setpoint, value, is_a, vs_v, v_dq_v[2], inv_num_poles;
     bool got_setpoint, param_valid, wants_bootloader_restart;
     struct param_t param;
     struct motor_state_t motor_state;
@@ -469,7 +455,8 @@ static void __attribute__((noreturn)) node_run(
 
     broadcast_filter_id = service_filter_id = 0xFFu;
 
-    foc_status_time = node_status_time = esc_status_time = 0u;
+    foc_status_time = node_status_time = esc_status_time =
+        last_setpoint_update = 0u;
 
     wants_bootloader_restart = false;
 
@@ -500,6 +487,8 @@ static void __attribute__((noreturn)) node_run(
         motor_params.spinup_rate_rad_per_s2;
     g_controller_state.accel_current_a =
         motor_params.accel_voltage_v / motor_params.rs_r;
+
+    inv_num_poles = 1.0f / float(motor_params.num_poles);
 
     while (true) {
         current_time = g_controller_state.time;
@@ -543,7 +532,7 @@ static void __attribute__((noreturn)) node_run(
                 got_setpoint = true;
                 mode = CONTROLLER_POWER;
                 /* Scale 0-8191 to represent 0 to maximum power. */
-                setpoint = (float)raw_cmd.cmd[esc_index] * (1.0f / 8191.0f) *
+                setpoint = float(raw_cmd.cmd[esc_index]) * float(1.0 / 8192.0) *
                            (/*motor_params.max_voltage_v * */
                             motor_params.max_current_a);
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
@@ -551,19 +540,17 @@ static void __attribute__((noreturn)) node_run(
                         esc_index < rpm_cmd.rpm.size()) {
                 got_setpoint = true;
                 mode = CONTROLLER_SPEED;
-                setpoint = (float)rpm_cmd.rpm[esc_index] * (1.0f / 60.0f) *
-                          (float)motor_params.num_poles * (float)M_PI;
+                setpoint = float(M_PI / 60.0) * float(rpm_cmd.rpm[esc_index] *
+                                                      motor_params.num_poles);
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
                        broadcast_manager.decode(beep_cmd)) {
                 /* Set up audio generation -- aim for 0.5 A */
                 g_audio_state.off_time =
                     (uint32_t)(beep_cmd.duration / hal_control_t_s);
                 g_audio_state.angular_velocity_rad_per_u =
-                    2.0f * (float)M_PI * hal_control_t_s *
+                    float(2.0 * M_PI) * hal_control_t_s *
                     std::max(100.0f, beep_cmd.frequency);
-                g_audio_state.volume_v = std::min(
-                    0.5f,
-                    0.5f * std::min((float)g_vbus_v, motor_params.max_voltage_v));
+                g_audio_state.volume_v = 0.5f;
             }
 
             broadcast_manager.receive_acknowledge();
@@ -776,16 +763,15 @@ static void __attribute__((noreturn)) node_run(
                             motor_params.rotor_inertia_kg_m2 *
                             motor_state.angular_velocity_rad_per_s *
                             motor_state.angular_acceleration_rad_per_s2 *
-                            (2.0f / (float)motor_params.num_poles) *
-                            (2.0f / (float)motor_params.num_poles);
+                            (2.0f * inv_num_poles) * (2.0f * inv_num_poles);
 
                 msg.acceleration =
                     motor_state.angular_acceleration_rad_per_s2 *
-                    60.0f / ((float)M_PI * (float)motor_params.num_poles);
+                    float(60.0 / M_PI) * inv_num_poles;
                 msg.rpm = motor_state.angular_velocity_rad_per_s *
-                    60.0f / ((float)M_PI * (float)motor_params.num_poles);
+                    float(60.0 / M_PI) * inv_num_poles;
                 msg.rpm_setpoint = g_controller_state.speed_setpoint *
-                    60.0f / ((float)M_PI * (float)motor_params.num_poles);
+                    float(60.0 / M_PI) * inv_num_poles;
 
                 msg.esc_index = esc_index;
 
@@ -805,10 +791,11 @@ static void __attribute__((noreturn)) node_run(
                 msg.voltage = g_vbus_v;
                 msg.current = is_a * vs_v / g_vbus_v;
                 msg.temperature = 273.15f + hal_get_temperature_degc();
-                msg.rpm = (int32_t)(g_motor_state.angular_velocity_rad_per_s *
-                    60.0f / ((float)M_PI * (float)motor_params.num_poles));
-                msg.power_rating_pct = (uint8_t)(100.0f * (is_a * vs_v) /
-                    (motor_params.max_current_a * motor_params.max_voltage_v));
+                msg.rpm = int32_t(g_motor_state.angular_velocity_rad_per_s *
+                                  float(60.0 / M_PI) * inv_num_poles);
+                msg.power_rating_pct = uint8_t(100.0f * (is_a * vs_v) /
+                                               (motor_params.max_current_a *
+                                                motor_params.max_voltage_v));
                 msg.esc_index = esc_index;
 
                 broadcast_manager.encode_message(
@@ -844,20 +831,30 @@ static void __attribute__((noreturn)) node_run(
                     std::abs(setpoint) >= 60.0f) {
                 g_controller_state.speed_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_SPEED;
-                g_controller_state.last_setpoint_update = current_time;
+                last_setpoint_update = current_time;
             } else if (mode == CONTROLLER_POWER &&
                     std::abs(setpoint) >= 1.0f) {
                 g_controller_state.power_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_POWER;
-                g_controller_state.last_setpoint_update = current_time;
+                last_setpoint_update = current_time;
             } else if ((g_controller_state.mode == CONTROLLER_STOPPED &&
                         motor_params.idle_speed_rad_per_s > 0.0f) ||
                         g_controller_state.mode == CONTROLLER_IDLING) {
                 g_controller_state.mode = CONTROLLER_IDLING;
                 g_controller_state.speed_setpoint =
                     g_controller_state.power_setpoint = 0.0f;
-                g_controller_state.last_setpoint_update = current_time;
+                last_setpoint_update = current_time;
             }
+        } else if (g_controller_state.mode != CONTROLLER_STOPPED &&
+                   g_controller_state.mode != CONTROLLER_STOPPING &&
+                   current_time - last_setpoint_update > THROTTLE_TIMEOUT_MS) {
+            /*
+            Stop gracefully if the present command mode doesn't provide an
+            updated setpoint in the required period.
+            */
+            g_controller_state.mode = CONTROLLER_STOPPING;
+            g_controller_state.speed_setpoint =
+                g_controller_state.power_setpoint = 0.0f;
         }
 
         /*
@@ -869,8 +866,7 @@ static void __attribute__((noreturn)) node_run(
                  g_controller_state.mode == CONTROLLER_POWER)) {
             configuration.set_param_value_by_index(
                 PARAM_MOTOR_KV,
-                60.0f / ((float)M_PI * (float)motor_params.num_poles *
-                         g_phi_v_s_per_rad));
+                float(60.0 / M_PI) * inv_num_poles / g_phi_v_s_per_rad);
         }
 
         /*
@@ -881,6 +877,7 @@ static void __attribute__((noreturn)) node_run(
                 broadcast_manager.is_tx_done() && can_is_ready(0u) &&
                 service_manager.is_tx_done() && can_is_ready(1u) &&
                 wants_bootloader_restart) {
+            g_controller_state.fault = true;
             hal_restart();
         }
     }
@@ -890,12 +887,10 @@ static void __attribute__((noreturn)) node_run(
 int main(void) {
     struct control_params_t control_params;
     struct motor_params_t motor_params;
-    uint32_t i;
-    float i_samples[4], v_samples[4];
     uint8_t node_id;
 
     hal_reset();
-    hal_set_pwm_state(HAL_PWM_STATE_LOW);
+    hal_set_low_frequency_callback(systick_cb);
 
     /* Read parameters from flash */
     Configuration configuration;
@@ -908,55 +903,49 @@ int main(void) {
     }
 
     /* Estimate motor parameters */
-    g_parameter_estimator_done = false;
-    g_parameter_estimator.start_estimation(hal_control_t_s);
-    hal_set_high_frequency_callback(identification_cb);
-
     hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
+
     g_controller_state.mode = CONTROLLER_IDENTIFYING;
+    g_parameter_estimator.start_estimation(hal_control_t_s);
 
-    while (!g_parameter_estimator_done &&
-            g_controller_state.mode == CONTROLLER_IDENTIFYING);
-
-    hal_set_pwm_state(HAL_PWM_STATE_LOW);
-    g_controller_state.mode = CONTROLLER_STOPPED;
-
+    hal_set_high_frequency_callback(identification_cb);
+    while (g_controller_state.mode == CONTROLLER_IDENTIFYING);
     hal_set_high_frequency_callback(NULL);
 
-    /*
-    If this fails, there was an overcurrent condition during Rs/Ls testing,
-    which is really bad.
-    */
-    esc_assert(g_parameter_estimator_done);
+    /* Copy measured Rs and Ls */
+    if (!g_controller_state.fault) {
+        motor_params.rs_r = g_measured_rs_r;
+        motor_params.ls_h = g_measured_ls_h;
 
-    /* Calculate Rs and Ls based on the measurements */
-    for (i = 0; i < 4; i++) {
-        i_samples[i] = g_i_samples[i];
-        v_samples[i] = g_v_samples[i];
+        /*
+        This is not strictly necessary as the values are never written to
+        flash, but it does enable the measurements to be read via the
+        parameter interfaces.
+        */
+        configuration.set_param_value_by_index(PARAM_MOTOR_RS,
+                                               motor_params.rs_r);
+        configuration.set_param_value_by_index(PARAM_MOTOR_LS,
+                                               motor_params.ls_h);
+
+        /* R/L * t must be < 1.0 */
+        if (motor_params.rs_r / motor_params.ls_h * hal_control_t_s >= 1.0f) {
+            //g_controller_state.fault = true;
+            motor_params.rs_r = 0.1f;
+            motor_params.ls_h = 1e-5f;
+        }
     }
 
-    ParameterEstimator::calculate_r_l_from_samples(
-        motor_params.rs_r, motor_params.ls_h, v_samples, i_samples);
-
-    /*
-    This is not strictly necessary as the values are never written to
-    flash, but it does enable the measurements to be read via the
-    parameter interfaces.
-    */
-    configuration.set_param_value_by_index(PARAM_MOTOR_RS, motor_params.rs_r);
-    configuration.set_param_value_by_index(PARAM_MOTOR_LS, motor_params.ls_h);
-
     /* Initialize the system with the motor parameters */
-    ((volatile StateEstimator)g_estimator).set_control_params(
+    ((volatile StateEstimator*)&g_estimator)->set_control_params(
         control_params.bandwidth_hz, hal_control_t_s);
-    ((volatile StateEstimator)g_estimator).set_motor_params(
+    ((volatile StateEstimator*)&g_estimator)->set_motor_params(
         motor_params.rs_r, motor_params.ls_h, motor_params.phi_v_s_per_rad,
         hal_control_t_s);
-    ((volatile StateEstimator)g_estimator).reset_state();
+    ((volatile StateEstimator*)&g_estimator)->reset_state();
 
-    ((volatile DQCurrentController)g_current_controller).set_params(
+    ((volatile DQCurrentController*)&g_current_controller)->set_params(
         motor_params, control_params, hal_control_t_s);
-    ((volatile SpeedController)g_speed_controller).set_params(
+    ((volatile SpeedController*)&g_speed_controller)->set_params(
         motor_params, control_params, hal_control_t_s);
 
     /* Clear audio state */
@@ -965,16 +954,12 @@ int main(void) {
     g_audio_state.angular_velocity_rad_per_u = 0.0f;
     g_audio_state.volume_v = 0.0f;
 
-    /* Start PWM */
-    hal_set_pwm_state(HAL_PWM_STATE_RUNNING);
-
     /*
     After starting the ISR tasks we are no longer able to access g_estimator,
     g_current_controller and g_speed_controller, since they're updated from
     the ISRs and not declared volatile.
     */
     hal_set_high_frequency_callback(control_cb);
-    hal_set_low_frequency_callback(systick_cb);
 
     node_id = hal_get_can_node_id();
     node_init(node_id, configuration);
