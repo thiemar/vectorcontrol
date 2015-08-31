@@ -93,18 +93,18 @@ static struct param_t param_config_[NUM_PARAMS] = {
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
-        1e-3f, 1e-3f, 1.0f},
+        1e-3f, 1e-3f, 4.0f},
 
     /* Motor inductance in henries. This is estimated on start-up. */
     {PARAM_MOTOR_LS, PARAM_TYPE_FLOAT, "motor_ls",
-        1e-3f, 1e-6f, 1e-3f},
+        1e-3f, 1e-6f, 1e-2f},
 
     /*
     Motor KV in RPM per volt. This can be taken from the motor's spec sheet;
     accuracy will help control performance but a 20% error is fine.
     */
     {PARAM_MOTOR_KV, PARAM_TYPE_FLOAT, "motor_kv",
-        1000.0f, 100.0f, 5000.0f},
+        1000.0f, 100.0f, 8000.0f},
 
     /*
     Motor + rotor inertia in kg * m^2. A standard value for a small quad might
@@ -120,7 +120,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     100 rad/s electrical.
     */
     {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "ctl_p_gain",
-        1.0f, 0.0f, 10.0f},
+        0.1f, 0.0f, 10.0f},
 
     /*
     Rise time of the speed controller's torque output; this determines the
@@ -128,7 +128,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     the overall current limits and load inertia.
     */
     {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "ctl_i_time",
-        0.5f, 0.01f, 1.0f},
+        0.01f, 0.001f, 1.0f},
 
     /*
     If non-zero, the motor will rotate at this electrical speed in Hz when any

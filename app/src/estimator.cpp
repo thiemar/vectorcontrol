@@ -252,7 +252,7 @@ void StateEstimator::update_state_estimate(
     state_estimate_.angular_velocity_rad_per_s +=
         acceleration * angular_velocity_lpf_coeff_;
     state_estimate_.angular_acceleration_rad_per_s2 +=
-        angular_velocity_lpf_coeff_ * float(1.0/64.0) *
+        angular_velocity_lpf_coeff_ * float(1.0/512.0) *
         ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) -
             state_estimate_.angular_acceleration_rad_per_s2);
 
@@ -303,7 +303,7 @@ void StateEstimator::update_state_estimate(
 }
 
 
-#define PE_START_ANGULAR_VELOCITY 10000.0f
+#define PE_START_ANGULAR_VELOCITY 5000.0f
 #define PE_MIN_V_V float(1.0/128.0)
 #define PE_START_V_V float(1.0/8.0)
 #define PE_MAX_V_V float(1.0/2.0)

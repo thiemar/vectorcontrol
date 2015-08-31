@@ -302,7 +302,7 @@ PERF_COUNT_START
     out_v_ab[0] = out_v_ab[1] = 0.0f;
 
     if (high_frequency_task_) {
-        high_frequency_task_(out_v_ab, last_v_ab, i_ab, vbus_v_);
+        high_frequency_task_(out_v_ab, prev_v_ab, i_ab, vbus_v_);
     }
 
     prev_v_ab[0] = last_v_ab[0];

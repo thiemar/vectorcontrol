@@ -757,13 +757,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.v_dq[0] = v_dq_v[0];
                 msg.v_dq[1] = v_dq_v[1];
 
-                msg.power = g_phi_v_s_per_rad *
-                            motor_state.i_dq_a[1] *
-                            motor_state.angular_velocity_rad_per_s -
-                            motor_params.rotor_inertia_kg_m2 *
-                            motor_state.angular_velocity_rad_per_s *
-                            motor_state.angular_acceleration_rad_per_s2 *
-                            (2.0f * inv_num_poles) * (2.0f * inv_num_poles);
+                msg.power = motor_state.i_dq_a[1] * v_dq_v[1];
 
                 msg.acceleration =
                     motor_state.angular_acceleration_rad_per_s2 *

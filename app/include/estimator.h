@@ -133,7 +133,7 @@ public:
         */
         wb = float(2.0 * M_PI) * control_bandwidth_hz;
         i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 10.0f);
-        angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 2.0f);
+        angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 10.0f);
     }
 };
 
