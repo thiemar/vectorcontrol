@@ -81,13 +81,8 @@ struct control_params_t {
 };
 
 
-#define APPROXIMATE_SIN_COS
-#define APPROXIMATE_EXP
-
-
 inline float __attribute__((optimize("O3"),always_inline))
 fast_expf(float x) {
-#ifdef APPROXIMATE_EXP
 /*
 fast_expf is copyright (C) 2011 Paul Mineiro
 All rights reserved.
@@ -135,21 +130,6 @@ Contact: Paul Mineiro <paul@mineiro.com>
   union { uint32_t i; float f; } v = { (uint32_t)((1 << 23) * (clipp + 121.2740575f + 27.7280233f / (4.84252568f - z) - 1.49012907f * z)) };
 
   return v.f;
-#else
-    return expf(x);
-#endif
-}
-
-
-inline float __attribute__((optimize("O3"),always_inline))
-fast_sin(float x) {
-    const float B = (float)(4.0 / M_PI);
-    const float C = (float)(-4.0 / (M_PI * M_PI));
-    const float P = 0.225f; /* or 0.218 to minimize relative error */
-
-    float y;
-    y = B * x + C * x * std::abs(x);
-    return P * (y * std::abs(y) - y) + y;
 }
 
 
@@ -159,29 +139,24 @@ sin_cos(
     float& cosx,
     float x /* x must be in the range [-pi, pi] */
 ) {
-#ifdef APPROXIMATE_SIN_COS
-    const float B = (float)(4.0 / M_PI);
-    const float C = (float)(-4.0 / (M_PI * M_PI));
-    const float P = 0.225f; /* or 0.218 to minimize relative error */
+    const float Q = 3.1f;
+    const float P = 3.6f;
 
     float y;
 
-    y = B * x + C * x * std::abs(x);
-    sinx = P * (y * std::abs(y) - y) + y;
+    x *= float(1.0 / M_PI);
+
+    y = x - x * std::abs(x);
+    sinx = y * (Q + P * std::abs(y));
 
     /* Calculate the cosine */
-    if (x > float(0.5 * M_PI)) {
-        x -= float(2.0 * M_PI);
+    x += 0.5f;
+    if (x > 1.0f) {
+        x -= 2.0f;
     }
-    x += float(0.5 * M_PI);
 
-    y = B * x + C * x * std::abs(x);
-    cosx = P * (y * std::abs(y) - y) + y;
-
-#else
-    sinx = sinf(x);
-    cosx = cosf(x);
-#endif
+    y = x - x * std::abs(x);
+    cosx = y * (Q + P * std::abs(y));
 }
 
 

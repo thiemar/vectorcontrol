@@ -356,7 +356,7 @@ void control_cb(
 
     if (closed_loop_frac < 1.0f) {
         closed_loop_frac +=
-            (new_closed_loop_frac - closed_loop_frac) * 0.0001f;
+            (new_closed_loop_frac - closed_loop_frac) * float(1.0 / 8192.0);
     }
     if (closed_loop_frac > 1.0f) {
         closed_loop_frac = 1.0f;
@@ -444,7 +444,7 @@ static void __attribute__((noreturn)) node_run(
             esc_status_transfer_id, esc_index, message[8],
             broadcast_filter_id, service_filter_id;
     enum controller_mode_t mode;
-    float setpoint, value, is_a, vs_v, v_dq_v[2], inv_num_poles;
+    float setpoint, value, power_w, v_dq_v[2], to_rpm;
     bool got_setpoint, param_valid, wants_bootloader_restart;
     struct param_t param;
     struct motor_state_t motor_state;
@@ -488,7 +488,7 @@ static void __attribute__((noreturn)) node_run(
     g_controller_state.accel_current_a =
         motor_params.accel_voltage_v / motor_params.rs_r;
 
-    inv_num_poles = 1.0f / float(motor_params.num_poles);
+    to_rpm = float(60.0 / M_PI) / float(motor_params.num_poles);
 
     while (true) {
         current_time = g_controller_state.time;
@@ -544,7 +544,7 @@ static void __attribute__((noreturn)) node_run(
                                                       motor_params.num_poles);
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
                        broadcast_manager.decode(beep_cmd)) {
-                /* Set up audio generation -- aim for 0.5 A */
+                /* Set up audio generation */
                 g_audio_state.off_time =
                     (uint32_t)(beep_cmd.duration / hal_control_t_s);
                 g_audio_state.angular_velocity_rad_per_u =
@@ -673,7 +673,6 @@ static void __attribute__((noreturn)) node_run(
                 */
                 if (g_controller_state.mode == CONTROLLER_STOPPED) {
                     resp.error = resp.ERROR_OK;
-                    g_controller_state.fault = true;
                     wants_bootloader_restart = true;
                 } else {
                     resp.error = resp.ERROR_INVALID_MODE;
@@ -760,12 +759,9 @@ static void __attribute__((noreturn)) node_run(
                 msg.power = motor_state.i_dq_a[1] * v_dq_v[1];
 
                 msg.acceleration =
-                    motor_state.angular_acceleration_rad_per_s2 *
-                    float(60.0 / M_PI) * inv_num_poles;
-                msg.rpm = motor_state.angular_velocity_rad_per_s *
-                    float(60.0 / M_PI) * inv_num_poles;
-                msg.rpm_setpoint = g_controller_state.speed_setpoint *
-                    float(60.0 / M_PI) * inv_num_poles;
+                    motor_state.angular_acceleration_rad_per_s2 * to_rpm;
+                msg.rpm = motor_state.angular_velocity_rad_per_s * to_rpm;
+                msg.rpm_setpoint = g_controller_state.speed_setpoint * to_rpm;
 
                 msg.esc_index = esc_index;
 
@@ -776,18 +772,18 @@ static void __attribute__((noreturn)) node_run(
                     current_time - esc_status_time >= esc_status_interval) {
                 uavcan::equipment::esc::Status msg;
 
-                is_a = __VSQRTF(
-                    motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
-                    motor_state.i_dq_a[1] * motor_state.i_dq_a[1]);
-                vs_v = __VSQRTF(v_dq_v[0] * v_dq_v[0] +
-                                v_dq_v[1] * v_dq_v[1]);
+                power_w = __VSQRTF(
+                    (motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
+                     motor_state.i_dq_a[1] * motor_state.i_dq_a[1]) *
+                    (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1])
+                );
 
                 msg.voltage = g_vbus_v;
-                msg.current = is_a * vs_v / g_vbus_v;
+                msg.current = power_w / g_vbus_v;
                 msg.temperature = 273.15f + hal_get_temperature_degc();
                 msg.rpm = int32_t(g_motor_state.angular_velocity_rad_per_s *
-                                  float(60.0 / M_PI) * inv_num_poles);
-                msg.power_rating_pct = uint8_t(100.0f * (is_a * vs_v) /
+                                  to_rpm);
+                msg.power_rating_pct = uint8_t(100.0f * power_w /
                                                (motor_params.max_current_a *
                                                 motor_params.max_voltage_v));
                 msg.esc_index = esc_index;
@@ -827,7 +823,7 @@ static void __attribute__((noreturn)) node_run(
                 g_controller_state.mode = CONTROLLER_SPEED;
                 last_setpoint_update = current_time;
             } else if (mode == CONTROLLER_POWER &&
-                    std::abs(setpoint) >= 1.0f) {
+                    std::abs(setpoint) >= 0.1f) {
                 g_controller_state.power_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_POWER;
                 last_setpoint_update = current_time;
@@ -859,8 +855,7 @@ static void __attribute__((noreturn)) node_run(
                 (g_controller_state.mode == CONTROLLER_SPEED ||
                  g_controller_state.mode == CONTROLLER_POWER)) {
             configuration.set_param_value_by_index(
-                PARAM_MOTOR_KV,
-                float(60.0 / M_PI) * inv_num_poles / g_phi_v_s_per_rad);
+                PARAM_MOTOR_KV, to_rpm / g_phi_v_s_per_rad);
         }
 
         /*
@@ -921,11 +916,10 @@ int main(void) {
         configuration.set_param_value_by_index(PARAM_MOTOR_LS,
                                                motor_params.ls_h);
 
-        /* R/L * t must be < 1.0 */
-        if (motor_params.rs_r / motor_params.ls_h * hal_control_t_s >= 1.0f) {
-            //g_controller_state.fault = true;
-            motor_params.rs_r = 0.1f;
-            motor_params.ls_h = 1e-5f;
+        /* R/L * t must be < 1.0; R must be < 1.0 */
+        if (motor_params.rs_r / motor_params.ls_h * hal_control_t_s >= 1.0f ||
+                motor_params.rs_r > 1.0f) {
+            g_controller_state.fault = true;
         }
     }
 

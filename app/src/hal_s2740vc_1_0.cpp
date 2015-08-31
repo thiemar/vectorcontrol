@@ -487,7 +487,8 @@ static void hal_init_dma_() {
     */
     putreg32(2u, STM32_DMA1_CNDTR(DMACHAN_ADC1));
     putreg32(STM32_ADC1_DR, STM32_DMA1_CPAR(DMACHAN_ADC1));
-    putreg32((uint32_t)adc_conversion_results_, STM32_DMA1_CMAR(DMACHAN_ADC1));
+    putreg32((uint32_t)adc_conversion_results_,
+             STM32_DMA1_CMAR(DMACHAN_ADC1));
     putreg32(DMA_CCR_EN | DMA_CCR_CIRC | DMA_CCR_MINC | DMA_CCR_PSIZE_16BITS |
              DMA_CCR_MSIZE_16BITS | DMA_CCR_PRILO,
              STM32_DMA1_CCR(DMACHAN_ADC1));
