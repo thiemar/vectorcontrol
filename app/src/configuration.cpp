@@ -78,7 +78,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
 
     /* Data type ID of extended ESC status message. */
     {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT, "dtid_ext_status",
-        11034, 1, 65535},
+        20034, 1, 65535},
 
     /*
     Number of motor poles. Used to convert mechanical speeds to electrical
