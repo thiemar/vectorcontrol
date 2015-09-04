@@ -112,6 +112,20 @@ SOFTWARE.
             shape-rendering: smoothEdges;
         }
 
+        .thrust-setpoint {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: red;
+            shape-rendering: smoothEdges;
+        }
+
+        .thrust-actual {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: black;
+            shape-rendering: smoothEdges;
+        }
+
         .vbus {
             fill: none;
             stroke-width: 0.75px;
@@ -540,14 +554,6 @@ SOFTWARE.
                         <span>Kv (rpm / V)</span>
                         <input name="motor_kv" class="configuration" type="text" readonly="readonly">
                     </label>
-                    <label>
-                        <span>Inertia (kg m<sup>2</sup>)</span>
-                        <input name="motor_inertia" class="configuration" type="number" min="0" max="0.001" step="0.000001">
-                    </label>
-                    <label>
-                        <span>Drag torque (N m s<sup>2</sup> / rad<sup>2</sup>)</span>
-                        <input name="motor_drag" class="configuration" type="number" min="0" max="0.001" step="0.00000001">
-                    </label>
 
                     <h3>Control parameters</h3>
                     <label>
@@ -569,6 +575,44 @@ SOFTWARE.
                     <label>
                         <span>Reverse direction</span>
                         <input name="ctl_dir" class="configuration" type="number" min="0.0" max="1.0" step="1.0">
+                    </label>
+
+                    <h3>Propeller parameters</h3>
+                    <label>
+                        <span>Cd K</span>
+                        <input name="prop_cd_k" class="configuration" type="number" min="0.0" max="1.0" step="0.01">
+                    </label>
+                    <label>
+                        <span>Cd Kx</span>
+                        <input name="prop_cd_kx" class="configuration" type="number" min="-1.0" max="1.0" step="0.001">
+                    </label>
+                    <label>
+                        <span>Cl K</span>
+                        <input name="prop_cl_k" class="configuration" type="number" min="0.0" max="1.0" step="0.01">
+                    </label>
+                    <label>
+                        <span>Cl Kx</span>
+                        <input name="prop_cl_kx" class="configuration" type="number" min="-1.0" max="1.0" step="0.001">
+                    </label>
+                    <label>
+                        <span>Effective chord (m)</span>
+                        <input name="prop_chord" class="configuration" type="number" min="0.005" max="1.0" step="0.005">
+                    </label>
+                    <label>
+                        <span>Diameter (in)</span>
+                        <input name="prop_diameter" class="configuration" type="number" min="1.0" max="200.0" step="1.0">
+                    </label>
+                    <label>
+                        <span>Pitch (in)</span>
+                        <input name="prop_pitch" class="configuration" type="number" min="1.0" max="200.0" step="1.0">
+                    </label>
+                    <label>
+                        <span>Blade count</span>
+                        <input name="prop_num_blades" class="configuration" type="number" min="2.0" max="6.0" step="1.0">
+                    </label>
+                    <label>
+                        <span>Effective mass (kg)</span>
+                        <input name="prop_mass" class="configuration" type="number" min="0.0" max="50.0" step="0.001">
                     </label>
 
                     <h3>UAVCAN parameters</h3>
@@ -598,6 +642,7 @@ SOFTWARE.
 
                 <svg class="speed-chart"></svg>
                 <svg class="current-chart"></svg>
+                <svg class="thrust-chart"></svg>
                 <svg class="accel-power-chart"></svg>
                 <svg class="voltagetemp-chart"></svg>
                 <svg class="output-voltage-chart"></svg>

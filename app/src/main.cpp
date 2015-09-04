@@ -56,8 +56,7 @@ enum uavcan_dtid_filter_id_t {
     UAVCAN_PROTOCOL_RESTARTNODE,
     UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
     UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
-    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND,
-    THIEMAR_EQUIPMENT_ESC_THRUSTPOWERCOMMAND
+    UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND
 };
 
 
@@ -75,14 +74,15 @@ enum controller_mode_t {
     CONTROLLER_STOPPED,
     CONTROLLER_IDENTIFYING,
     CONTROLLER_SPEED,
-    CONTROLLER_POWER,
+    CONTROLLER_THRUST,
     CONTROLLER_STOPPING,
-    CONTROLLER_IDLING
+    CONTROLLER_IDLING,
+    CONTROLLER_ABORTING
 };
 
 struct controller_state_t {
     uint32_t time;
-    float power_setpoint;
+    float thrust_setpoint;
     float speed_setpoint;
     float internal_speed_setpoint;
     float current_setpoint;
@@ -116,6 +116,9 @@ volatile static struct audio_state_t g_audio_state;
 volatile static float g_vbus_v;
 volatile static float g_v_dq_v[2];
 volatile static float g_phi_v_s_per_rad;
+volatile static float g_thrust_n;
+volatile static float g_max_thrust_n;
+volatile static float g_inflow_angle_deg;
 
 
 /* Motor parameter estimation state -- only used on startup */
@@ -131,7 +134,7 @@ extern volatile struct bootloader_app_descriptor flash_app_descriptor;
 Throttle timeout -- if we don't receive a setpoint update in this long,
 we spin the motor down
 */
-#define THROTTLE_TIMEOUT_MS 200u
+#define THROTTLE_TIMEOUT_MS 500u
 
 
 extern "C" int main(void);
@@ -153,7 +156,8 @@ static void node_init(uint8_t node_id, Configuration& configuration);
 static void node_run(
     uint8_t node_id,
     Configuration& configuration,
-    const struct motor_params_t& motor_params
+    const struct motor_params_t& motor_params,
+    const struct control_params_t& control_params
 );
 
 
@@ -196,7 +200,7 @@ void control_cb(
     const float i_ab_a[2],
     float vbus_v
 ) {
-    float v_dq_v[2], phase, audio_v, current_setpoint, power_setpoint,
+    float v_dq_v[2], phase, audio_v, current_setpoint, thrust_setpoint,
           speed_setpoint, internal_speed_setpoint, closed_loop_frac,
           idle_speed_rad_per_s, accel_current_a, spinup_rate_rad_per_s2,
           new_closed_loop_frac, phi, temp;
@@ -204,7 +208,7 @@ void control_cb(
     enum controller_mode_t mode;
 
     mode = g_controller_state.mode;
-    power_setpoint = g_controller_state.power_setpoint;
+    thrust_setpoint = g_controller_state.thrust_setpoint;
     speed_setpoint = g_controller_state.speed_setpoint;
     internal_speed_setpoint = g_controller_state.internal_speed_setpoint;
     closed_loop_frac = g_controller_state.closed_loop_frac;
@@ -252,7 +256,7 @@ void control_cb(
     Outer control loop -- speed or aerodynamic torque, plus spin-up and
     spin-down routines.
     */
-    if (mode == CONTROLLER_STOPPING) {
+    if (mode == CONTROLLER_STOPPING || mode == CONTROLLER_ABORTING) {
         /*
         When stopping, the speed controller setpoint tracks the current
         angular velocity.
@@ -262,36 +266,47 @@ void control_cb(
 
         /* Stop when back EMF drops below 0.1 V */
         if (std::abs(v_dq_v[0]) < 0.1f && std::abs(v_dq_v[1]) < 0.1f) {
-            g_controller_state.mode = CONTROLLER_STOPPED;
+            g_controller_state.mode = mode = CONTROLLER_STOPPED;
         }
     } else if (mode == CONTROLLER_IDLING) {
         /* Rotate at the idle speed */
         internal_speed_setpoint = idle_speed_rad_per_s;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
-    } else if ((mode == CONTROLLER_POWER || mode == CONTROLLER_SPEED) &&
+    } else if ((mode == CONTROLLER_THRUST || mode == CONTROLLER_SPEED) &&
                 closed_loop_frac < 1.0f) {
         /*
-        In power or speed control mode, but not yet spinning fast enough
+        In thrust or speed control mode, but not yet spinning fast enough
         for closed-loop control -- spin up gradually until we reach the
         minimum closed-loop speed.
         */
         temp = spinup_rate_rad_per_s2 * hal_control_t_s *
-               (speed_setpoint > 0.0f || power_setpoint > 0.0f ?
+               (speed_setpoint > 0.0f || thrust_setpoint > 0.0f ?
                     1.0f : -1.0f);
         internal_speed_setpoint += temp;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint + temp);
-    } else if (mode == CONTROLLER_POWER) {
+
         /*
-        In torque control mode, the torque input is used to limit the
-        speed controller's output, and the speed controller setpoint
-        always requests acceleration or deceleration in the direction of
-        the requested torque.
+        TODO: abort if the voltage is too low for the speed -- minimum Kv
+        check or something
         */
+        if (false) {
+            g_controller_state.mode = CONTROLLER_ABORTING;
+        }
+    } else if (mode == CONTROLLER_THRUST) {
         internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
-        g_speed_controller.set_power_setpoint(power_setpoint);
+        g_speed_controller.set_thrust_setpoint(thrust_setpoint);
     } else if (mode == CONTROLLER_SPEED) {
         internal_speed_setpoint = speed_setpoint;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+
+        /*
+        Abort if it looks like the motor has stalled -- angular velocity is
+        below what it would reach in the first 0.1 s of operation.
+        */
+        if (std::abs(motor_state.angular_velocity_rad_per_s) <
+                spinup_rate_rad_per_s2 * 0.1f) {
+            g_controller_state.mode = mode = CONTROLLER_ABORTING;
+        }
     } else /* Normally: if (mode == CONTROLLER_STOPPED), but catch-all */ {
         internal_speed_setpoint = 0.0f;
         g_speed_controller.reset_state();
@@ -308,7 +323,7 @@ void control_cb(
     Inner control loop -- adjust motor voltage to maintain the current
     setpoint
     */
-    if (mode == CONTROLLER_STOPPING) {
+    if (mode == CONTROLLER_STOPPING || mode == CONTROLLER_ABORTING) {
         /*
         Add a small amount of negative torque to ensure the motor actually
         shuts down.
@@ -318,7 +333,7 @@ void control_cb(
         closed_loop_frac = 0.0f;
         current_setpoint = internal_speed_setpoint > 0.0f ?
                            accel_current_a : -accel_current_a;
-    } else if (mode == CONTROLLER_POWER || mode == CONTROLLER_SPEED) {
+    } else if (mode == CONTROLLER_THRUST || mode == CONTROLLER_SPEED) {
         /*
         Interpolate between the initial acceleration current and the speed
         controller's current output as we transition out of open-loop mode.
@@ -387,6 +402,9 @@ void control_cb(
     g_v_dq_v[1] = v_dq_v[1];
     g_vbus_v = vbus_v;
     g_phi_v_s_per_rad = phi;
+    g_thrust_n = g_speed_controller.get_estimated_thrust_n();
+    g_max_thrust_n = g_speed_controller.get_max_thrust_n();
+    g_inflow_angle_deg = g_speed_controller.get_estimated_inflow_angle_deg();
 }
 
 
@@ -435,7 +453,8 @@ static void node_init(uint8_t node_id, Configuration& configuration) {
 static void __attribute__((noreturn)) node_run(
     uint8_t node_id,
     Configuration& configuration,
-    const struct motor_params_t& motor_params
+    const struct motor_params_t& motor_params,
+    const struct control_params_t& control_params
 ) {
     size_t length, i;
     uint32_t message_id, current_time, node_status_time, esc_status_time,
@@ -531,11 +550,10 @@ static void __attribute__((noreturn)) node_run(
                     broadcast_manager.decode(raw_cmd) &&
                     esc_index < raw_cmd.cmd.size()) {
                 got_setpoint = true;
-                mode = CONTROLLER_POWER;
-                /* Scale 0-8191 to represent 0 to maximum power. */
-                setpoint = float(raw_cmd.cmd[esc_index]) * float(1.0 / 8192.0) *
-                           (/*motor_params.max_voltage_v * */
-                            motor_params.max_current_a);
+                mode = CONTROLLER_THRUST;
+                /* Scale 0-8191 to represent 0 to maximum thrust. */
+                setpoint = std::abs(float(raw_cmd.cmd[esc_index])) *
+                           float(1.0 / 8192.0) * g_max_thrust_n;
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
                         broadcast_manager.decode(rpm_cmd) &&
                         esc_index < rpm_cmd.rpm.size()) {
@@ -546,8 +564,8 @@ static void __attribute__((noreturn)) node_run(
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND &&
                        broadcast_manager.decode(beep_cmd)) {
                 /* Set up audio generation */
-                g_audio_state.off_time =
-                    (uint32_t)(beep_cmd.duration / hal_control_t_s);
+                g_audio_state.off_time = uint32_t(beep_cmd.duration *
+                                                  (1.0f / hal_control_t_s));
                 g_audio_state.angular_velocity_rad_per_u =
                     float(2.0 * M_PI) * hal_control_t_s *
                     std::max(100.0f, beep_cmd.frequency);
@@ -758,6 +776,9 @@ static void __attribute__((noreturn)) node_run(
                 msg.v_dq[1] = v_dq_v[1];
 
                 msg.power = motor_state.i_dq_a[1] * v_dq_v[1];
+                msg.inflow_angle = g_inflow_angle_deg;
+                msg.thrust = g_thrust_n;
+                msg.thrust_setpoint = g_controller_state.thrust_setpoint;
 
                 msg.acceleration =
                     motor_state.angular_acceleration_rad_per_s2 * to_rpm;
@@ -816,28 +837,33 @@ static void __attribute__((noreturn)) node_run(
             can_tx(0u, message_id, length, message);
         }
 
-        /* Update the controller mode and setpoint */
-        if (!g_controller_state.fault && got_setpoint) {
+        /*
+        Update the controller mode and setpoint, unless the motor is currently
+        stopping
+        */
+        if (!g_controller_state.fault && got_setpoint &&
+                g_controller_state.mode != CONTROLLER_ABORTING) {
             if (mode == CONTROLLER_SPEED &&
                     std::abs(setpoint) >= 60.0f) {
                 g_controller_state.speed_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_SPEED;
                 last_setpoint_update = current_time;
-            } else if (mode == CONTROLLER_POWER &&
+            } else if (mode == CONTROLLER_THRUST &&
                     std::abs(setpoint) >= 0.1f) {
-                g_controller_state.power_setpoint = setpoint;
-                g_controller_state.mode = CONTROLLER_POWER;
+                g_controller_state.thrust_setpoint = setpoint;
+                g_controller_state.mode = CONTROLLER_THRUST;
                 last_setpoint_update = current_time;
             } else if ((g_controller_state.mode == CONTROLLER_STOPPED &&
                         motor_params.idle_speed_rad_per_s > 0.0f) ||
                         g_controller_state.mode == CONTROLLER_IDLING) {
                 g_controller_state.mode = CONTROLLER_IDLING;
                 g_controller_state.speed_setpoint =
-                    g_controller_state.power_setpoint = 0.0f;
+                    g_controller_state.thrust_setpoint = 0.0f;
                 last_setpoint_update = current_time;
             }
         } else if (g_controller_state.mode != CONTROLLER_STOPPED &&
                    g_controller_state.mode != CONTROLLER_STOPPING &&
+                   g_controller_state.mode != CONTROLLER_ABORTING &&
                    current_time - last_setpoint_update > THROTTLE_TIMEOUT_MS) {
             /*
             Stop gracefully if the present command mode doesn't provide an
@@ -845,7 +871,7 @@ static void __attribute__((noreturn)) node_run(
             */
             g_controller_state.mode = CONTROLLER_STOPPING;
             g_controller_state.speed_setpoint =
-                g_controller_state.power_setpoint = 0.0f;
+                g_controller_state.thrust_setpoint = 0.0f;
         }
 
         /*
@@ -854,7 +880,7 @@ static void __attribute__((noreturn)) node_run(
         */
         if (g_phi_v_s_per_rad > 0.0f &&
                 (g_controller_state.mode == CONTROLLER_SPEED ||
-                 g_controller_state.mode == CONTROLLER_POWER)) {
+                 g_controller_state.mode == CONTROLLER_THRUST)) {
             configuration.set_param_value_by_index(
                 PARAM_MOTOR_KV, to_rpm / g_phi_v_s_per_rad);
         }
@@ -952,5 +978,5 @@ int main(void) {
 
     node_id = hal_get_can_node_id();
     node_init(node_id, configuration);
-    node_run(node_id, configuration, motor_params);
+    node_run(node_id, configuration, motor_params, control_params);
 }

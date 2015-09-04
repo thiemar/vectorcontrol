@@ -127,92 +127,129 @@ public:
 
 class SpeedController {
     /*
-    Implements standard PI speed control, as well as the aerodynamic power
-    controller described in:
-
-    "Aerodynamic Power Control for Multirotor Aerial Vehicles"
-    Bangura, M.; Lim, H.; Jin Kim, H.; Mahony, R. (2014)
+    Implements standard PI speed control, as well as a thrust estimator and
+    controller.
     */
 protected:
-    bool control_power_;
+    bool control_thrust_;
 
     float integral_error_a_;
     float speed_setpoint_rad_per_s_;
 
-    float power_setpoint_w_;
+    float thrust_setpoint_n_;
 
-    float speed_kp_;
-    float speed_ki_;
-
-    float power_kp_;
-    float power_ki_;
+    float kp_;
+    float ki_;
 
     float ir_;  /* Rotor inertia in kg * m^2*/
-    float kq0_; /* Torque constant in N*m / A */
-    float tw_; /* Drag torque in N*m / (rad/s)^2 */
+    float kq_v_s_per_rad_; /* Torque constant */
+    float ka_; /* 0.5 * RHO * c * B * r */
+    float reff_m_; /* Propeller effective radius in m (0.75 * r) */
+    float num_pole_pairs_; /* pole count / 2 */
+    float inv_num_pole_pairs_; /* 1.0 / (pole count / 2) */
+
+    float cl_kx, cl_k;
+    float cd_kx, cd_k;
 
     float current_limit_a_;
     float accel_current_limit_a_;
 
+    float thrust_lpf_coeff_;
+
+    /* Temporary state */
+    float estimated_thrust_n_;
+    float estimated_inflow_angle_deg_;
+
+
 public:
     SpeedController():
-        control_power_(false),
+        control_thrust_(false),
         integral_error_a_(0.0f),
         speed_setpoint_rad_per_s_(0.0f),
-        power_setpoint_w_(0.0f),
-        speed_kp_(0.0f),
-        speed_ki_(0.0f),
-        power_kp_(0.0f),
-        power_ki_(0.0f),
+        thrust_setpoint_n_(0.0f),
+        kp_(0.0f),
+        ki_(0.0f),
         ir_(0.0f),
-        kq0_(0.0f),
-        tw_(0.0f),
+        kq_v_s_per_rad_(0.0f),
+        ka_(0.0f),
+        reff_m_(1.0f),
+        num_pole_pairs_(4.0f),
+        inv_num_pole_pairs_(0.25f),
+        cl_kx(0.0f),
+        cl_k(0.0f),
+        cd_kx(0.0f),
+        cd_k(0.0f),
         current_limit_a_(0.0f),
-        accel_current_limit_a_(0.0f)
+        accel_current_limit_a_(0.0f),
+        thrust_lpf_coeff_(0.0f),
+        estimated_thrust_n_(0.0f),
+        estimated_inflow_angle_deg_(0.0f)
     {}
 
     void reset_state() {
         integral_error_a_ = 0.0f;
         speed_setpoint_rad_per_s_ = 0.0f;
-        power_setpoint_w_ = 0.0f;
+        thrust_setpoint_n_ = 0.0f;
+        estimated_thrust_n_ = 0.0f;
+        estimated_inflow_angle_deg_= 0.0f;
     }
 
-    void set_speed_setpoint(float setpoint) {
+    void __attribute__((always_inline)) set_speed_setpoint(float setpoint) {
         speed_setpoint_rad_per_s_ = setpoint;
-        control_power_ = false;
+        control_thrust_ = false;
     }
 
-    void set_power_setpoint(float setpoint) {
-        power_setpoint_w_ = setpoint;
-        control_power_ = true;
+    void __attribute__((always_inline)) set_thrust_setpoint(float setpoint) {
+        thrust_setpoint_n_ = setpoint;
+        control_thrust_ = true;
     }
 
-    void set_phi_v_s_per_rad(float phi) {
-        kq0_ = phi;
+    void __attribute__((always_inline)) set_phi_v_s_per_rad(float phi) {
+        kq_v_s_per_rad_ = phi;
     }
 
-    void set_params(
+    float __attribute__((always_inline)) get_estimated_thrust_n(void) const {
+        return estimated_thrust_n_;
+    }
+
+    float __attribute__((always_inline))
+    get_estimated_inflow_angle_deg(void) const {
+        return estimated_inflow_angle_deg_;
+    }
+
+    float __attribute__((always_inline)) get_max_thrust_n(void) const {
+        float torque_nm;
+        torque_nm = current_limit_a_ * kq_v_s_per_rad_ * num_pole_pairs_;
+        /*
+        Return maximum static thrust by taking Cl, Cd at inflow angle = 0.
+
+        This will not be accurate for props with higher pitch, but should be
+        close enough generally.
+
+        FIXME: check voltage limit and Kv, then use the speed-based limit if
+        it's lower htan this one.
+        */
+        return torque_nm / (cd_k * reff_m_) * cl_k;
+    }
+
+    void  set_params(
         const struct motor_params_t& motor_params,
         const struct control_params_t& control_params,
         float t_s
     ) volatile {
-        float max_accel_torque;
+        float max_accel_torque, wb;
 
         max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
 
-        speed_kp_ = float(1.0/512.0) * max_accel_torque *
-                    control_params.accel_gain;
-        speed_ki_ = t_s / control_params.accel_time_s;
-
-        power_kp_ = max_accel_torque * control_params.accel_gain;
-        power_ki_ = speed_ki_;
+        kp_ = float(1.0/512.0) * max_accel_torque * control_params.accel_gain;
+        ki_ = t_s / control_params.accel_time_s;
 
         current_limit_a_ = motor_params.max_current_a;
         accel_current_limit_a_ = std::min(motor_params.max_current_a,
                                           max_accel_torque);
 
         /*
-        Power control term calculation.
+        Thrust control term calculation.
 
         Assuming perfect efficiency, maximum electrical power is given by
         vq * iq, and mechanical power is given by t * w.
@@ -221,45 +258,77 @@ public:
 
         Phi is vq / w, so kq0 = phi.
 
-        Scale rotor inertia by (2/poles)^2 to convert the
-        velocity*acceleration term in Eqn 17 from electrical to mechanical.
+        Scale rotor inertia by (2/poles) to convert the acceleration torque
+        term from electrical to mechanical.
         */
-        ir_ = motor_params.rotor_inertia_kg_m2 *
-              (2.0f / (float)motor_params.num_poles) *
-              (2.0f / (float)motor_params.num_poles);
-        kq0_ = motor_params.phi_v_s_per_rad;
+        num_pole_pairs_ = float(motor_params.num_poles / 2);
+        inv_num_pole_pairs_ = 1.0f / num_pole_pairs_;
+        kq_v_s_per_rad_ = motor_params.phi_v_s_per_rad;
+        reff_m_ = control_params.prop_radius_m * 0.75f;
+        ka_ = float(RHO_KG_PER_M3 / 2.0) * control_params.prop_chord_m *
+              reff_m_ * float(control_params.prop_num_blades);
+        ir_ = control_params.prop_mass_kg * inv_num_pole_pairs_ *
+              (2.0f * reff_m_) * (2.0f * reff_m_) / 12.0f;
 
-        tw_ = motor_params.drag_torque_n_m_s2_per_rad2;
+        wb = float(2.0 * M_PI) * control_params.bandwidth_hz;
+        thrust_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s);
+
+        /* Cd and Cl approximation coefficients */
+        cl_kx = control_params.prop_cl_kx;
+        cl_k = control_params.prop_cl_k;
+        cd_kx = control_params.prop_cd_kx;
+        cd_k = control_params.prop_cd_k;
     }
 
-    float update(const struct motor_state_t& state) {
-        float error, torque, feedforward_torque, accel_torque_a,
-              out_a, kp, ki;
+    float __attribute__((always_inline))
+    update(const struct motor_state_t& state) {
+        float error, accel_torque_a, out_a, v_m_per_s, cd, cl, torque_n_m,
+              min_speed_rad_per_s;
 
-        if (control_power_) {
-            /* Thrust torque control mode */
-            feedforward_torque =
-                /* ir_ * state.angular_acceleration_rad_per_s2 / kq0_ + */
-                (tw_ * state.angular_velocity_rad_per_s *
-                       state.angular_velocity_rad_per_s) / kq0_;
-            torque = state.i_dq_a[1] - feedforward_torque;
-            error = power_setpoint_w_ - torque;
-            feedforward_torque = 0.0f;
-            kp = power_kp_;
-            ki = power_ki_;
-        } else {
-            /* Speed control mode */
-            feedforward_torque = 0.0f;
-            error = speed_setpoint_rad_per_s_ -
-                    state.angular_velocity_rad_per_s;
-            kp = speed_kp_;
-            ki = speed_ki_;
+        min_speed_rad_per_s = 1.5f / kq_v_s_per_rad_;
+
+        torque_n_m = state.i_dq_a[1] * kq_v_s_per_rad_ * num_pole_pairs_ -
+                     ir_ * state.angular_acceleration_rad_per_s2;
+        v_m_per_s = state.angular_velocity_rad_per_s * reff_m_ *
+                    inv_num_pole_pairs_;
+
+        cd = std::max(0.01f, torque_n_m /
+                             (ka_ * reff_m_ * v_m_per_s * v_m_per_s));
+        estimated_inflow_angle_deg_ = std::max(0.0f, (cd - cd_k) / cd_kx);
+
+        cd = std::max(0.01f, cd_k + cd_kx * estimated_inflow_angle_deg_);
+        cl = std::max(0.01f, cl_k + cl_kx * estimated_inflow_angle_deg_);
+
+        estimated_thrust_n_ +=
+            ((torque_n_m / (cd * reff_m_) * cl) - estimated_thrust_n_) *
+            thrust_lpf_coeff_;
+        if (state.angular_velocity_rad_per_s < min_speed_rad_per_s) {
+            estimated_thrust_n_ = 0.0f;
+            estimated_inflow_angle_deg_ = 0.0f;
         }
+
+        if (control_thrust_) {
+            /* FIME? Does this need to be tunable? */
+            speed_setpoint_rad_per_s_ += thrust_setpoint_n_ -
+                                         estimated_thrust_n_;
+
+            if (std::isnan(speed_setpoint_rad_per_s_) ||
+                    speed_setpoint_rad_per_s_ < min_speed_rad_per_s) {
+                speed_setpoint_rad_per_s_ = min_speed_rad_per_s;
+            }
+        }
+
+        /*
+        The thrust controller updates the speed setpoint based on the desired
+        thrust
+        */
+        error = speed_setpoint_rad_per_s_ -
+                state.angular_velocity_rad_per_s;
 
         /*
         Determine acceleration torque, and limit to the configured maximum
         */
-        accel_torque_a = kp * error;
+        accel_torque_a = kp_ * error;
 
         if (accel_torque_a > accel_current_limit_a_) {
             accel_torque_a = accel_current_limit_a_;
@@ -268,7 +337,7 @@ public:
             accel_torque_a = -accel_current_limit_a_;
         }
 
-        out_a = accel_torque_a + feedforward_torque + integral_error_a_;
+        out_a = accel_torque_a + integral_error_a_;
 
         /* Limit output to maximum current */
         if (out_a > current_limit_a_) {
@@ -281,7 +350,7 @@ public:
         /*
         Limit integral term accumulation when the output current is saturated.
         */
-        integral_error_a_ += ki * (out_a - integral_error_a_);
+        integral_error_a_ += ki_ * (out_a - integral_error_a_);
 
         return out_a;
     }

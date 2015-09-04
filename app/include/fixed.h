@@ -43,6 +43,9 @@ SOFTWARE.
 #endif
 
 
+#define RHO_KG_PER_M3 1.225 /* density of air, kg/m^3 */
+
+
 struct motor_state_t {
     float angular_acceleration_rad_per_s2;
     float angular_velocity_rad_per_s;
@@ -66,11 +69,6 @@ struct motor_params_t {
                                      when starting up. */
 
     uint32_t num_poles; /* number of poles */
-
-    /* Inertia of the motor and prop */
-    float rotor_inertia_kg_m2;
-    /* Motor drag torque */
-    float drag_torque_n_m_s2_per_rad2;
 };
 
 
@@ -78,11 +76,29 @@ struct control_params_t {
     float bandwidth_hz;
     float accel_gain;
     float accel_time_s;
+
+    float prop_cd_kx, prop_cd_k; /* Cd = kx * phi + k */
+    float prop_cl_kx, prop_cl_k; /* Cl = kx * phi + k */
+    float prop_chord_m;
+    float prop_radius_m;
+    float prop_geometric_pitch_deg;
+    uint32_t prop_num_blades;
+    float prop_mass_kg;
 };
 
 
-inline float __attribute__((optimize("O3"),always_inline))
-fast_expf(float x) {
+inline float __attribute__((always_inline)) fast_atan(float x) {
+/*
+Derived from:
+“Efficient approximations for the arctangent function”,
+Rajan, S. Sichun Wang Inkol, R. Joyal, A., May 2006
+*/
+    return float(M_PI / 4.0) * x - x * (std::abs(x) - 1.0f) *
+           (0.2447f + 0.0663f * std::abs(x));
+}
+
+
+inline float __attribute__((always_inline)) fast_expf(float x) {
 /*
 fast_expf is copyright (C) 2011 Paul Mineiro
 All rights reserved.
@@ -133,7 +149,7 @@ Contact: Paul Mineiro <paul@mineiro.com>
 }
 
 
-inline void __attribute__((optimize("O3"),always_inline))
+inline void __attribute__((always_inline))
 sin_cos(
     float& sinx,
     float& cosx,
@@ -160,8 +176,7 @@ sin_cos(
 }
 
 
-inline float __attribute__((optimize("O3"),always_inline))
-__VSQRTF(float x) {
+inline float __attribute__((always_inline)) __VSQRTF(float x) {
     float result;
     asm ("vsqrt.f32 %0, %1" : "=w" (result) : "w" (x) );
     return result;

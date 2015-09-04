@@ -27,9 +27,9 @@ HTMLCollection.prototype.forEach = Array.prototype.forEach;
 var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
     deviceAccelPowerCharts = {}, deviceVoltageTempCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
-    deviceAirspeedCharts = {}, deviceLoadCharts = {}, activeESCs = {},
-    escRpmSetpointFunctions = [], escRawSetpointFunctions = [],
-    escPowerSetpointFunctions = [], lastUpdate = null;
+    deviceAirspeedCharts = {}, deviceLoadCharts = {}, deviceThrustCharts = {},
+    activeESCs = {}, escRpmSetpointFunctions = [],
+    escRawSetpointFunctions = [], lastUpdate = null;
 
 function getParamValue(param) {
     if (param.real_value !== undefined) {
@@ -193,6 +193,7 @@ function createNodeUi(message) {
     if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
             nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         setupSpeedChart(nodeUi);
+        setupThrustChart(nodeUi);
         setupCurrentChart(nodeUi);
         setupVoltageTempChart(nodeUi);
         setupAccelPowerChart(nodeUi);
@@ -543,6 +544,72 @@ function setupSpeedChart(device) {
 }
 
 
+function setupThrustChart(device) {
+    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
+        svg = device.querySelector("svg.thrust-chart"),
+        container = device.querySelector("div.device-measurements"),
+        width = container.clientWidth - 150,
+        height = 200,
+        margin = {top: 10, right: 50, left: 50, bottom: 10};
+
+    result.x = d3.scale.linear()
+        .range([0, width])
+        .domain([0.0, 30.0]);
+
+    result.y = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([0.0, 15.0]);
+
+    result.xAxis = d3.svg.axis()
+        .scale(result.x)
+        .orient("bottom")
+        .ticks(30)
+        .tickFormat("")
+        .tickSize(-height, 0, 0);
+    result.yAxis = d3.svg.axis()
+        .scale(result.y)
+        .orient("left")
+        .tickSize(-width, 0, 0);
+
+    result.chart = d3.select(svg)
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    result.chart.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(result.xAxis);
+
+    result.chart.append("g")
+        .attr("class", "y axis")
+        .call(result.yAxis)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Thrust (N)");
+
+    result.chart.append("clipPath")
+        .attr("id", "clip")
+    .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+
+    result.chart.append("path")
+        .attr("class", "thrust-setpoint")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "thrust-actual")
+        .attr('clip-path', 'url(#clip)');
+
+    deviceThrustCharts[parseInt(device.id.split("-")[1], 10)] = result;
+}
+
+
 function setupOutputVoltageChart(device) {
     var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
         svg = device.querySelector("svg.output-voltage-chart"),
@@ -750,6 +817,7 @@ function updateCharts(device, data) {
             device.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         updateCurrentChart(deviceId, device, data);
         updateSpeedChart(deviceId, device, data);
+        updateThrustChart(deviceId, device, data);
         updateVoltageTempChart(deviceId, device, data);
         updateAccelPowerChart(deviceId, device, data);
         updateOutputVoltageChart(deviceId, device, data);
@@ -849,7 +917,7 @@ function updateSpeedChart(deviceId, device, data) {
         .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", speed);
 
-    /* Id line */
+    /* Actual line */
     speed = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
         .y(function(d) { return chart.y(d.rpm); });
@@ -857,6 +925,41 @@ function updateSpeedChart(deviceId, device, data) {
     chart.chart.select(".speed-actual")
         .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", speed);
+}
+
+
+function updateThrustChart(deviceId, device, data) {
+    var thrust, chart, maxThrust;
+
+    chart = deviceThrustCharts[deviceId];
+    //maxSpeed = parseFloat(device.querySelector("input[name=motor_kv]").value) *
+    //           parseFloat(device.querySelector("input[name=motor_v_max]").value);
+
+    //if (isNaN(maxSpeed)) {
+    //    maxSpeed = 10000.0;
+    //}
+
+    //chart.y.domain([-maxSpeed * 1.1, maxSpeed * 1.1]);
+    //chart.yAxis.scale(chart.y);
+    //chart.chart.select(".y.axis").call(chart.yAxis);
+
+    /* Setpoint line */
+    thrust = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y(d.thrust_setpoint); });
+
+    chart.chart.select(".thrust-setpoint")
+        .datum(data["thiemar.equipment.esc.Status"])
+        .attr("d", thrust);
+
+    /* Actual line */
+    thrust = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y(d.thrust); });
+
+    chart.chart.select(".thrust-actual")
+        .datum(data["thiemar.equipment.esc.Status"])
+        .attr("d", thrust);
 }
 
 
@@ -957,31 +1060,23 @@ function updateLoadChart(deviceId, device, data) {
 
 
 function updateSetpoint() {
-    var rpmSetpoints = [], rawSetpoints = [], powerSetpoints = [],
+    var rpmSetpoints = [], rawSetpoints = [],
         time = (new Date()).valueOf() * 0.001,  /* seconds */
-        maxRpmIdx = -1, maxRawIdx = -1, maxPowerIdx = -1;
+        maxRpmIdx = -1, maxRawIdx = -1;
 
     for (var i = 0; i < 16; i++) {
         if (escRpmSetpointFunctions[i]) {
             rpmSetpoints.push(parseInt(escRpmSetpointFunctions[i](time), 10));
             rawSetpoints.push(0.0);
-            powerSetpoints.push(0.0);
             maxRpmIdx = i;
         } else if (escRawSetpointFunctions[i]) {
             rpmSetpoints.push(0.0);
             rawSetpoints.push(parseInt(escRawSetpointFunctions[i](time) *
                                        (8191.0 / 100.0), 10));
-            powerSetpoints.push(0.0);
             maxRawIdx = i;
-        } else if (escPowerSetpointFunctions[i]) {
-            rpmSetpoints.push(0.0);
-            rawSetpoints.push(0.0);
-            powerSetpoints.push(escPowerSetpointFunctions[i](time));
-            maxPowerIdx = i;
         } else {
             rpmSetpoints.push(0.0);
             rawSetpoints.push(0.0);
-            powerSetpoints.push(0.0);
         }
     }
 
@@ -999,15 +1094,6 @@ function updateSetpoint() {
             datatype: "uavcan.equipment.esc.RawCommand",
             payload: {
                 cmd: rawSetpoints.slice(0, maxRawIdx + 1)
-            }
-        }));
-    }
-
-    if (maxPowerIdx >= 0) {
-        ws.send(JSON.stringify({
-            datatype: "thiemar.equipment.esc.ThrustPowerCommand",
-            payload: {
-                thrust_power: powerSetpoints.slice(0, maxPowerIdx + 1)
             }
         }));
     }
@@ -1099,15 +1185,9 @@ function setupEventListeners() {
                 if (commandMode == "raw") {
                     escRpmSetpointFunctions[escIndex] = null;
                     escRawSetpointFunctions[escIndex] = func;
-                    escPowerSetpointFunctions[escIndex] = null;
                 } else if (commandMode == "rpm") {
                     escRpmSetpointFunctions[escIndex] = func;
                     escRawSetpointFunctions[escIndex] = null;
-                    escPowerSetpointFunctions[escIndex] = null;
-                } else if (commandMode == "power") {
-                    escRpmSetpointFunctions[escIndex] = null;
-                    escRawSetpointFunctions[escIndex] = null;
-                    escPowerSetpointFunctions[escIndex] = func;
                 }
 
                 event.target.value = "Stop";

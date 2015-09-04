@@ -24,7 +24,7 @@ SOFTWARE.
 
 #include "fixed.h"
 
-inline void __attribute__((optimize("O3"),always_inline))
+inline void __attribute__((always_inline))
 park_transform(
     float dq[2],
     const float alpha_beta[2],
@@ -36,7 +36,7 @@ park_transform(
 }
 
 
-inline void __attribute__((optimize("O3"),always_inline))
+inline void __attribute__((always_inline))
 park_transform(
     float dq[2],
     const float alpha_beta[2],
@@ -49,7 +49,7 @@ park_transform(
 }
 
 
-inline void __attribute__((optimize("O3"),always_inline))
+inline void __attribute__((always_inline))
 inverse_park_transform(
     float alpha_beta[2],
     const float dq[2],
@@ -61,7 +61,7 @@ inverse_park_transform(
 }
 
 
-inline void __attribute__((optimize("O3"),always_inline))
+inline void __attribute__((always_inline))
 inverse_park_transform(
     float alpha_beta[2],
     const float dq[2],
