@@ -41,6 +41,8 @@ SOFTWARE.
 #include "uavcan/protocol/GetNodeInfo.hpp"
 #include "uavcan/protocol/NodeStatus.hpp"
 #include "uavcan/protocol/RestartNode.hpp"
+#include "uavcan/protocol/enumeration/Begin.hpp"
+#include "uavcan/protocol/enumeration/Indication.hpp"
 #include "uavcan/equipment/esc/RawCommand.hpp"
 #include "uavcan/equipment/esc/RPMCommand.hpp"
 #include "uavcan/equipment/esc/Status.hpp"
@@ -54,6 +56,7 @@ enum uavcan_dtid_filter_id_t {
     UAVCAN_PROTOCOL_FILE_BEGINFIRMWAREUPDATE,
     UAVCAN_PROTOCOL_GETNODEINFO,
     UAVCAN_PROTOCOL_RESTARTNODE,
+    UAVCAN_PROTOCOL_ENUMERATION_BEGIN,
     UAVCAN_EQUIPMENT_ESC_RAWCOMMAND,
     UAVCAN_EQUIPMENT_ESC_RPMCOMMAND,
     UAVCAN_EQUIPMENT_INDICATION_BEEPCOMMAND
@@ -102,6 +105,9 @@ struct audio_state_t {
 };
 
 
+#define ENUMERATION_VELOCITY_THRESHOLD_RAD_PER_S float(2.0 * M_PI)
+
+
 /*
 Globally-visible board state updated by high-frequency callbacks and read by
 the low-frequency callback (doesn't matter if it's slightly out of sync as
@@ -124,6 +130,11 @@ volatile static float g_inflow_angle_deg;
 /* Motor parameter estimation state -- only used on startup */
 volatile static float g_measured_rs_r;
 volatile static float g_measured_ls_h;
+
+
+/* Enumeration state */
+volatile static float g_enumeration_velocity_rad_per_s;
+volatile static bool g_enumeration_active;
 
 
 /* Written to the firmware image in post-processing */
@@ -378,6 +389,12 @@ void control_cb(
         closed_loop_frac = 1.0f;
     }
 
+    /* Suppress current controller output when stopped */
+    if (mode == CONTROLLER_STOPPED) {
+        v_dq_v[0] = 0.0f;
+        v_dq_v[1] = audio_v;
+    }
+
     /*
     Transform Vd and Vq into the alpha-beta frame, and set the PWM output
     accordingly.
@@ -410,6 +427,15 @@ void control_cb(
 
 void systick_cb(void) {
     g_controller_state.time++;
+
+    /* Update the enumeration velocity */
+    if (g_enumeration_active) {
+        g_enumeration_velocity_rad_per_s +=
+            (g_motor_state.angular_velocity_rad_per_s -
+                g_enumeration_velocity_rad_per_s) * 0.001f;
+    } else {
+        g_enumeration_velocity_rad_per_s = 0.0f;
+    }
 }
 
 
@@ -433,6 +459,10 @@ static void node_init(uint8_t node_id, Configuration& configuration) {
     can_set_dtid_filter(
         1u, UAVCAN_PROTOCOL_RESTARTNODE, true,
         uavcan::protocol::RestartNode::DefaultDataTypeID,
+        node_id);
+    can_set_dtid_filter(
+        1u, UAVCAN_PROTOCOL_ENUMERATION_BEGIN, true,
+        uavcan::protocol::enumeration::Begin::DefaultDataTypeID,
         node_id);
 
     can_set_dtid_filter(
@@ -459,10 +489,10 @@ static void __attribute__((noreturn)) node_run(
     size_t length, i;
     uint32_t message_id, current_time, node_status_time, esc_status_time,
              foc_status_time, node_status_interval, esc_status_interval,
-             foc_status_interval, last_setpoint_update;
+             foc_status_interval, last_setpoint_update, enumeration_deadline;
     uint8_t filter_id, foc_status_transfer_id, node_status_transfer_id,
-            esc_status_transfer_id, esc_index, message[8],
-            broadcast_filter_id, service_filter_id;
+            esc_status_transfer_id, enumeration_indication_transfer_id,
+            esc_index, message[8], broadcast_filter_id, service_filter_id;
     enum controller_mode_t mode;
     float setpoint, value, power_w, v_dq_v[2], to_rpm;
     bool got_setpoint, param_valid, wants_bootloader_restart;
@@ -471,12 +501,12 @@ static void __attribute__((noreturn)) node_run(
     uint16_t foc_status_dtid;
 
     foc_status_transfer_id = node_status_transfer_id =
-        esc_status_transfer_id = 0u;
+        esc_status_transfer_id = enumeration_indication_transfer_id = 0u;
 
     broadcast_filter_id = service_filter_id = 0xFFu;
 
     foc_status_time = node_status_time = esc_status_time =
-        last_setpoint_update = 0u;
+        last_setpoint_update = enumeration_deadline = 0u;
 
     wants_bootloader_restart = false;
 
@@ -494,6 +524,7 @@ static void __attribute__((noreturn)) node_run(
     uavcan::protocol::param::ExecuteOpcode::Request xo_req;
     uavcan::protocol::param::GetSet::Request gs_req;
     uavcan::protocol::RestartNode::Request rn_req;
+    uavcan::protocol::enumeration::Begin::Request enum_req;
 
     node_status_interval = 900u;
     esc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
@@ -548,7 +579,8 @@ static void __attribute__((noreturn)) node_run(
         if (broadcast_manager.is_rx_done()) {
             if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RAWCOMMAND &&
                     broadcast_manager.decode(raw_cmd) &&
-                    esc_index < raw_cmd.cmd.size()) {
+                    esc_index < raw_cmd.cmd.size() &&
+                    raw_cmd.cmd[esc_index] != 0) {
                 got_setpoint = true;
                 mode = CONTROLLER_THRUST;
                 /* Scale 0-8191 to represent 0 to maximum thrust. */
@@ -556,7 +588,8 @@ static void __attribute__((noreturn)) node_run(
                            float(1.0 / 8192.0) * g_max_thrust_n;
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
                         broadcast_manager.decode(rpm_cmd) &&
-                        esc_index < rpm_cmd.rpm.size()) {
+                        esc_index < rpm_cmd.rpm.size() &&
+                        rpm_cmd.rpm[esc_index] != 0) {
                 got_setpoint = true;
                 mode = CONTROLLER_SPEED;
                 setpoint = float(M_PI / 60.0) * float(rpm_cmd.rpm[esc_index] *
@@ -596,6 +629,9 @@ static void __attribute__((noreturn)) node_run(
                     break;
                 case UAVCAN_PROTOCOL_RESTARTNODE:
                     crc = uavcan::protocol::RestartNode::getDataTypeSignature().toTransferCRC();
+                    break;
+                case UAVCAN_PROTOCOL_ENUMERATION_BEGIN:
+                    crc = uavcan::protocol::enumeration::Begin::getDataTypeSignature().toTransferCRC();
                     break;
                 default:
                     break;
@@ -747,6 +783,26 @@ static void __attribute__((noreturn)) node_run(
                     resp.ok = false;
                 }
                 service_manager.encode_response<uavcan::protocol::RestartNode>(resp);
+            } else if (service_filter_id == UAVCAN_PROTOCOL_ENUMERATION_BEGIN &&
+                    service_manager.decode(enum_req)) {
+                uavcan::protocol::enumeration::Begin::Response resp;
+
+                /*
+                We only support enumeration for the esc_index property, and
+                only while the controller is stopped.
+                */
+                if (g_controller_state.mode != CONTROLLER_STOPPED) {
+                    resp.error = resp.ERROR_INVALID_MODE;
+                } else if (enum_req.parameter_name != "esc_index") {
+                    resp.error = resp.ERROR_INVALID_PARAMETER;
+                } else {
+                    /* All fine, start enumeration */
+                    resp.error = resp.ERROR_OK;
+                    enumeration_deadline =
+                        current_time + 1000 * enum_req.timeout_sec;
+                    g_enumeration_active = true;
+                }
+                service_manager.encode_response<uavcan::protocol::enumeration::Begin>(resp);
             }
 
             service_manager.receive_acknowledge();
@@ -828,6 +884,31 @@ static void __attribute__((noreturn)) node_run(
                 broadcast_manager.encode_message(
                     node_status_transfer_id++, msg);
                 node_status_time = current_time;
+            } else if (enumeration_deadline > current_time &&
+                    std::abs(g_enumeration_velocity_rad_per_s) >
+                        ENUMERATION_VELOCITY_THRESHOLD_RAD_PER_S) {
+                /*
+                Change rotation direction if the enumerated direction was
+                negative
+                */
+                if (g_enumeration_velocity_rad_per_s < 0.0f) {
+                    value = configuration.get_param_value_by_index(
+                        PARAM_CONTROL_DIRECTION);
+                    configuration.set_param_value_by_index(
+                        PARAM_CONTROL_DIRECTION, value == 0.0f ? 1.0f : 0.0f);
+                }
+
+                uavcan::protocol::enumeration::Indication msg;
+                msg.parameter_name = "esc_index";
+                broadcast_manager.encode_message(
+                    enumeration_indication_transfer_id++, msg);
+
+                /*
+                Reset enumeration velocity to avoid sending another message
+                straight away
+                */
+                g_enumeration_active = false;
+                g_enumeration_velocity_rad_per_s = 0.0f;
             }
         }
 
@@ -839,23 +920,35 @@ static void __attribute__((noreturn)) node_run(
 
         /*
         Update the controller mode and setpoint, unless the motor is currently
-        stopping
+        stopping.
         */
         if (!g_controller_state.fault && got_setpoint &&
                 g_controller_state.mode != CONTROLLER_ABORTING) {
-            if (mode == CONTROLLER_SPEED &&
-                    std::abs(setpoint) >= 60.0f) {
+            if (mode == CONTROLLER_SPEED && std::abs(setpoint) >= 60.0f) {
+                /*
+                Need a setpoint of at least 60 rad/s to move out of idle, or
+                keep spinning.
+                */
                 g_controller_state.speed_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_SPEED;
                 last_setpoint_update = current_time;
             } else if (mode == CONTROLLER_THRUST &&
-                    std::abs(setpoint) >= 0.1f) {
+                    std::abs(setpoint) > g_max_thrust_n * 0.1f) {
+                /*
+                Need a setpoint of at least 10% of maximum thrust to move out
+                of idle, or keep spinning.
+                */
                 g_controller_state.thrust_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_THRUST;
                 last_setpoint_update = current_time;
             } else if ((g_controller_state.mode == CONTROLLER_STOPPED &&
                         motor_params.idle_speed_rad_per_s > 0.0f) ||
                         g_controller_state.mode == CONTROLLER_IDLING) {
+                /*
+                Setpoint was non-zero, but was not high enough to start
+                spinning and we're not already running -- so start idling, or
+                keep on idling.
+                */
                 g_controller_state.mode = CONTROLLER_IDLING;
                 g_controller_state.speed_setpoint =
                     g_controller_state.thrust_setpoint = 0.0f;
