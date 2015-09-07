@@ -274,15 +274,19 @@ void control_cb(
         */
         internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+        g_speed_controller.set_integral_current_a(
+            internal_speed_setpoint > 0.0f ? -0.25f : 0.25f);
 
-        /* Stop when back EMF drops below 0.1 V */
-        if (std::abs(v_dq_v[0]) < 0.1f && std::abs(v_dq_v[1]) < 0.1f) {
+        /* Stop when back EMF drops below 0.2 V */
+        if (std::abs(v_dq_v[0]) < 0.2f && std::abs(v_dq_v[1]) < 0.2f) {
             g_controller_state.mode = mode = CONTROLLER_STOPPED;
         }
     } else if (mode == CONTROLLER_IDLING) {
         /* Rotate at the idle speed */
+        closed_loop_frac = 0.0f;
         internal_speed_setpoint = idle_speed_rad_per_s;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
+        g_speed_controller.set_integral_current_a(accel_current_a);
     } else if ((mode == CONTROLLER_THRUST || mode == CONTROLLER_SPEED) &&
                 closed_loop_frac < 1.0f) {
         /*
@@ -290,11 +294,15 @@ void control_cb(
         for closed-loop control -- spin up gradually until we reach the
         minimum closed-loop speed.
         */
-        temp = spinup_rate_rad_per_s2 * hal_control_t_s *
-               (speed_setpoint > 0.0f || thrust_setpoint > 0.0f ?
-                    1.0f : -1.0f);
-        internal_speed_setpoint += temp;
+        temp = (closed_loop_frac + 0.25f) * spinup_rate_rad_per_s2;
+        if (speed_setpoint < 0.0f || thrust_setpoint < 0.0f) {
+            temp = -temp;
+            accel_current_a = -accel_current_a;
+        }
+
+        internal_speed_setpoint += temp * hal_control_t_s;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint + temp);
+        g_speed_controller.set_integral_current_a(accel_current_a);
 
         /*
         TODO: abort if the voltage is too low for the speed -- minimum Kv
@@ -306,6 +314,15 @@ void control_cb(
     } else if (mode == CONTROLLER_THRUST) {
         internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
         g_speed_controller.set_thrust_setpoint(thrust_setpoint);
+
+        /*
+        Abort if it looks like the motor has stalled -- angular velocity is
+        below what it would reach in the first 0.1 s of operation.
+        */
+        if (std::abs(motor_state.angular_velocity_rad_per_s) <
+                spinup_rate_rad_per_s2 * 0.1f) {
+            g_controller_state.mode = mode = CONTROLLER_ABORTING;
+        }
     } else if (mode == CONTROLLER_SPEED) {
         internal_speed_setpoint = speed_setpoint;
         g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
@@ -320,7 +337,9 @@ void control_cb(
         }
     } else /* Normally: if (mode == CONTROLLER_STOPPED), but catch-all */ {
         internal_speed_setpoint = 0.0f;
+        closed_loop_frac = 0.0f;
         g_speed_controller.reset_state();
+        g_current_controller.reset_state();
     }
 
     /*
@@ -328,36 +347,13 @@ void control_cb(
     when in speed control mode, or a constant opposing torque when
     stopping.
     */
-    current_setpoint = g_speed_controller.update(motor_state);
+    current_setpoint = g_speed_controller.update(motor_state,
+                                                 closed_loop_frac);
 
     /*
     Inner control loop -- adjust motor voltage to maintain the current
     setpoint
     */
-    if (mode == CONTROLLER_STOPPING || mode == CONTROLLER_ABORTING) {
-        /*
-        Add a small amount of negative torque to ensure the motor actually
-        shuts down.
-        */
-        current_setpoint = internal_speed_setpoint > 0.0f ? -0.25f : 0.25f;
-    } else if (mode == CONTROLLER_IDLING) {
-        closed_loop_frac = 0.0f;
-        current_setpoint = internal_speed_setpoint > 0.0f ?
-                           accel_current_a : -accel_current_a;
-    } else if (mode == CONTROLLER_THRUST || mode == CONTROLLER_SPEED) {
-        /*
-        Interpolate between the initial acceleration current and the speed
-        controller's current output as we transition out of open-loop mode.
-        */
-        current_setpoint += (1.0f - closed_loop_frac) *
-                            ((internal_speed_setpoint > 0.0f ?
-                                accel_current_a : -accel_current_a) -
-                             current_setpoint);
-    } else {
-        g_current_controller.reset_state();
-        closed_loop_frac = 0.0f;
-        current_setpoint = 0.0f;
-    }
 
     /* Update the stator current controller setpoint. */
     g_current_controller.set_setpoint(current_setpoint);
@@ -374,9 +370,9 @@ void control_cb(
     based on the square of the output voltage. Smooth the transition out quite
     a bit to avoid false triggering.
     */
-    new_closed_loop_frac = 10.0f * (v_dq_v[0] * v_dq_v[0] +
+    new_closed_loop_frac = 4.0f * (v_dq_v[0] * v_dq_v[0] +
                             (v_dq_v[1] - audio_v) * (v_dq_v[1] - audio_v)) -
-                           9.0f;
+                           3.0f;
     if (new_closed_loop_frac < 0.0f) {
         new_closed_loop_frac = 0.0f;
     }
@@ -584,8 +580,10 @@ static void __attribute__((noreturn)) node_run(
                 got_setpoint = true;
                 mode = CONTROLLER_THRUST;
                 /* Scale 0-8191 to represent 0 to maximum thrust. */
-                setpoint = std::abs(float(raw_cmd.cmd[esc_index])) *
-                           float(1.0 / 8192.0) * g_max_thrust_n;
+                setpoint = g_max_thrust_n *
+                           std::max(float(raw_cmd.cmd[esc_index]) *
+                                        float(1.0 / 8192.0),
+                                    0.15f);
             } else if (broadcast_filter_id == UAVCAN_EQUIPMENT_ESC_RPMCOMMAND &&
                         broadcast_manager.decode(rpm_cmd) &&
                         esc_index < rpm_cmd.rpm.size() &&
@@ -924,7 +922,7 @@ static void __attribute__((noreturn)) node_run(
         */
         if (!g_controller_state.fault && got_setpoint &&
                 g_controller_state.mode != CONTROLLER_ABORTING) {
-            if (mode == CONTROLLER_SPEED && std::abs(setpoint) >= 60.0f) {
+            if (mode == CONTROLLER_SPEED) {
                 /*
                 Need a setpoint of at least 60 rad/s to move out of idle, or
                 keep spinning.
@@ -932,8 +930,7 @@ static void __attribute__((noreturn)) node_run(
                 g_controller_state.speed_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_SPEED;
                 last_setpoint_update = current_time;
-            } else if (mode == CONTROLLER_THRUST &&
-                    std::abs(setpoint) > g_max_thrust_n * 0.1f) {
+            } else if (mode == CONTROLLER_THRUST) {
                 /*
                 Need a setpoint of at least 10% of maximum thrust to move out
                 of idle, or keep spinning.

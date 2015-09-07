@@ -93,7 +93,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "motor_i_max",
-        10.0f, 1.0f, 40.0f},
+        20.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -143,7 +143,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     the overall current limits and load inertia.
     */
     {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "ctl_i_time",
-        0.07f, 0.001f, 2.0f},
+        0.02f, 0.001f, 2.0f},
 
     /*
     If non-zero, the motor will rotate at this electrical speed in Hz when any

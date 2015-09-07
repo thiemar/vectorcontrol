@@ -137,10 +137,12 @@ protected:
     float speed_setpoint_rad_per_s_;
 
     float thrust_setpoint_n_;
+    float thrust_setpoint_dt_n_per_s_;
 
     float kp_;
     float ki_;
 
+    float t_inv_; /* 1.0 / t_s */
     float ir_;  /* Rotor inertia in kg * m^2*/
     float kq_v_s_per_rad_; /* Torque constant */
     float ka_; /* 0.5 * RHO * c * B * r */
@@ -167,8 +169,10 @@ public:
         integral_error_a_(0.0f),
         speed_setpoint_rad_per_s_(0.0f),
         thrust_setpoint_n_(0.0f),
+        thrust_setpoint_dt_n_per_s_(0.0f),
         kp_(0.0f),
         ki_(0.0f),
+        t_inv_(0.0f),
         ir_(0.0f),
         kq_v_s_per_rad_(0.0f),
         ka_(0.0f),
@@ -190,6 +194,7 @@ public:
         integral_error_a_ = 0.0f;
         speed_setpoint_rad_per_s_ = 0.0f;
         thrust_setpoint_n_ = 0.0f;
+        thrust_setpoint_dt_n_per_s_ = 0.0f;
         estimated_thrust_n_ = 0.0f;
         estimated_inflow_angle_deg_= 0.0f;
     }
@@ -200,7 +205,12 @@ public:
     }
 
     void __attribute__((always_inline)) set_thrust_setpoint(float setpoint) {
-        thrust_setpoint_n_ = setpoint;
+        float delta;
+
+        delta = (setpoint - thrust_setpoint_n_) * thrust_lpf_coeff_;
+        thrust_setpoint_n_ += delta;
+        thrust_setpoint_dt_n_per_s_ = delta * t_inv_;
+
         control_thrust_ = true;
     }
 
@@ -237,7 +247,7 @@ public:
         const struct control_params_t& control_params,
         float t_s
     ) volatile {
-        float max_accel_torque, wb;
+        float max_accel_torque, rc;
 
         max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
 
@@ -267,11 +277,12 @@ public:
         reff_m_ = control_params.prop_radius_m * 0.75f;
         ka_ = float(RHO_KG_PER_M3 / 2.0) * control_params.prop_chord_m *
               reff_m_ * float(control_params.prop_num_blades);
-        ir_ = control_params.prop_mass_kg * inv_num_pole_pairs_ *
-              (2.0f * reff_m_) * (2.0f * reff_m_) / 12.0f;
+        ir_ = control_params.prop_mass_kg * (2.0f * reff_m_) *
+              (2.0f * reff_m_) / 12.0f;
 
-        wb = float(2.0 * M_PI) * control_params.bandwidth_hz;
-        thrust_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s);
+        rc = 1.0f / (float(2.0 * M_PI) * control_params.bandwidth_hz);
+        thrust_lpf_coeff_ = t_s / (t_s + rc);
+        t_inv_ = 1.0f / t_s;
 
         /* Cd and Cl approximation coefficients */
         cl_kx = control_params.prop_cl_kx;
@@ -280,56 +291,65 @@ public:
         cd_k = control_params.prop_cd_k;
     }
 
+    void __attribute__((always_inline))
+    set_integral_current_a(float current_a) {
+        integral_error_a_ = current_a;
+    }
+
     float __attribute__((always_inline))
-    update(const struct motor_state_t& state) {
-        float error, accel_torque_a, out_a, v_m_per_s, cd, cl, torque_n_m,
-              min_speed_rad_per_s;
+    update(const struct motor_state_t& state, float closed_loop_frac) {
+        float error, accel_torque_a, out_a, v_m_per_s, cd, cl, torque_a,
+              torque_n_m, thrust_n, torque_setpoint_n_m,
+              delta_torque_n_m_per_s;
 
-        min_speed_rad_per_s = 1.5f / kq_v_s_per_rad_;
-
-        torque_n_m = state.i_dq_a[1] * kq_v_s_per_rad_ * num_pole_pairs_ -
-                     ir_ * state.angular_acceleration_rad_per_s2;
+        torque_a = state.i_dq_a[1] -
+                   0.5f * state.angular_acceleration_rad_per_s2 * ir_ /
+                   (kq_v_s_per_rad_ * num_pole_pairs_ * num_pole_pairs_);
+        torque_n_m = torque_a * kq_v_s_per_rad_ * num_pole_pairs_;
         v_m_per_s = state.angular_velocity_rad_per_s * reff_m_ *
                     inv_num_pole_pairs_;
 
-        cd = std::max(0.01f, torque_n_m /
-                             (ka_ * reff_m_ * v_m_per_s * v_m_per_s));
+        cd = std::max(torque_n_m / (ka_ * reff_m_ * v_m_per_s * v_m_per_s),
+                      0.01f);
         estimated_inflow_angle_deg_ = std::max(0.0f, (cd - cd_k) / cd_kx);
 
         cd = std::max(0.01f, cd_k + cd_kx * estimated_inflow_angle_deg_);
         cl = std::max(0.01f, cl_k + cl_kx * estimated_inflow_angle_deg_);
 
-        estimated_thrust_n_ +=
-            ((torque_n_m / (cd * reff_m_) * cl) - estimated_thrust_n_) *
-            thrust_lpf_coeff_;
-        if (state.angular_velocity_rad_per_s < min_speed_rad_per_s) {
-            estimated_thrust_n_ = 0.0f;
-            estimated_inflow_angle_deg_ = 0.0f;
+        thrust_n = cl * torque_n_m / (cd * reff_m_);
+
+        if (closed_loop_frac >= 1.0f) {
+            estimated_thrust_n_ += (thrust_n - estimated_thrust_n_) *
+                                   thrust_lpf_coeff_;
         }
 
         if (control_thrust_) {
-            /* FIME? Does this need to be tunable? */
-            speed_setpoint_rad_per_s_ += thrust_setpoint_n_ -
-                                         estimated_thrust_n_;
+            /*
+            Convert thrust error to a current error based on the torque
+            required to achieve that thrust in static conditions.
+            */
+            torque_setpoint_n_m = thrust_setpoint_n_ * cd * reff_m_ / cl;
+            delta_torque_n_m_per_s = thrust_setpoint_dt_n_per_s_ *
+                                     cd * reff_m_ / cl;
 
-            if (std::isnan(speed_setpoint_rad_per_s_) ||
-                    speed_setpoint_rad_per_s_ < min_speed_rad_per_s) {
-                speed_setpoint_rad_per_s_ = min_speed_rad_per_s;
-            }
+            /*
+            Add a derivative term based on setpoint change and prop inertia
+            */
+            error = torque_setpoint_n_m - torque_n_m +
+                    (delta_torque_n_m_per_s / torque_setpoint_n_m) *
+                    state.angular_velocity_rad_per_s * ir_;
+            accel_torque_a = error / (kq_v_s_per_rad_ * num_pole_pairs_);
+        } else {
+            /*
+            Find speed error and convert it to a current error based on Kp
+            */
+            error = speed_setpoint_rad_per_s_ -
+                    state.angular_velocity_rad_per_s;
+
+            accel_torque_a = kp_ * error;
         }
 
-        /*
-        The thrust controller updates the speed setpoint based on the desired
-        thrust
-        */
-        error = speed_setpoint_rad_per_s_ -
-                state.angular_velocity_rad_per_s;
-
-        /*
-        Determine acceleration torque, and limit to the configured maximum
-        */
-        accel_torque_a = kp_ * error;
-
+        /* Limit acceleration torque to the configured maximum */
         if (accel_torque_a > accel_current_limit_a_) {
             accel_torque_a = accel_current_limit_a_;
         }

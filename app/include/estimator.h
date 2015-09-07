@@ -124,16 +124,16 @@ public:
         float control_bandwidth_hz,
         float t_s
     ) volatile {
-        float wb;
+        float rc;
 
         /*
-        Control parameters -- LPF corner frequency is one decade higher than
-        the controller bandwidth; current control bandwidth is one decade
-        higher than speed control bandwidth.
+        Control parameters -- LPF bandwidth is one octave higher than speed
+        control bandwidth, and angular velocity estimation bandwidth is one
+        octave higher.
         */
-        wb = float(2.0 * M_PI) * control_bandwidth_hz;
-        i_dq_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 10.0f);
-        angular_velocity_lpf_coeff_ = 1.0f - fast_expf(-wb * t_s * 10.0f);
+        rc = 1.0f / (float(2.0 * M_PI) * control_bandwidth_hz);
+        i_dq_lpf_coeff_ = t_s / (t_s + 0.1f * rc);
+        angular_velocity_lpf_coeff_ = t_s / (t_s + 0.5f * rc);
     }
 };
 
