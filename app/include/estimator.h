@@ -133,7 +133,7 @@ public:
         */
         rc = 1.0f / (float(2.0 * M_PI) * control_bandwidth_hz);
         i_dq_lpf_coeff_ = t_s / (t_s + 0.1f * rc);
-        angular_velocity_lpf_coeff_ = t_s / (t_s + 0.5f * rc);
+        angular_velocity_lpf_coeff_ = t_s / (t_s + 0.25f * rc);
     }
 };
 

@@ -144,7 +144,7 @@ protected:
 
     float t_inv_; /* 1.0 / t_s */
     float ir_;  /* Rotor inertia in kg * m^2*/
-    float kq_v_s_per_rad_; /* Torque constant */
+    float kq_v_s_per_mech_rad_; /* Torque constant */
     float ka_; /* 0.5 * RHO * c * B * r */
     float reff_m_; /* Propeller effective radius in m (0.75 * r) */
     float num_pole_pairs_; /* pole count / 2 */
@@ -174,7 +174,7 @@ public:
         ki_(0.0f),
         t_inv_(0.0f),
         ir_(0.0f),
-        kq_v_s_per_rad_(0.0f),
+        kq_v_s_per_mech_rad_(0.0f),
         ka_(0.0f),
         reff_m_(1.0f),
         num_pole_pairs_(4.0f),
@@ -215,7 +215,7 @@ public:
     }
 
     void __attribute__((always_inline)) set_phi_v_s_per_rad(float phi) {
-        kq_v_s_per_rad_ = phi;
+        kq_v_s_per_mech_rad_ = phi * num_pole_pairs_;
     }
 
     float __attribute__((always_inline)) get_estimated_thrust_n(void) const {
@@ -229,7 +229,7 @@ public:
 
     float __attribute__((always_inline)) get_max_thrust_n(void) const {
         float torque_nm;
-        torque_nm = current_limit_a_ * kq_v_s_per_rad_ * num_pole_pairs_;
+        torque_nm = current_limit_a_ * kq_v_s_per_mech_rad_;
         /*
         Return maximum static thrust by taking Cl, Cd at inflow angle = 0.
 
@@ -237,7 +237,7 @@ public:
         close enough generally.
 
         FIXME: check voltage limit and Kv, then use the speed-based limit if
-        it's lower htan this one.
+        it's lower than this one.
         */
         return torque_nm / (cd_k * reff_m_) * cl_k;
     }
@@ -273,7 +273,7 @@ public:
         */
         num_pole_pairs_ = float(motor_params.num_poles / 2);
         inv_num_pole_pairs_ = 1.0f / num_pole_pairs_;
-        kq_v_s_per_rad_ = motor_params.phi_v_s_per_rad;
+        kq_v_s_per_mech_rad_ = motor_params.phi_v_s_per_rad * num_pole_pairs_;
         reff_m_ = control_params.prop_radius_m * 0.75f;
         ka_ = float(RHO_KG_PER_M3 / 2.0) * control_params.prop_chord_m *
               reff_m_ * float(control_params.prop_num_blades);
@@ -302,10 +302,10 @@ public:
               torque_n_m, thrust_n, torque_setpoint_n_m,
               delta_torque_n_m_per_s;
 
-        torque_a = state.i_dq_a[1] -
-                   0.5f * state.angular_acceleration_rad_per_s2 * ir_ /
-                   (kq_v_s_per_rad_ * num_pole_pairs_ * num_pole_pairs_);
-        torque_n_m = torque_a * kq_v_s_per_rad_ * num_pole_pairs_;
+        torque_a = state.i_dq_a[1];
+        torque_n_m = torque_a * kq_v_s_per_mech_rad_ -
+                     state.angular_acceleration_rad_per_s2 * ir_ *
+                     inv_num_pole_pairs_;
         v_m_per_s = state.angular_velocity_rad_per_s * reff_m_ *
                     inv_num_pole_pairs_;
 
@@ -337,8 +337,9 @@ public:
             */
             error = torque_setpoint_n_m - torque_n_m +
                     (delta_torque_n_m_per_s / torque_setpoint_n_m) *
-                    state.angular_velocity_rad_per_s * ir_;
-            accel_torque_a = error / (kq_v_s_per_rad_ * num_pole_pairs_);
+                    state.angular_velocity_rad_per_s * ir_ *
+                    inv_num_pole_pairs_ * 20.0f;
+            accel_torque_a = error / kq_v_s_per_mech_rad_;
         } else {
             /*
             Find speed error and convert it to a current error based on Kp

@@ -818,6 +818,12 @@ static void __attribute__((noreturn)) node_run(
             v_dq_v[0] = g_v_dq_v[0];
             v_dq_v[1] = g_v_dq_v[1];
 
+            power_w = __VSQRTF(
+                (motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
+                 motor_state.i_dq_a[1] * motor_state.i_dq_a[1]) *
+                (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1])
+            );
+
             if (foc_status_interval && current_time - foc_status_time >=
                     foc_status_interval) {
                 thiemar::equipment::esc::Status msg;
@@ -829,7 +835,7 @@ static void __attribute__((noreturn)) node_run(
                 msg.v_dq[0] = v_dq_v[0];
                 msg.v_dq[1] = v_dq_v[1];
 
-                msg.power = motor_state.i_dq_a[1] * v_dq_v[1];
+                msg.power = power_w;
                 msg.inflow_angle = g_inflow_angle_deg;
                 msg.thrust = g_thrust_n;
                 msg.thrust_setpoint = g_controller_state.thrust_setpoint;
@@ -847,12 +853,6 @@ static void __attribute__((noreturn)) node_run(
             } else if (esc_status_interval &&
                     current_time - esc_status_time >= esc_status_interval) {
                 uavcan::equipment::esc::Status msg;
-
-                power_w = __VSQRTF(
-                    (motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
-                     motor_state.i_dq_a[1] * motor_state.i_dq_a[1]) *
-                    (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1])
-                );
 
                 msg.voltage = g_vbus_v;
                 msg.current = power_w / g_vbus_v;

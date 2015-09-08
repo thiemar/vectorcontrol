@@ -191,12 +191,14 @@ void StateEstimator::update_state_estimate(
     ia = a * ia + b * w * sin O + c * va
     ib = a * ib - b * w * cos O + c * vb
     */
-    prediction[0] = a_ * last_i_ab_a_[0] +
-                    b_est_sin_theta * state_estimate_.angular_velocity_rad_per_s +
-                    c_ * v_ab_v[0];
-    prediction[1] = a_ * last_i_ab_a_[1] -
-                    b_est_cos_theta * state_estimate_.angular_velocity_rad_per_s +
-                    c_ * v_ab_v[1];
+    prediction[0] =
+        a_ * last_i_ab_a_[0] +
+        b_est_sin_theta * state_estimate_.angular_velocity_rad_per_s +
+        c_ * v_ab_v[0];
+    prediction[1] =
+        a_ * last_i_ab_a_[1] -
+        b_est_cos_theta * state_estimate_.angular_velocity_rad_per_s +
+        c_ * v_ab_v[1];
 
     /* Calculate innovation */
     innovation[0] = i_ab_a[0] - prediction[0];
@@ -252,7 +254,7 @@ void StateEstimator::update_state_estimate(
     state_estimate_.angular_velocity_rad_per_s +=
         acceleration * angular_velocity_lpf_coeff_;
     state_estimate_.angular_acceleration_rad_per_s2 +=
-        angular_velocity_lpf_coeff_ * float(1.0/32.0) *
+        angular_velocity_lpf_coeff_ * float(1.0/64.0) *
         ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) -
             state_estimate_.angular_acceleration_rad_per_s2);
 
@@ -298,7 +300,7 @@ void StateEstimator::update_state_estimate(
         phi = (vs - is * rs_r_) / state_estimate_.angular_velocity_rad_per_s;
         phi_estimate_v_s_per_rad_ += (phi - phi_estimate_v_s_per_rad_) *
                                      angular_velocity_lpf_coeff_ *
-                                     float(1.0/128.0);
+                                     float(1.0/16.0);
     }
 }
 
