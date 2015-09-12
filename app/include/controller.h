@@ -310,11 +310,11 @@ public:
                     inv_num_pole_pairs_;
 
         cd = std::max(torque_n_m / (ka_ * reff_m_ * v_m_per_s * v_m_per_s),
-                      0.01f);
+                      0.0125f);
         estimated_inflow_angle_deg_ = std::max(0.0f, (cd - cd_k) / cd_kx);
 
-        cd = std::max(0.01f, cd_k + cd_kx * estimated_inflow_angle_deg_);
-        cl = std::max(0.01f, cl_k + cl_kx * estimated_inflow_angle_deg_);
+        cd = std::max(0.0125f, cd_k + cd_kx * estimated_inflow_angle_deg_);
+        cl = std::max(0.0125f, cl_k + cl_kx * estimated_inflow_angle_deg_);
 
         thrust_n = cl * torque_n_m / (cd * reff_m_);
 
@@ -338,7 +338,7 @@ public:
             error = torque_setpoint_n_m - torque_n_m +
                     (delta_torque_n_m_per_s / torque_setpoint_n_m) *
                     state.angular_velocity_rad_per_s * ir_ *
-                    inv_num_pole_pairs_ * 20.0f;
+                    inv_num_pole_pairs_;
             accel_torque_a = error / kq_v_s_per_mech_rad_;
         } else {
             /*

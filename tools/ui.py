@@ -886,6 +886,7 @@ if __name__ == "__main__":
                 uavcan.monitors.DebugLogMessageMonitor),
             # CAN<->WebSocket bridge
             (uavcan.protocol.NodeStatus, MessageRelayMonitor),
+            (uavcan.protocol.enumeration.Indication, MessageRelayMonitor),
             (uavcan.equipment.esc.Status, MessageRelayMonitor),
             (uavcan.thirdparty.thiemar.equipment.esc.Status, MessageRelayMonitor),
             (uavcan.equipment.air_data.TrueAirspeed, MessageRelayMonitor),

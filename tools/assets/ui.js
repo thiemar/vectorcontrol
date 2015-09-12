@@ -28,8 +28,9 @@ var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
     deviceAccelPowerCharts = {}, deviceVoltageTempCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
     deviceAirspeedCharts = {}, deviceLoadCharts = {}, deviceThrustCharts = {},
-    activeESCs = {}, escRpmSetpointFunctions = [],
-    escRawSetpointFunctions = [], lastUpdate = null;
+    activeESCs = {}, escRpmSetpointFunctions = [], nodeLastStatus = {},
+    escRawSetpointFunctions = [], lastUpdate = null, highestEscIndex = -1,
+    enumerationActive = false, lastEnumeratedNodeId = -1;
 
 function getParamValue(param) {
     if (param.real_value !== undefined) {
@@ -66,12 +67,14 @@ function connect() {
         clone the template interface.
         */
         nodeUi = document.getElementById("device-" + message.node_id);
+        nodeLastStatus[message.node_id] = (new Date()).valueOf();
 
         /* Process message data */
         if (message.datatype == "uavcan.protocol.GetNodeInfo") {
             if (!nodeUi) {
                 createNodeUi(message);
             }
+
         } else if (message.datatype == "uavcan.protocol.NodeStatus" &&
                    nodeUi) {
             /* Node status -- display the new uptime and status code */
@@ -115,7 +118,6 @@ function connect() {
                 updateOutputVoltageChart(nodeUi,
                                          nodeData[message.node_id] || []);
             }
-
         } else if ((message.datatype == "thiemar.equipment.esc.Status" ||
                    message.datatype == "uavcan.equipment.esc.Status" ||
                    message.datatype == "uavcan.equipment.air_data.TrueAirspeed" ||
@@ -151,6 +153,34 @@ function connect() {
                     message.datatype == "uavcan.equipment.esc.Status") {
                 ensureESCActive(message);
             }
+        } else if (message.datatype == "uavcan.protocol.enumeration.Indication" &&
+                message.payload.parameter_name == "esc_index" &&
+                message.node_id != lastEnumeratedNodeId) {
+            /*
+            Update the ESC index, apply the configuration and restart the node
+            */
+            highestEscIndex++;
+            ws.send(JSON.stringify({
+                node_id: message.node_id,
+                datatype: "uavcan.protocol.param.GetSet",
+                payload: {
+                    index: 0,
+                    name: "esc_index",
+                    value: {integer_value: highestEscIndex}
+                }
+            }));
+            ws.send(JSON.stringify({
+                node_id: message.node_id,
+                datatype: "uavcan.protocol.param.ExecuteOpcode",
+                payload: {opcode: 0, argument: 0}
+            }));
+            // ws.send(JSON.stringify({
+            //     node_id: message.node_id,
+            //     datatype: "uavcan.protocol.RestartNode",
+            //     payload: {magic_number: 0xACCE551B1E}
+            // }));
+
+            lastEnumeratedNodeId = message.node_id;
         }
     }
 
@@ -173,6 +203,21 @@ function connect() {
             connect();
         } else {
             ws.send("{}");
+        }
+
+        var nodes, i, nodeId, cutoffTime;
+
+        nodes = document.querySelectorAll(".device");
+        cutoffTime = (new Date()).valueOf() - 3000.0;
+
+        for (i = 0; i < nodes.length; i++) {
+            if (nodes[i].id && nodes[i].id.indexOf("device-") === 0) {
+               nodeId = parseInt(nodes[i].id.split("-")[1], 10);
+
+                if (nodeLastStatus[nodeId] < cutoffTime) {
+                    nodes[i].remove();
+                }
+            }
         }
     }, 1000.0);
 }
@@ -1210,6 +1255,38 @@ function setupEventListeners() {
             }));
 
             event.stopPropagation();
+        } else if (event.target.classList.contains("esc-enumerate")) {
+            /*
+            Send an esc_index enumeration request to all active nodes;
+            infinite timeout if enumeration is currently active, or zero
+            timeout otherwise.
+            */
+            var nodes, i, nodeId;
+
+            nodes = document.querySelectorAll(".device");
+            highestEscIndex = lastEnumeratedNodeId = -1;
+            enumerationActive = !enumerationActive;
+
+            for (i = 0; i < nodes.length; i++) {
+                if (nodes[i].id && nodes[i].id.indexOf("device-") === 0) {
+                    nodeId = parseInt(nodes[i].id.split("-")[1], 10);
+
+                    ws.send(JSON.stringify({
+                        datatype: "uavcan.protocol.enumeration.Begin",
+                        payload: {
+                            parameter_name: "esc_index",
+                            timeout_sec: enumerationActive ? 65535 : 0
+                        },
+                        node_id: nodeId
+                    }));
+                }
+            }
+
+            if (enumerationActive) {
+                event.target.value = "Stop ESC enumeration";
+            } else {
+                event.target.value = "Start ESC enumeration";
+            }
         } /* else if (nodeUi = selectAncestor(event.target, ".device-header")) {
             nodeUi.classList.toggle("collapsed");
             nodeUi.parentElement.querySelector(".device-detail")
@@ -1226,7 +1303,7 @@ for (var i = 0; i < 16; i++) {
     escRpmSetpointFunctions.push(null);
     escRawSetpointFunctions.push(null);
 }
-setInterval(updateSetpoint, 50);
+setInterval(updateSetpoint, 20);
 
 
 function makeConstantFunction(tStart, value) {

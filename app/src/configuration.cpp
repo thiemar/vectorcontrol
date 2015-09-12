@@ -93,7 +93,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "motor_i_max",
-        20.0f, 1.0f, 40.0f},
+        12.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -111,7 +111,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     resistance, determines the maximum acceleration torque.
     */
     {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "motor_v_accel",
-        0.6f, 0.01f, 1.0f},
+        0.5f, 0.01f, 1.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
@@ -157,7 +157,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     electrical Hz/s.
     */
     {PARAM_CONTROL_SPINUP_RATE, PARAM_TYPE_FLOAT, "ctl_spinup_rate",
-        50.0f, 5.0f, 1000.0f},
+        25.0f, 5.0f, 1000.0f},
 
     /*
     Rotation direction of the motor: 0 is normal, 1 is reverse.
@@ -203,13 +203,13 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Propeller/rotor effective diameter, in inches.
     */
     {PARAM_PROP_DIAMETER, PARAM_TYPE_FLOAT, "prop_diameter",
-        1.0f, 1.0f, 200.0f},
+        10.0f, 1.0f, 200.0f},
 
     /*
     Propeller/rotor pitch distance, in inches
     */
     {PARAM_PROP_PITCH, PARAM_TYPE_FLOAT, "prop_pitch",
-        1.0f, 1.0f, 200.0f},
+        4.5f, 1.0f, 200.0f},
 
     /*
     Propeller/rotor blade count.
@@ -221,7 +221,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Propeller/rotor effective mass, in kg
     */
     {PARAM_PROP_MASS, PARAM_TYPE_FLOAT, "prop_mass",
-        0.0f, 0.0f, 50.0f}
+        0.005f, 0.0f, 50.0f}
 };
 
 
@@ -289,12 +289,11 @@ void Configuration::read_control_params(
 
 static size_t _find_param_index_by_name(
     const char* name,
-    struct param_t params[],
-    size_t num_params
+    struct param_t params[]
 ) {
     size_t i, j;
 
-    for (i = 0; i < num_params; i++) {
+    for (i = 0; i < NUM_PARAMS; i++) {
         for (j = 0; j < PARAM_NAME_MAX_LEN &&
                     params[i].name[j] == name[j]; j++) {
             if (name[j] == 0) {
@@ -303,7 +302,7 @@ static size_t _find_param_index_by_name(
         }
     }
 
-    return num_params;
+    return NUM_PARAMS;
 }
 
 
@@ -313,7 +312,7 @@ bool Configuration::get_param_by_name(
 ) {
     size_t idx;
 
-    idx = _find_param_index_by_name(name, param_config_, NUM_PARAMS);
+    idx = _find_param_index_by_name(name, param_config_);
     return get_param_by_index(out_param, (uint8_t)idx);
 }
 
@@ -334,7 +333,7 @@ bool Configuration::get_param_by_index(
 bool Configuration::set_param_value_by_name(const char* name, float value) {
     size_t idx;
 
-    idx = _find_param_index_by_name(name, param_config_, NUM_PARAMS);
+    idx = _find_param_index_by_name(name, param_config_);
     return set_param_value_by_index((uint8_t)idx, value);
 }
 
