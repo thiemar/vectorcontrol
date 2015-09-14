@@ -254,8 +254,8 @@ void StateEstimator::update_state_estimate(
     state_estimate_.angular_velocity_rad_per_s +=
         acceleration * angular_velocity_lpf_coeff_;
     state_estimate_.angular_acceleration_rad_per_s2 +=
-        angular_velocity_lpf_coeff_ * float(1.0/64.0) *
-        ((angular_velocity_lpf_coeff_ * acceleration * t_inv_) -
+        angular_acceleration_lpf_coeff_ *
+        (acceleration * t_inv_ -
             state_estimate_.angular_acceleration_rad_per_s2);
 
     next_angle = state_estimate_.angle_rad +

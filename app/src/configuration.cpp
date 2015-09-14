@@ -135,7 +135,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     100 rad/s electrical.
     */
     {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "ctl_p_gain",
-        0.1f, 0.0f, 10.0f},
+        1.0f, 0.0f, 10.0f},
 
     /*
     Rise time of the speed controller's torque output; this determines the

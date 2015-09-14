@@ -227,8 +227,6 @@ PERF_COUNT_START
     float out_v_ab[2], i_ab[2];
     float temp, vbus_inv;
 
-    /* Clear TIM1 update flag so failure to meet deadline can be detected */
-    //putreg32(getreg32(STM32_TIM1_SR) & ~ATIM_SR_UIF, STM32_TIM1_SR);
     /* Disable JEXTEN to prevent re-triggering */
     putreg32(getreg32(STM32_ADC1_CR2) & ~ADC_CR2_JEXTEN_MASK, STM32_ADC1_CR2);
 
@@ -297,7 +295,6 @@ PERF_COUNT_START
     putreg32(getreg32(STM32_ADC1_CR2) | ADC_CR2_JEXTEN_RISING,
              STM32_ADC1_CR2);
 
-    /* FIXME -- check return code for task deadline miss */
 PERF_COUNT_END
 }
 

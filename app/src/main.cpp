@@ -515,11 +515,6 @@ static void __attribute__((noreturn)) node_run(
 
     wants_bootloader_restart = false;
 
-    esc_index = (uint8_t)
-        configuration.get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
-    foc_status_dtid = (uint16_t)
-        configuration.get_param_value_by_index(PARAM_THIEMAR_STATUS_ID);
-
     UAVCANTransferManager broadcast_manager(node_id);
     UAVCANTransferManager service_manager(node_id);
 
@@ -532,10 +527,6 @@ static void __attribute__((noreturn)) node_run(
     uavcan::protocol::enumeration::Begin::Request enum_req;
 
     node_status_interval = 900u;
-    esc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
-        PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 0.001f);
-    foc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
-        PARAM_THIEMAR_STATUS_INTERVAL) * 0.001f);
 
     g_controller_state.idle_speed_rad_per_s =
         motor_params.idle_speed_rad_per_s;
@@ -550,6 +541,16 @@ static void __attribute__((noreturn)) node_run(
         current_time = g_controller_state.time;
         got_setpoint = false;
         setpoint = 0.0f;
+
+        /* Allow UAVCAN parameters to be changed without restarting */
+        esc_index = (uint8_t)
+            configuration.get_param_value_by_index(PARAM_UAVCAN_ESC_INDEX);
+        foc_status_dtid = (uint16_t)
+            configuration.get_param_value_by_index(PARAM_THIEMAR_STATUS_ID);
+        esc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
+            PARAM_UAVCAN_ESCSTATUS_INTERVAL) * 0.001f);
+        foc_status_interval = (uint32_t)(configuration.get_param_value_by_index(
+            PARAM_THIEMAR_STATUS_INTERVAL) * 0.001f);
 
         /*
         Check for UAVCAN commands (FIFO 0) -- these are all broadcasts

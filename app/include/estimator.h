@@ -41,9 +41,10 @@ class StateEstimator {
     float t_inv_;
     float rs_r_;
 
-    /* Current and speed lowpass filter parameters */
+    /* Current, velocity and acceleration lowpass filter parameters */
     float i_dq_lpf_coeff_;
     float angular_velocity_lpf_coeff_;
+    float angular_acceleration_lpf_coeff_;
 
     /* Column-major */
     float state_covariance_[4];
@@ -64,6 +65,7 @@ public:
         rs_r_(0.0f),
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
+        angular_acceleration_lpf_coeff_(0.0f),
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f)
     {
@@ -134,6 +136,7 @@ public:
         rc = 1.0f / (float(2.0 * M_PI) * control_bandwidth_hz);
         i_dq_lpf_coeff_ = t_s / (t_s + 0.1f * rc);
         angular_velocity_lpf_coeff_ = t_s / (t_s + 0.25f * rc);
+        angular_acceleration_lpf_coeff_ = t_s / (t_s + rc);
     }
 };
 

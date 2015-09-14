@@ -338,7 +338,6 @@ PERF_COUNT_START
     */
     putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_JADSTART, STM32_ADC1_CR);
 
-    /* FIXME -- check return code for task deadline miss */
 PERF_COUNT_END
 }
 
