@@ -131,8 +131,6 @@ class SpeedController {
     controller.
     */
 protected:
-    bool control_thrust_;
-
     float integral_error_a_;
     float speed_setpoint_rad_per_s_;
 
@@ -142,8 +140,8 @@ protected:
     float ki_;
 
     float t_inv_; /* 1.0 / t_s */
-    float ir_;  /* Rotor inertia in kg * m^2*/
     float kq_v_s_per_mech_rad_; /* Torque constant */
+    float accel_gain_a_per_v_; /* Proportional gain term scaled by phi */
     float ka_; /* 0.5 * RHO * c * B * r */
     float reff_m_; /* Propeller effective radius in m (0.75 * r) */
     float num_pole_pairs_; /* pole count / 2 */
@@ -166,15 +164,14 @@ protected:
 
 public:
     SpeedController():
-        control_thrust_(false),
         integral_error_a_(0.0f),
         speed_setpoint_rad_per_s_(0.0f),
         thrust_setpoint_n_(0.0f),
         kp_(0.0f),
         ki_(0.0f),
         t_inv_(0.0f),
-        ir_(0.0f),
         kq_v_s_per_mech_rad_(0.0f),
+        accel_gain_a_per_v_(0.0f),
         ka_(0.0f),
         reff_m_(1.0f),
         num_pole_pairs_(4.0f),
@@ -185,7 +182,6 @@ public:
         cd_k(0.0f),
         current_limit_a_(0.0f),
         accel_current_limit_a_(0.0f),
-        thrust_lpf_coeff_(0.0f),
         inflow_lpf_coeff_(0.0f),
         estimated_thrust_n_(0.0f),
         estimated_inflow_angle_deg_(0.0f),
@@ -203,16 +199,16 @@ public:
 
     void __attribute__((always_inline)) set_speed_setpoint(float setpoint) {
         speed_setpoint_rad_per_s_ = setpoint;
-        control_thrust_ = false;
+        thrust_setpoint_n_ = 0.0f;
     }
 
     void __attribute__((always_inline)) set_thrust_setpoint(float setpoint) {
         thrust_setpoint_n_ = setpoint;
-        control_thrust_ = true;
     }
 
     void __attribute__((always_inline)) set_phi_v_s_per_rad(float phi) {
         kq_v_s_per_mech_rad_ = phi * num_pole_pairs_;
+        kp_ = phi * accel_gain_a_per_v_;
     }
 
     float __attribute__((always_inline)) get_estimated_thrust_n(void) const {
@@ -248,7 +244,9 @@ public:
 
         max_accel_torque = motor_params.accel_voltage_v / motor_params.rs_r;
 
-        kp_ = float(1.0/512.0) * max_accel_torque * control_params.accel_gain;
+        accel_gain_a_per_v_ = control_params.accel_gain * max_accel_torque /
+                              motor_params.max_voltage_v;
+        kp_ = motor_params.phi_v_s_per_rad * accel_gain_a_per_v_;
         ki_ = t_s / control_params.accel_time_s;
 
         current_limit_a_ = motor_params.max_current_a;
@@ -274,13 +272,14 @@ public:
         reff_m_ = control_params.prop_radius_m * 0.75f;
         ka_ = float(RHO_KG_PER_M3 / 2.0) * control_params.prop_chord_m *
               reff_m_ * float(control_params.prop_num_blades);
-        ir_ = control_params.prop_mass_kg * (2.0f * reff_m_) *
-              (2.0f * reff_m_) / 12.0f;
-
-        rc = 1.0f / (float(2.0 * M_PI) * control_params.bandwidth_hz);
-        thrust_lpf_coeff_ = t_s / (t_s + rc);
-        inflow_lpf_coeff_ = t_s / (t_s + 10.0f * rc);
         t_inv_ = 1.0f / t_s;
+
+        /*
+        Lowpass the inflow angle and velocity estimates at 1/40th of the
+        control bandwidth.
+        */
+        rc = 1.0f / (float(2.0 * M_PI) * control_params.bandwidth_hz);
+        inflow_lpf_coeff_ = t_s / (t_s + 40.0f * rc);
 
         /* Cd and Cl approximation coefficients */
         cl_kx = control_params.prop_cl_kx;
@@ -292,22 +291,29 @@ public:
     void __attribute__((always_inline))
     set_integral_current_a(float current_a) {
         integral_error_a_ = current_a;
+        estimated_inflow_angle_deg_ = 0.0f;
+        estimated_inflow_m_per_s_ = 0.0f;
+        estimated_thrust_n_ = 0.0f;
     }
 
     float __attribute__((always_inline))
     update(const struct motor_state_t& state, float closed_loop_frac) {
-        float error, accel_torque_a, out_a, v_m_per_s, cd, cl, torque_a,
-              torque_n_m, thrust_n, inflow_angle, inflow_m_per_s;
+        float error, accel_torque_a, out_a, v_m_per_s, cd, cl, torque_n_m,
+              inflow_angle, inflow_m_per_s;
 
-        torque_a = state.i_dq_a[1];
-        torque_n_m = torque_a * kq_v_s_per_mech_rad_ -
-                     state.angular_acceleration_rad_per_s2 * ir_ *
-                     inv_num_pole_pairs_;
+        /*
+        Integral error approximately represents the load torque, so use that
+        instead of trying to work it out from the current readings -- the
+        dynamics of the current controller are so much faster than those of
+        the speed controller that we can assume actual motor current tracks
+        the setpoint perfectly.
+        */
+        torque_n_m = integral_error_a_ * kq_v_s_per_mech_rad_;
         v_m_per_s = state.angular_velocity_rad_per_s * reff_m_ *
                     inv_num_pole_pairs_;
 
-        cd = std::max(torque_n_m / (ka_ * reff_m_ * v_m_per_s * v_m_per_s),
-                      0.0125f);
+        cd = std::max(0.0125f,
+                      torque_n_m / (ka_ * reff_m_ * v_m_per_s * v_m_per_s));
         inflow_angle = std::max(0.0f, (cd - cd_k) / cd_kx);
         estimated_inflow_angle_deg_ +=
             (inflow_angle - estimated_inflow_angle_deg_) *
@@ -322,13 +328,11 @@ public:
         estimated_inflow_m_per_s_ +=
             (inflow_m_per_s - estimated_inflow_m_per_s_) * inflow_lpf_coeff_;
 
-        thrust_n = (v_m_per_s + estimated_inflow_m_per_s_) *
-                   (v_m_per_s + estimated_inflow_m_per_s_) * ka_ * cl;
+        estimated_thrust_n_ = (v_m_per_s + estimated_inflow_m_per_s_) *
+                              (v_m_per_s + estimated_inflow_m_per_s_) *
+                              ka_ * cl;
 
-        estimated_thrust_n_ += (thrust_n - estimated_thrust_n_) *
-                               thrust_lpf_coeff_;
-
-        if (control_thrust_) {
+        if (thrust_setpoint_n_ != 0.0f) {
             speed_setpoint_rad_per_s_ =
                 (__VSQRTF(thrust_setpoint_n_ / (ka_ * cl)) -
                     estimated_inflow_m_per_s_) * num_pole_pairs_ / reff_m_;

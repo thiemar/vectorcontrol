@@ -47,7 +47,6 @@ SOFTWARE.
 
 
 struct motor_state_t {
-    float angular_acceleration_rad_per_s2;
     float angular_velocity_rad_per_s;
     float angle_rad; /* 0 .. 2 * pi */
     float i_dq_a[2];
@@ -83,7 +82,6 @@ struct control_params_t {
     float prop_radius_m;
     float prop_geometric_pitch_deg;
     uint32_t prop_num_blades;
-    float prop_mass_kg;
 };
 
 

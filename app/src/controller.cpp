@@ -51,7 +51,7 @@ void DQCurrentController::update(
 
     The code below follows the pseudocode listing in Appendix C of that paper.
     */
-    float ed_a, eq_a, vd_v, vq_v, ccd_v, ccq_v, v_max, v_mag, scale;
+    float ed_a, eq_a, vd_v, vq_v, ccd_v, ccq_v, v_max;
 
     /* Calculate Idq error */
     ed_a = 0.0f - i_dq_a[0];
@@ -77,13 +77,15 @@ void DQCurrentController::update(
     vq_v = kp_ * eq_a + ccq_v + audio_v;
 
     /*
-    Limit the absolute value of Vdq to vbus * maximum modulation.
+    Limit the absolute value of Vdq to vbus * maximum modulation. Give Vd
+    priority over Vq if we are limited by voltage, to ensure Id can be kept
+    at zero.
     */
-    v_mag = __VSQRTF(vd_v * vd_v + vq_v * vq_v);
     v_max = std::min(v_limit_v_, vbus_v * 0.95f);
-    scale = v_mag > v_max ? v_max / v_mag : 1.0f;
-    vd_v *= scale;
-    vq_v *= scale;
+    if (vd_v > v_max) {
+        vd_v = v_max;
+    }
+    vq_v = std::min(vq_v, __VSQRTF(v_max * v_max - vd_v * vd_v));
 
     /*
     Anti-windup calculation for the integral term; if desired |Vdq| is greater

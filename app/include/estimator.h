@@ -41,10 +41,9 @@ class StateEstimator {
     float t_inv_;
     float rs_r_;
 
-    /* Current, velocity and acceleration lowpass filter parameters */
+    /* Current and velocity lowpass filter parameters */
     float i_dq_lpf_coeff_;
     float angular_velocity_lpf_coeff_;
-    float angular_acceleration_lpf_coeff_;
 
     /* Column-major */
     float state_covariance_[4];
@@ -65,7 +64,6 @@ public:
         rs_r_(0.0f),
         i_dq_lpf_coeff_(0.0f),
         angular_velocity_lpf_coeff_(0.0f),
-        angular_acceleration_lpf_coeff_(0.0f),
         next_sin_theta_(0.0f),
         next_cos_theta_(1.0f)
     {
@@ -73,7 +71,6 @@ public:
     }
 
     void reset_state() volatile {
-        state_estimate_.angular_acceleration_rad_per_s2 = 0.0f;
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
         state_estimate_.i_dq_a[0] = state_estimate_.i_dq_a[1] = 0.0f;
@@ -130,13 +127,12 @@ public:
 
         /*
         Control parameters -- LPF bandwidth is one octave higher than speed
-        control bandwidth, and angular velocity estimation bandwidth is one
-        octave higher.
+        control bandwidth, and angular velocity estimation bandwidth is two
+        octaves higher.
         */
         rc = 1.0f / (float(2.0 * M_PI) * control_bandwidth_hz);
         i_dq_lpf_coeff_ = t_s / (t_s + 0.1f * rc);
         angular_velocity_lpf_coeff_ = t_s / (t_s + 0.25f * rc);
-        angular_acceleration_lpf_coeff_ = t_s / (t_s + rc);
     }
 };
 

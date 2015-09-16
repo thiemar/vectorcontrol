@@ -215,13 +215,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Propeller/rotor blade count.
     */
     {PARAM_PROP_NUM_BLADES, PARAM_TYPE_INT, "prop_num_blades",
-        2.0f, 2.0f, 6.0f},
-
-    /*
-    Propeller/rotor effective mass, in kg
-    */
-    {PARAM_PROP_MASS, PARAM_TYPE_FLOAT, "prop_mass",
-        0.005f, 0.0f, 50.0f}
+        2.0f, 2.0f, 6.0f}
 };
 
 
@@ -283,7 +277,6 @@ void Configuration::read_control_params(
         fast_atan(params_[PARAM_PROP_PITCH] * float(1.0 / (2.0 * M_PI)) /
                   (params_[PARAM_PROP_DIAMETER] / 2.0f)); //15.0f;
     params.prop_num_blades = uint32_t(params_[PARAM_PROP_NUM_BLADES]);
-    params.prop_mass_kg = params_[PARAM_PROP_MASS]; // 0.01f;
 }
 
 

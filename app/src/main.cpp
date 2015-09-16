@@ -308,7 +308,7 @@ void control_cb(
         }
 
         internal_speed_setpoint += temp * hal_control_t_s;
-        g_speed_controller.set_speed_setpoint(internal_speed_setpoint + temp);
+        g_speed_controller.set_speed_setpoint(internal_speed_setpoint);
         g_speed_controller.set_integral_current_a(accel_current_a);
 
         /*
@@ -413,8 +413,6 @@ void control_cb(
     g_controller_state.current_setpoint = current_setpoint;
     g_controller_state.spinup_frac = spinup_frac;
 
-    g_motor_state.angular_acceleration_rad_per_s2 =
-        motor_state.angular_acceleration_rad_per_s2;
     g_motor_state.angular_velocity_rad_per_s =
         motor_state.angular_velocity_rad_per_s;
     g_motor_state.angle_rad = motor_state.angle_rad;
@@ -850,8 +848,6 @@ static void __attribute__((noreturn)) node_run(
                 msg.thrust = g_thrust_n;
                 msg.thrust_setpoint = g_controller_state.thrust_setpoint;
 
-                msg.acceleration =
-                    motor_state.angular_acceleration_rad_per_s2 * to_rpm;
                 msg.rpm = motor_state.angular_velocity_rad_per_s * to_rpm;
                 msg.rpm_setpoint = g_controller_state.speed_setpoint * to_rpm;
 

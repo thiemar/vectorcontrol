@@ -278,7 +278,7 @@ SOFTWARE.
             <li>4.5 mΩ effective internal resistance</li>
             <li>62.5 kHz PWM with space vector modulation and 10 bit per phase output resolution</li>
             <li>31.25 kHz vector control with cascaded PID torque and speed controllers</li>
-            <li> 1 Mb s<sup>-1</sup> CAN interface with &lt; 35 µs internal latency or 480 Hz RC PWM with &lt; 1.05 ms internal latency</li>
+            <li> 1 Mb s<sup>-1</sup> CAN interface with &lt; 35 µs internal latency</li>
             <li>8 g and 31 × 26 × 9 mm without heatsink, cables or packaging</li>
         </ul>
 
@@ -298,16 +298,6 @@ SOFTWARE.
 
 
     </section> -->
-
-    <section>
-        <h2>Interfaces</h2>
-
-        <h3>UAVCAN</h3>
-
-        <h3>Debug/bootloader CAN</h3>
-
-        <h3>RC PWM</h3>
-    </section>
 
     <section>
         <h2>Configuration options</h2>
@@ -448,35 +438,35 @@ SOFTWARE.
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>V+</sub></td>
-                    <td>CAN/PWM bus voltage relative to V<sub>–</sub></td>
+                    <td>CAN bus voltage relative to V<sub>–</sub></td>
                     <td class="num">–36.0</td>
                     <td class="num">36.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>V–</sub></td>
-                    <td>CAN/PWM bus ground relative to V<sub>–</sub></td>
+                    <td>CAN bus ground relative to V<sub>–</sub></td>
                     <td class="num">–36.0</td>
                     <td class="num">36.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub></td>
-                    <td>CAN/PWM high signal relative to V<sub>–</sub></td>
+                    <td>CAN high signal relative to V<sub>–</sub></td>
                     <td class="num">–50.0</td>
                     <td class="num">50.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub></td>
-                    <td>CAN/PWM low signal relative to V<sub>–</sub></td>
+                    <td>CAN low signal relative to V<sub>–</sub></td>
                     <td class="num">–50.0</td>
                     <td class="num">50.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub> – CAN<sub>L</sub></td>
-                    <td>CAN/PWM signal differential voltage</td>
+                    <td>CAN signal differential voltage</td>
                     <td class="num">–100.0</td>
                     <td class="num">100.0</td>
                     <td class="unit">V</td>
@@ -571,42 +561,42 @@ SOFTWARE.
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>V+</sub></td>
-                    <td>CAN/PWM bus voltage relative to V<sub>–</sub></td>
+                    <td>CAN bus voltage relative to V<sub>–</sub></td>
                     <td class="num">–20.0</td>
                     <td class="num">20.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>V–</sub></td>
-                    <td>CAN/PWM bus ground relative to V<sub>–</sub></td>
+                    <td>CAN bus ground relative to V<sub>–</sub></td>
                     <td class="num">–20.0</td>
                     <td class="num">20.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub></td>
-                    <td>CAN/PWM high signal relative to V<sub>–</sub></td>
+                    <td>CAN high signal relative to V<sub>–</sub></td>
                     <td class="num">–40.0</td>
                     <td class="num">40.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub></td>
-                    <td>CAN/PWM low signal relative to V<sub>–</sub></td>
+                    <td>CAN low signal relative to V<sub>–</sub></td>
                     <td class="num">–40.0</td>
                     <td class="num">40.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub> – CAN<sub>L</sub></td>
-                    <td>CAN/PWM signal differential voltage (dominant)</td>
+                    <td>CAN signal differential voltage (dominant)</td>
                     <td class="num">1.0</td>
                     <td class="num">40.0</td>
                     <td class="unit">V</td>
                 </tr>
                 <tr>
                     <td class="parameter">CAN<sub>H</sub> – CAN<sub>L</sub></td>
-                    <td>CAN/PWM signal differential voltage (recessive)</td>
+                    <td>CAN signal differential voltage (recessive)</td>
                     <td class="num">0.0</td>
                     <td class="num">1.0</td>
                     <td class="unit">V</td>
@@ -742,46 +732,6 @@ SOFTWARE.
                     <td class="num">72.0</td>
                     <td class="num"></td>
                     <td class="unit">MHz</td>
-                </tr>
-                <tr>
-                    <td class="parameter">f<sub>PWM</sub></td>
-                    <td>PWM pulse frequency</td>
-                    <td class="num">20</td>
-                    <td class="num"></td>
-                    <td class="num">480</td>
-                    <td class="unit">Hz</td>
-                </tr>
-                <tr>
-                    <td class="parameter">t<sub>PWM</sub></td>
-                    <td>PWM input pulse width</td>
-                    <td class="num">1000</td>
-                    <td class="num"></td>
-                    <td class="num">2000</td>
-                    <td class="unit">µs</td>
-                </tr>
-                <tr>
-                    <td class="parameter">t<sub>lo</sub></td>
-                    <td>PWM input low throttle pulse width</td>
-                    <td class="num"></td>
-                    <td class="num">1100</td>
-                    <td class="num"></td>
-                    <td class="unit">µs</td>
-                </tr>
-                <tr>
-                    <td class="parameter">t<sub>hi</sub></td>
-                    <td>PWM input high throttle pulse width</td>
-                    <td class="num"></td>
-                    <td class="num">1950</td>
-                    <td class="num"></td>
-                    <td class="unit">µs</td>
-                </tr>
-                <tr>
-                    <td class="parameter">t<sub>ε</sub></td>
-                    <td>PWM input resolution</td>
-                    <td class="num"></td>
-                    <td class="num">1</td>
-                    <td class="num"></td>
-                    <td class="unit">µs</td>
                 </tr>
                 <tr>
                     <td class="parameter">f<sub>CAN</sub></td>

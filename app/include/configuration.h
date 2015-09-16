@@ -80,7 +80,6 @@ enum param_index_t {
     PARAM_PROP_DIAMETER,
     PARAM_PROP_PITCH,
     PARAM_PROP_NUM_BLADES,
-    PARAM_PROP_MASS,
     NUM_PARAMS
 };
 
