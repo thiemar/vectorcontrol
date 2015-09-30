@@ -843,10 +843,15 @@ static void __attribute__((noreturn)) node_run(
                 msg.v_dq[0] = v_dq_v[0];
                 msg.v_dq[1] = v_dq_v[1];
 
+                /*
+                FIXME -- disable messages relating to inflow velocity
+                compensation
+
                 msg.power = power_w;
                 msg.inflow_angle = g_inflow_angle_deg;
                 msg.thrust = g_thrust_n;
                 msg.thrust_setpoint = g_controller_state.thrust_setpoint;
+                */
 
                 msg.rpm = motor_state.angular_velocity_rad_per_s * to_rpm;
                 msg.rpm_setpoint = g_controller_state.speed_setpoint * to_rpm;

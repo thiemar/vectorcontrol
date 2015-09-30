@@ -333,9 +333,18 @@ public:
                               ka_ * cl;
 
         if (thrust_setpoint_n_ != 0.0f) {
+            /*
+            FIXME -- disable inflow velocity compensation in thrust controller
+            while vehicle stability is being investigated.
+
             speed_setpoint_rad_per_s_ =
                 (__VSQRTF(thrust_setpoint_n_ / (ka_ * cl)) -
                     estimated_inflow_m_per_s_) * num_pole_pairs_ / reff_m_;
+            */
+
+            speed_setpoint_rad_per_s_ =
+                __VSQRTF(thrust_setpoint_n_ / (ka_ * cl_k)) *
+                num_pole_pairs_ / reff_m_;
         }
 
         /*

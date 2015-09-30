@@ -875,9 +875,9 @@ if __name__ == "__main__":
             # Server implementation
             (uavcan.protocol.NodeStatus, uavcan.monitors.NodeStatusMonitor,
                 {"new_node_callback": enumerate_device}),
-            (uavcan.protocol.dynamic_node_id.Allocation,
-                uavcan.monitors.DynamicNodeIDServer,
-                {"dynamic_id_range": (2, 125)}),
+            #(uavcan.protocol.dynamic_node_id.Allocation,
+            #    uavcan.monitors.DynamicNodeIDServer,
+            #    {"dynamic_id_range": (2, 125)}),
             (uavcan.protocol.file.GetInfo, uavcan.services.FileGetInfoService,
                 {"path": firmware_dir}),
             (uavcan.protocol.file.Read, uavcan.services.FileReadService,

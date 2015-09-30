@@ -22,13 +22,13 @@ float16[2] i_dq              # Ampere
 float16 i_setpoint           # Ampere
 
 float16[2] v_dq              # Volt
-float16 power                # Watt
+# float16 power                # Watt
 
-float16 inflow_angle         # degrees from planar
-float16 thrust               # Newton
-float16 thrust_setpoint      # Newton
+# float16 inflow_angle         # degrees from planar
+# float16 thrust               # Newton
+# float16 thrust_setpoint      # Newton
 
-float16 acceleration         # rpm/s
+# float16 acceleration         # rpm/s
 float16 rpm
 float16 rpm_setpoint
 
@@ -40,11 +40,6 @@ thiemar.equipment.esc.Status
 saturated float16[2] i_dq
 saturated float16 i_setpoint
 saturated float16[2] v_dq
-saturated float16 power
-saturated float16 inflow_angle
-saturated float16 thrust
-saturated float16 thrust_setpoint
-saturated float16 acceleration
 saturated float16 rpm
 saturated float16 rpm_setpoint
 saturated uint5 esc_index
@@ -53,11 +48,6 @@ saturated uint5 esc_index
 #undef i_dq
 #undef i_setpoint
 #undef v_dq
-#undef power
-#undef inflow_angle
-#undef thrust
-#undef thrust_setpoint
-#undef acceleration
 #undef rpm
 #undef rpm_setpoint
 #undef esc_index
@@ -84,11 +74,6 @@ struct UAVCAN_EXPORT Status_
         typedef ::uavcan::Array< ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate >, ::uavcan::ArrayModeStatic, 2 > i_dq;
         typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > i_setpoint;
         typedef ::uavcan::Array< ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate >, ::uavcan::ArrayModeStatic, 2 > v_dq;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > power;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > inflow_angle;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > thrust;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > thrust_setpoint;
-        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > acceleration;
         typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > rpm;
         typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > rpm_setpoint;
         typedef ::uavcan::IntegerSpec< 5, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > esc_index;
@@ -100,11 +85,6 @@ struct UAVCAN_EXPORT Status_
             = FieldTypes::i_dq::MinBitLen
             + FieldTypes::i_setpoint::MinBitLen
             + FieldTypes::v_dq::MinBitLen
-            + FieldTypes::power::MinBitLen
-            + FieldTypes::inflow_angle::MinBitLen
-            + FieldTypes::thrust::MinBitLen
-            + FieldTypes::thrust_setpoint::MinBitLen
-            + FieldTypes::acceleration::MinBitLen
             + FieldTypes::rpm::MinBitLen
             + FieldTypes::rpm_setpoint::MinBitLen
             + FieldTypes::esc_index::MinBitLen
@@ -116,11 +96,6 @@ struct UAVCAN_EXPORT Status_
             = FieldTypes::i_dq::MaxBitLen
             + FieldTypes::i_setpoint::MaxBitLen
             + FieldTypes::v_dq::MaxBitLen
-            + FieldTypes::power::MaxBitLen
-            + FieldTypes::inflow_angle::MaxBitLen
-            + FieldTypes::thrust::MaxBitLen
-            + FieldTypes::thrust_setpoint::MaxBitLen
-            + FieldTypes::acceleration::MaxBitLen
             + FieldTypes::rpm::MaxBitLen
             + FieldTypes::rpm_setpoint::MaxBitLen
             + FieldTypes::esc_index::MaxBitLen
@@ -132,11 +107,6 @@ struct UAVCAN_EXPORT Status_
     typename ::uavcan::StorageType< typename FieldTypes::i_dq >::Type i_dq;
     typename ::uavcan::StorageType< typename FieldTypes::i_setpoint >::Type i_setpoint;
     typename ::uavcan::StorageType< typename FieldTypes::v_dq >::Type v_dq;
-    typename ::uavcan::StorageType< typename FieldTypes::power >::Type power;
-    typename ::uavcan::StorageType< typename FieldTypes::inflow_angle >::Type inflow_angle;
-    typename ::uavcan::StorageType< typename FieldTypes::thrust >::Type thrust;
-    typename ::uavcan::StorageType< typename FieldTypes::thrust_setpoint >::Type thrust_setpoint;
-    typename ::uavcan::StorageType< typename FieldTypes::acceleration >::Type acceleration;
     typename ::uavcan::StorageType< typename FieldTypes::rpm >::Type rpm;
     typename ::uavcan::StorageType< typename FieldTypes::rpm_setpoint >::Type rpm_setpoint;
     typename ::uavcan::StorageType< typename FieldTypes::esc_index >::Type esc_index;
@@ -145,11 +115,6 @@ struct UAVCAN_EXPORT Status_
         : i_dq()
         , i_setpoint()
         , v_dq()
-        , power()
-        , inflow_angle()
-        , thrust()
-        , thrust_setpoint()
-        , acceleration()
         , rpm()
         , rpm_setpoint()
         , esc_index()
@@ -162,7 +127,7 @@ struct UAVCAN_EXPORT Status_
          * This check shall never be performed in user code because MaxBitLen value
          * actually depends on the nested types, thus it is not invariant.
          */
-        ::uavcan::StaticAssert<197 == MaxBitLen>::check();
+        ::uavcan::StaticAssert<117 == MaxBitLen>::check();
 #endif
     }
 
@@ -212,11 +177,6 @@ bool Status_<_tmpl>::operator==(ParameterType rhs) const
         i_dq == rhs.i_dq &&
         i_setpoint == rhs.i_setpoint &&
         v_dq == rhs.v_dq &&
-        power == rhs.power &&
-        inflow_angle == rhs.inflow_angle &&
-        thrust == rhs.thrust &&
-        thrust_setpoint == rhs.thrust_setpoint &&
-        acceleration == rhs.acceleration &&
         rpm == rhs.rpm &&
         rpm_setpoint == rhs.rpm_setpoint &&
         esc_index == rhs.esc_index;
@@ -229,11 +189,6 @@ bool Status_<_tmpl>::isClose(ParameterType rhs) const
         ::uavcan::areClose(i_dq, rhs.i_dq) &&
         ::uavcan::areClose(i_setpoint, rhs.i_setpoint) &&
         ::uavcan::areClose(v_dq, rhs.v_dq) &&
-        ::uavcan::areClose(power, rhs.power) &&
-        ::uavcan::areClose(inflow_angle, rhs.inflow_angle) &&
-        ::uavcan::areClose(thrust, rhs.thrust) &&
-        ::uavcan::areClose(thrust_setpoint, rhs.thrust_setpoint) &&
-        ::uavcan::areClose(acceleration, rhs.acceleration) &&
         ::uavcan::areClose(rpm, rhs.rpm) &&
         ::uavcan::areClose(rpm_setpoint, rhs.rpm_setpoint) &&
         ::uavcan::areClose(esc_index, rhs.esc_index);
@@ -258,31 +213,6 @@ int Status_<_tmpl>::encode(ParameterType self, ::uavcan::ScalarCodec& codec,
         return res;
     }
     res = FieldTypes::v_dq::encode(self.v_dq, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::power::encode(self.power, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::inflow_angle::encode(self.inflow_angle, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::thrust::encode(self.thrust, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::thrust_setpoint::encode(self.thrust_setpoint, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::acceleration::encode(self.acceleration, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
         return res;
@@ -324,31 +254,6 @@ int Status_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
     {
         return res;
     }
-    res = FieldTypes::power::decode(self.power, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::inflow_angle::decode(self.inflow_angle, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::thrust::decode(self.thrust, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::thrust_setpoint::decode(self.thrust_setpoint, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
-    res = FieldTypes::acceleration::decode(self.acceleration, codec,  ::uavcan::TailArrayOptDisabled);
-    if (res <= 0)
-    {
-        return res;
-    }
     res = FieldTypes::rpm::decode(self.rpm, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
@@ -369,16 +274,11 @@ int Status_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
 template <int _tmpl>
 ::uavcan::DataTypeSignature Status_<_tmpl>::getDataTypeSignature()
 {
-    ::uavcan::DataTypeSignature signature(0xAF5D4B75A72DD239ULL);
+    ::uavcan::DataTypeSignature signature(0xFEA614B9BCFE357AULL);
 
     FieldTypes::i_dq::extendDataTypeSignature(signature);
     FieldTypes::i_setpoint::extendDataTypeSignature(signature);
     FieldTypes::v_dq::extendDataTypeSignature(signature);
-    FieldTypes::power::extendDataTypeSignature(signature);
-    FieldTypes::inflow_angle::extendDataTypeSignature(signature);
-    FieldTypes::thrust::extendDataTypeSignature(signature);
-    FieldTypes::thrust_setpoint::extendDataTypeSignature(signature);
-    FieldTypes::acceleration::extendDataTypeSignature(signature);
     FieldTypes::rpm::extendDataTypeSignature(signature);
     FieldTypes::rpm_setpoint::extendDataTypeSignature(signature);
     FieldTypes::esc_index::extendDataTypeSignature(signature);
@@ -450,41 +350,6 @@ void YamlStreamer< ::thiemar::equipment::esc::Status >::stream(Stream& s, ::thie
     }
     s << "v_dq: ";
     YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::v_dq >::stream(s, obj.v_dq, level + 1);
-    s << '\n';
-    for (int pos = 0; pos < level; pos++)
-    {
-        s << "  ";
-    }
-    s << "power: ";
-    YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::power >::stream(s, obj.power, level + 1);
-    s << '\n';
-    for (int pos = 0; pos < level; pos++)
-    {
-        s << "  ";
-    }
-    s << "inflow_angle: ";
-    YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::inflow_angle >::stream(s, obj.inflow_angle, level + 1);
-    s << '\n';
-    for (int pos = 0; pos < level; pos++)
-    {
-        s << "  ";
-    }
-    s << "thrust: ";
-    YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::thrust >::stream(s, obj.thrust, level + 1);
-    s << '\n';
-    for (int pos = 0; pos < level; pos++)
-    {
-        s << "  ";
-    }
-    s << "thrust_setpoint: ";
-    YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::thrust_setpoint >::stream(s, obj.thrust_setpoint, level + 1);
-    s << '\n';
-    for (int pos = 0; pos < level; pos++)
-    {
-        s << "  ";
-    }
-    s << "acceleration: ";
-    YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::acceleration >::stream(s, obj.acceleration, level + 1);
     s << '\n';
     for (int pos = 0; pos < level; pos++)
     {

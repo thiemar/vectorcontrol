@@ -238,10 +238,10 @@ function createNodeUi(message) {
     if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
             nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         setupSpeedChart(nodeUi);
-        setupThrustChart(nodeUi);
+        // setupThrustChart(nodeUi);
         setupCurrentChart(nodeUi);
         setupVoltageTempChart(nodeUi);
-        setupAccelPowerChart(nodeUi);
+        // setupAccelPowerChart(nodeUi);
         setupOutputVoltageChart(nodeUi);
     } else if (nodeUi.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         setupAirspeedChart(nodeUi);
@@ -862,9 +862,9 @@ function updateCharts(device, data) {
             device.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         updateCurrentChart(deviceId, device, data);
         updateSpeedChart(deviceId, device, data);
-        updateThrustChart(deviceId, device, data);
+        // updateThrustChart(deviceId, device, data);
         updateVoltageTempChart(deviceId, device, data);
-        updateAccelPowerChart(deviceId, device, data);
+        // updateAccelPowerChart(deviceId, device, data);
         updateOutputVoltageChart(deviceId, device, data);
     } else if (device.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         updateAirspeedChart(deviceId, device, data);
