@@ -153,8 +153,11 @@ protected:
     float current_limit_a_;
     float accel_current_limit_a_;
 
-    float thrust_lpf_coeff_;
+    float voltage_limit_v_;
+    float rs_r_;
+
     float inflow_lpf_coeff_;
+    float setpoint_lpf_coeff_;
 
     /* Temporary state */
     float estimated_thrust_n_;
@@ -182,7 +185,10 @@ public:
         cd_k(0.0f),
         current_limit_a_(0.0f),
         accel_current_limit_a_(0.0f),
+        voltage_limit_v_(0.0f),
+        rs_r_(0.0f),
         inflow_lpf_coeff_(0.0f),
+        setpoint_lpf_coeff_(0.0f),
         estimated_thrust_n_(0.0f),
         estimated_inflow_angle_deg_(0.0f),
         estimated_inflow_m_per_s_(0.0f)
@@ -203,7 +209,8 @@ public:
     }
 
     void __attribute__((always_inline)) set_thrust_setpoint(float setpoint) {
-        thrust_setpoint_n_ = setpoint;
+        thrust_setpoint_n_ += (setpoint - thrust_setpoint_n_) *
+                              setpoint_lpf_coeff_;
     }
 
     void __attribute__((always_inline)) set_phi_v_s_per_rad(float phi) {
@@ -218,6 +225,11 @@ public:
     float __attribute__((always_inline))
     get_estimated_inflow_angle_deg(void) const {
         return estimated_inflow_angle_deg_;
+    }
+
+    float __attribute__((always_inline))
+    get_estimated_inflow_velocity_m_per_s(void) const {
+        return estimated_inflow_m_per_s_;
     }
 
     float __attribute__((always_inline)) get_max_thrust_n(void) const {
@@ -253,6 +265,8 @@ public:
         accel_current_limit_a_ = std::min(motor_params.max_current_a,
                                           max_accel_torque);
 
+        voltage_limit_v_ = motor_params.max_voltage_v;
+
         /*
         Thrust control term calculation.
 
@@ -274,12 +288,15 @@ public:
               reff_m_ * float(control_params.prop_num_blades);
         t_inv_ = 1.0f / t_s;
 
+        rs_r_ = motor_params.rs_r;
+
         /*
         Lowpass the inflow angle and velocity estimates at 1/40th of the
         control bandwidth.
         */
         rc = 1.0f / (float(2.0 * M_PI) * control_params.bandwidth_hz);
         inflow_lpf_coeff_ = t_s / (t_s + 40.0f * rc);
+        setpoint_lpf_coeff_ = t_s / (t_s + 10.0f * rc);
 
         /* Cd and Cl approximation coefficients */
         cl_kx = control_params.prop_cl_kx;

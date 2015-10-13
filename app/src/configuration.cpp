@@ -66,25 +66,25 @@ static struct param_t param_config_[NUM_PARAMS] = {
     Interval between publication of UAVCAN standard ESC status messages, in
     microseconds. Zero disables publication.
     */
-    {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT, "pubp_status",
+    {PARAM_UAVCAN_ESCSTATUS_INTERVAL, PARAM_TYPE_INT, "int_status",
         50e3f, 0, 1e6f},
 
     /*
     Interval between publication of extended ESC status messages, in
     microseconds. Zero disables publication.
     */
-    {PARAM_THIEMAR_STATUS_INTERVAL, PARAM_TYPE_INT, "pubp_ext_status",
+    {PARAM_THIEMAR_STATUS_INTERVAL, PARAM_TYPE_INT, "int_ext_status",
         50e3, 0, 1e6f},
 
     /* Data type ID of extended ESC status message. */
-    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT, "dtid_ext_status",
+    {PARAM_THIEMAR_STATUS_ID, PARAM_TYPE_INT, "id_ext_status",
         20034, 1, 65535},
 
     /*
     Number of motor poles. Used to convert mechanical speeds to electrical
     speeds.
     */
-    {PARAM_MOTOR_NUM_POLES, PARAM_TYPE_INT, "motor_num_poles",
+    {PARAM_MOTOR_NUM_POLES, PARAM_TYPE_INT, "mot_num_poles",
         14.0f, 2.0f, 40.0f},
 
     /*
@@ -92,7 +92,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     controller setpoint, as well as the maximum allowable current setpoint
     slew rate.
     */
-    {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "motor_i_max",
+    {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "mot_i_max",
         12.0f, 1.0f, 40.0f},
 
     /*
@@ -103,29 +103,29 @@ static struct param_t param_config_[NUM_PARAMS] = {
     determine the actual motor voltage limit, divide the motor's rated maximum
     power by the motor current limit.
     */
-    {PARAM_MOTOR_V_MAX, PARAM_TYPE_FLOAT, "motor_v_max",
+    {PARAM_MOTOR_V_MAX, PARAM_TYPE_FLOAT, "mot_v_max",
         14.8f, 0.5f, 27.0f},
 
     /*
     Acceleration voltage limit in volts. In conjunction with the motor's
     resistance, determines the maximum acceleration torque.
     */
-    {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "motor_v_accel",
+    {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "mot_v_accel",
         0.5f, 0.01f, 1.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
-    {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "motor_rs",
+    {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "mot_rs",
         1e-3f, 1e-3f, 4.0f},
 
     /* Motor inductance in henries. This is estimated on start-up. */
-    {PARAM_MOTOR_LS, PARAM_TYPE_FLOAT, "motor_ls",
+    {PARAM_MOTOR_LS, PARAM_TYPE_FLOAT, "mot_ls",
         1e-3f, 1e-6f, 1e-2f},
 
     /*
     Motor KV in RPM per volt. This can be taken from the motor's spec sheet;
     accuracy will help control performance but a 20% error is fine.
     */
-    {PARAM_MOTOR_KV, PARAM_TYPE_FLOAT, "motor_kv",
+    {PARAM_MOTOR_KV, PARAM_TYPE_FLOAT, "mot_kv",
         1000.0f, 100.0f, 8000.0f},
 
     /*
@@ -134,16 +134,16 @@ static struct param_t param_config_[NUM_PARAMS] = {
     results in a full-scale acceleration torque output for an error of
     100 rad/s electrical.
     */
-    {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "ctl_p_gain",
-        30.0f, 0.0f, 100.0f},
+    {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "rpmctl_p",
+        40.0f, 0.0f, 200.0f},
 
     /*
     Rise time of the speed controller's torque output; this determines the
     target time to accelerate from near zero to full throttle, subject to
     the overall current limits and load inertia.
     */
-    {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "ctl_i_time",
-        0.1f, 0.001f, 2.0f},
+    {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "rpmctl_i",
+        0.15f, 0.001f, 5.0f},
 
     /*
     If non-zero, the motor will rotate at this electrical speed in Hz when any
@@ -156,7 +156,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     The rate at which the motor accelerates during open-loop mode, in
     electrical Hz/s.
     */
-    {PARAM_CONTROL_SPINUP_RATE, PARAM_TYPE_FLOAT, "ctl_spinup_rate",
+    {PARAM_CONTROL_SPINUP_RATE, PARAM_TYPE_FLOAT, "ctl_start_rate",
         25.0f, 5.0f, 1000.0f},
 
     /*
@@ -214,7 +214,7 @@ static struct param_t param_config_[NUM_PARAMS] = {
     /*
     Propeller/rotor blade count.
     */
-    {PARAM_PROP_NUM_BLADES, PARAM_TYPE_INT, "prop_num_blades",
+    {PARAM_PROP_NUM_BLADES, PARAM_TYPE_INT, "prop_blades",
         2.0f, 2.0f, 6.0f}
 };
 

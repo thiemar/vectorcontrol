@@ -126,6 +126,7 @@ volatile static float g_phi_v_s_per_rad;
 volatile static float g_thrust_n;
 volatile static float g_max_thrust_n;
 volatile static float g_inflow_angle_deg;
+volatile static float g_inflow_velocity_m_per_s;
 
 
 /* Motor parameter estimation state -- only used on startup */
@@ -378,11 +379,14 @@ void control_cb(
     based on the square of the output voltage. Smooth the transition out quite
     a bit to avoid false triggering.
     */
-    new_closed_loop_frac = 8.0f * (v_dq_v[0] * v_dq_v[0] +
+    new_closed_loop_frac = 5.0f * (v_dq_v[0] * v_dq_v[0] +
                             (v_dq_v[1] - audio_v) * (v_dq_v[1] - audio_v)) -
                            7.0f;
     if (new_closed_loop_frac < 0.0f) {
         new_closed_loop_frac = 0.0f;
+    }
+    if (new_closed_loop_frac > 1.01f) {
+        new_closed_loop_frac = 1.01f;
     }
 
     if (closed_loop_frac < 1.0f) {
@@ -425,6 +429,8 @@ void control_cb(
     g_thrust_n = g_speed_controller.get_estimated_thrust_n();
     g_max_thrust_n = g_speed_controller.get_max_thrust_n();
     g_inflow_angle_deg = g_speed_controller.get_estimated_inflow_angle_deg();
+    g_inflow_velocity_m_per_s =
+        g_speed_controller.get_estimated_inflow_velocity_m_per_s();
 }
 
 
@@ -843,15 +849,11 @@ static void __attribute__((noreturn)) node_run(
                 msg.v_dq[0] = v_dq_v[0];
                 msg.v_dq[1] = v_dq_v[1];
 
-                /*
-                FIXME -- disable messages relating to inflow velocity
-                compensation
-
                 msg.power = power_w;
                 msg.inflow_angle = g_inflow_angle_deg;
+                msg.inflow_velocity = g_inflow_velocity_m_per_s;
                 msg.thrust = g_thrust_n;
                 msg.thrust_setpoint = g_controller_state.thrust_setpoint;
-                */
 
                 msg.rpm = motor_state.angular_velocity_rad_per_s * to_rpm;
                 msg.rpm_setpoint = g_controller_state.speed_setpoint * to_rpm;
@@ -866,14 +868,14 @@ static void __attribute__((noreturn)) node_run(
                 uavcan::equipment::esc::Status msg;
 
                 msg.voltage = g_vbus_v;
-                msg.current = motor_state.i_dq_a[1]; // power_w / g_vbus_v;
-                // /*
-                // If Q current has opposite sign to Q voltage, the flow is
-                // reversed due to regenerative braking.
-                // */
-                // if (motor_state.i_dq_a[1] * v_dq_v[1] < 0.0f) {
-                //     msg.current = -msg.current;
-                // }
+                msg.current = power_w / g_vbus_v;
+                /*
+                If Q current has opposite sign to Q voltage, the flow is
+                reversed due to regenerative braking.
+                */
+                if (motor_state.i_dq_a[1] * v_dq_v[1] < 0.0f) {
+                    msg.current = -msg.current;
+                }
 
                 msg.temperature = 273.15f + hal_get_temperature_degc();
                 msg.rpm = int32_t(g_motor_state.angular_velocity_rad_per_s *

@@ -174,11 +174,18 @@ function connect() {
                 datatype: "uavcan.protocol.param.ExecuteOpcode",
                 payload: {opcode: 0, argument: 0}
             }));
-            // ws.send(JSON.stringify({
-            //     node_id: message.node_id,
-            //     datatype: "uavcan.protocol.RestartNode",
-            //     payload: {magic_number: 0xACCE551B1E}
-            // }));
+            ws.send(JSON.stringify({
+                datatype: "uavcan.equipment.indication.BeepCommand",
+                payload: {duration: 0.25, frequency: 440.0}
+            }));
+
+            window.setTimeout(function() {
+                ws.send(JSON.stringify({
+                    node_id: message.node_id,
+                    datatype: "uavcan.protocol.RestartNode",
+                    payload: {magic_number: 0xACCE551B1E}
+                }));
+            }, 500);
 
             lastEnumeratedNodeId = message.node_id;
         }
@@ -238,7 +245,7 @@ function createNodeUi(message) {
     if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
             nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         setupSpeedChart(nodeUi);
-        // setupThrustChart(nodeUi);
+        setupThrustChart(nodeUi);
         setupCurrentChart(nodeUi);
         setupVoltageTempChart(nodeUi);
         // setupAccelPowerChart(nodeUi);
@@ -903,7 +910,7 @@ function updateCurrentChart(deviceId, device, data) {
     var current, chart, maxCurrent;
 
     chart = deviceCurrentCharts[deviceId];
-    maxCurrent = parseFloat(device.querySelector("input[name=motor_i_max]").value) || 40.0;
+    maxCurrent = parseFloat(device.querySelector("input[name=mot_i_max]").value) || 40.0;
 
     chart.y.domain([-maxCurrent, maxCurrent]);
     chart.yAxis.scale(chart.y);
@@ -942,8 +949,8 @@ function updateSpeedChart(deviceId, device, data) {
     var speed, chart, maxSpeed;
 
     chart = deviceSpeedCharts[deviceId];
-    maxSpeed = parseFloat(device.querySelector("input[name=motor_kv]").value) *
-               parseFloat(device.querySelector("input[name=motor_v_max]").value);
+    maxSpeed = parseFloat(device.querySelector("input[name=mot_kv]").value) *
+               parseFloat(device.querySelector("input[name=mot_v_max]").value);
 
     if (isNaN(maxSpeed)) {
         maxSpeed = 10000.0;
@@ -977,8 +984,8 @@ function updateThrustChart(deviceId, device, data) {
     var thrust, chart, maxThrust;
 
     chart = deviceThrustCharts[deviceId];
-    //maxSpeed = parseFloat(device.querySelector("input[name=motor_kv]").value) *
-    //           parseFloat(device.querySelector("input[name=motor_v_max]").value);
+    //maxSpeed = parseFloat(device.querySelector("input[name=mot_kv]").value) *
+    //           parseFloat(device.querySelector("input[name=mot_v_max]").value);
 
     //if (isNaN(maxSpeed)) {
     //    maxSpeed = 10000.0;
@@ -1037,7 +1044,7 @@ function updateOutputVoltageChart(deviceId, device, data) {
     var voltage, chart, maxVoltage, consistency;
 
     chart = deviceOutputVoltageCharts[deviceId];
-    maxVoltage = parseFloat(device.querySelector("input[name=motor_v_max]").value) || 27.0;
+    maxVoltage = parseFloat(device.querySelector("input[name=mot_v_max]").value) || 27.0;
 
     chart.y.domain([-maxVoltage, maxVoltage]);
     chart.yAxis.scale(chart.y);

@@ -62,7 +62,7 @@ void StateEstimator::update_state_estimate(
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
           b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d, acceleration,
-          i_dq_a[2], last_angle, next_angle, b, vs, is, phi;
+          i_dq_a[2], last_angle, next_angle, b, vs, is, phi, closed_loop_mul;
 
     /* Update the Idq estimate based on the theta estimate for time t */
     sin_cos(sin_theta, cos_theta, state_estimate_.angle_rad);
@@ -235,13 +235,14 @@ void StateEstimator::update_state_estimate(
     While the motor is not being actively controlled (speed_setpoint == 0) try
     to estimate angle and angular velocity.
     */
+    closed_loop_mul = closed_loop_frac < 1.0f ? 0.0f : 1.0f;
     state_estimate_.angle_rad +=
-        update[1] * (speed_setpoint != 0.0f ? closed_loop_frac : 1.0f);
+        update[1] * (speed_setpoint != 0.0f ? closed_loop_mul : 1.0f);
     state_estimate_.angle_rad +=
         (state_estimate_.angular_velocity_rad_per_s * t_) *
-        (speed_setpoint != 0.0f ? closed_loop_frac : 1.0f);
+        (speed_setpoint != 0.0f ? closed_loop_mul : 1.0f);
     state_estimate_.angle_rad +=
-        speed_setpoint * t_ * (1.0f - closed_loop_frac);
+        speed_setpoint * t_ * (1.0f - closed_loop_mul);
 
     /*
     Calculate filtered velocity estimate by differentiating successive
