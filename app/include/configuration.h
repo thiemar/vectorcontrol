@@ -67,19 +67,12 @@ enum param_index_t {
     PARAM_MOTOR_RS,
     PARAM_MOTOR_LS,
     PARAM_MOTOR_KV,
-    PARAM_CONTROL_P_GAIN,
-    PARAM_CONTROL_I_TIME,
+    PARAM_CONTROL_BANDWIDTH,
+    PARAM_CONTROL_GAIN,
     PARAM_CONTROL_HZ_IDLE,
     PARAM_CONTROL_SPINUP_RATE,
     PARAM_CONTROL_DIRECTION,
-    PARAM_PROP_CD_K,
-    PARAM_PROP_CL_K,
-    PARAM_PROP_CD_KX,
-    PARAM_PROP_CL_KX,
-    PARAM_PROP_CHORD,
-    PARAM_PROP_DIAMETER,
-    PARAM_PROP_PITCH,
-    PARAM_PROP_NUM_BLADES,
+    PARAM_CONTROL_BRAKING,
     NUM_PARAMS
 };
 
@@ -124,5 +117,6 @@ public:
         }
     }
 
+    void reset_params(void);
     void write_params(void);
 };

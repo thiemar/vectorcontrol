@@ -28,7 +28,7 @@ var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
     deviceAccelPowerCharts = {}, deviceVoltageTempCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
     deviceAirspeedCharts = {}, deviceLoadCharts = {}, deviceThrustCharts = {},
-    activeESCs = {}, escRpmSetpointFunctions = [], nodeLastStatus = {},
+    activeESCs = {}, nodeLastStatus = {},
     escRawSetpointFunctions = [], lastUpdate = null, highestEscIndex = -1,
     enumerationActive = false, lastEnumeratedNodeId = -1;
 
@@ -245,10 +245,8 @@ function createNodeUi(message) {
     if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
             nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         setupSpeedChart(nodeUi);
-        setupThrustChart(nodeUi);
         setupCurrentChart(nodeUi);
         setupVoltageTempChart(nodeUi);
-        // setupAccelPowerChart(nodeUi);
         setupOutputVoltageChart(nodeUi);
     } else if (nodeUi.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         setupAirspeedChart(nodeUi);
@@ -443,93 +441,6 @@ function setupCurrentChart(device) {
 }
 
 
-function setupAccelPowerChart(device) {
-    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
-        svg = device.querySelector("svg.accel-power-chart"),
-        container = device.querySelector("div.device-measurements"),
-        width = container.clientWidth - 150,
-        height = 200,
-        margin = {top: 10, right: 50, left: 50, bottom: 10};
-
-    result.x = d3.scale.linear()
-        .range([0, width])
-        .domain([0.0, 30.0]);
-
-    result.y0 = d3.scale.linear()
-        .range([height, 0.0])
-        .domain([-20000.0, 20000.0]);
-
-    result.y1 = d3.scale.linear()
-        .range([height, 0.0])
-        .domain([0, 200.0]);
-
-    result.xAxis = d3.svg.axis()
-        .scale(result.x)
-        .orient("bottom")
-        .ticks(30)
-        .tickFormat("")
-        .tickSize(-height, 0, 0);
-    result.yAxis0 = d3.svg.axis()
-        .scale(result.y0)
-        .orient("left");
-    result.yAxis1 = d3.svg.axis()
-        .scale(result.y1)
-        .orient("right");
-
-    result.chart = d3.select(svg)
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-        .append("g")
-            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-    result.chart.append("g")
-        .attr("class", "x axis")
-        .attr("transform", "translate(0, " + height + ")")
-        .call(result.xAxis);
-
-    result.chart.append("g")
-        .attr("class", "y0 axis")
-        .call(result.yAxis0)
-    .append("text")
-        .attr("x", -height / 2)
-        .attr("y", -40)
-        .style("text-anchor", "middle")
-        .attr("transform", "rotate(-90)")
-        .text("Acceleration (rpm/s)");
-
-    result.chart.append("g")
-        .attr("class", "y1 axis angle")
-        .attr("transform", "translate(" + width + ", 0)")
-        .call(result.yAxis1)
-    .append("text")
-        .attr("x", -height / 2)
-        .attr("y", 40)
-        .style("text-anchor", "middle")
-        .attr("transform", "rotate(-90)")
-        .text("Mechanical power (W)");
-
-    result.chart.append("clipPath")
-        .attr("id", "clip")
-    .append("rect")
-        .attr("width", width)
-        .attr("height", height);
-
-    result.chart.append("path")
-        .attr("class", "hfi-angle")
-        .attr('clip-path', 'url(#clip)');
-
-    result.chart.append("path")
-        .attr("class", "hfi-d")
-        .attr('clip-path', 'url(#clip)');
-
-    result.chart.append("path")
-        .attr("class", "hfi-q")
-        .attr('clip-path', 'url(#clip)');
-
-    deviceAccelPowerCharts[parseInt(device.id.split("-")[1], 10)] = result;
-}
-
-
 function setupSpeedChart(device) {
     var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
         svg = device.querySelector("svg.speed-chart"),
@@ -585,80 +496,10 @@ function setupSpeedChart(device) {
         .attr("height", height);
 
     result.chart.append("path")
-        .attr("class", "speed-setpoint")
-        .attr('clip-path', 'url(#clip)');
-
-    result.chart.append("path")
         .attr("class", "speed-actual")
         .attr('clip-path', 'url(#clip)');
 
     deviceSpeedCharts[parseInt(device.id.split("-")[1], 10)] = result;
-}
-
-
-function setupThrustChart(device) {
-    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
-        svg = device.querySelector("svg.thrust-chart"),
-        container = device.querySelector("div.device-measurements"),
-        width = container.clientWidth - 150,
-        height = 200,
-        margin = {top: 10, right: 50, left: 50, bottom: 10};
-
-    result.x = d3.scale.linear()
-        .range([0, width])
-        .domain([0.0, 30.0]);
-
-    result.y = d3.scale.linear()
-        .range([height, 0.0])
-        .domain([0.0, 15.0]);
-
-    result.xAxis = d3.svg.axis()
-        .scale(result.x)
-        .orient("bottom")
-        .ticks(30)
-        .tickFormat("")
-        .tickSize(-height, 0, 0);
-    result.yAxis = d3.svg.axis()
-        .scale(result.y)
-        .orient("left")
-        .tickSize(-width, 0, 0);
-
-    result.chart = d3.select(svg)
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-        .append("g")
-            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-    result.chart.append("g")
-        .attr("class", "x axis")
-        .attr("transform", "translate(0, " + height + ")")
-        .call(result.xAxis);
-
-    result.chart.append("g")
-        .attr("class", "y axis")
-        .call(result.yAxis)
-    .append("text")
-        .attr("x", -height / 2)
-        .attr("y", -40)
-        .style("text-anchor", "middle")
-        .attr("transform", "rotate(-90)")
-        .text("Thrust (N)");
-
-    result.chart.append("clipPath")
-        .attr("id", "clip")
-    .append("rect")
-        .attr("width", width)
-        .attr("height", height);
-
-    result.chart.append("path")
-        .attr("class", "thrust-setpoint")
-        .attr('clip-path', 'url(#clip)');
-
-    result.chart.append("path")
-        .attr("class", "thrust-actual")
-        .attr('clip-path', 'url(#clip)');
-
-    deviceThrustCharts[parseInt(device.id.split("-")[1], 10)] = result;
 }
 
 
@@ -869,9 +710,7 @@ function updateCharts(device, data) {
             device.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
         updateCurrentChart(deviceId, device, data);
         updateSpeedChart(deviceId, device, data);
-        // updateThrustChart(deviceId, device, data);
         updateVoltageTempChart(deviceId, device, data);
-        // updateAccelPowerChart(deviceId, device, data);
         updateOutputVoltageChart(deviceId, device, data);
     } else if (device.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         updateAirspeedChart(deviceId, device, data);
@@ -960,83 +799,14 @@ function updateSpeedChart(deviceId, device, data) {
     chart.yAxis.scale(chart.y);
     chart.chart.select(".y.axis").call(chart.yAxis);
 
-    /* Setpoint line */
-    speed = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y(d.rpm_setpoint); });
-
-    chart.chart.select(".speed-setpoint")
-        .datum(data["thiemar.equipment.esc.Status"])
-        .attr("d", speed);
-
     /* Actual line */
     speed = d3.svg.line()
         .x(function(d, i) { return chart.x(i / 20.0); })
         .y(function(d) { return chart.y(d.rpm); });
 
     chart.chart.select(".speed-actual")
-        .datum(data["thiemar.equipment.esc.Status"])
+        .datum(data["uavcan.equipment.esc.Status"])
         .attr("d", speed);
-}
-
-
-function updateThrustChart(deviceId, device, data) {
-    var thrust, chart, maxThrust;
-
-    chart = deviceThrustCharts[deviceId];
-    //maxSpeed = parseFloat(device.querySelector("input[name=mot_kv]").value) *
-    //           parseFloat(device.querySelector("input[name=mot_v_max]").value);
-
-    //if (isNaN(maxSpeed)) {
-    //    maxSpeed = 10000.0;
-    //}
-
-    //chart.y.domain([-maxSpeed * 1.1, maxSpeed * 1.1]);
-    //chart.yAxis.scale(chart.y);
-    //chart.chart.select(".y.axis").call(chart.yAxis);
-
-    /* Setpoint line */
-    thrust = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y(d.thrust_setpoint); });
-
-    chart.chart.select(".thrust-setpoint")
-        .datum(data["thiemar.equipment.esc.Status"])
-        .attr("d", thrust);
-
-    /* Actual line */
-    thrust = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y(d.thrust); });
-
-    chart.chart.select(".thrust-actual")
-        .datum(data["thiemar.equipment.esc.Status"])
-        .attr("d", thrust);
-}
-
-
-function updateAccelPowerChart(deviceId, device, data) {
-    var seriesData, chart;
-
-    chart = deviceAccelPowerCharts[deviceId];
-
-    /* Acceleration line */
-    seriesData = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y0(d.acceleration); });
-
-    chart.chart.select(".hfi-d")
-        .datum(data["thiemar.equipment.esc.Status"])
-        .attr("d", seriesData);
-
-    /* Power line */
-    seriesData = d3.svg.line()
-        .x(function(d, i) { return chart.x(i / 20.0); })
-        .y(function(d) { return chart.y1(d.power); });
-
-    chart.chart.select(".hfi-angle")
-        .datum(data["thiemar.equipment.esc.Status"])
-        .attr("d", seriesData);
 }
 
 
@@ -1112,33 +882,18 @@ function updateLoadChart(deviceId, device, data) {
 
 
 function updateSetpoint() {
-    var rpmSetpoints = [], rawSetpoints = [],
+    var rawSetpoints = [],
         time = (new Date()).valueOf() * 0.001,  /* seconds */
-        maxRpmIdx = -1, maxRawIdx = -1;
+        maxRawIdx = -1;
 
     for (var i = 0; i < 16; i++) {
-        if (escRpmSetpointFunctions[i]) {
-            rpmSetpoints.push(parseInt(escRpmSetpointFunctions[i](time), 10));
-            rawSetpoints.push(0.0);
-            maxRpmIdx = i;
-        } else if (escRawSetpointFunctions[i]) {
-            rpmSetpoints.push(0.0);
+        if (escRawSetpointFunctions[i]) {
             rawSetpoints.push(parseInt(escRawSetpointFunctions[i](time) *
                                        (8191.0 / 100.0), 10));
             maxRawIdx = i;
         } else {
-            rpmSetpoints.push(0.0);
             rawSetpoints.push(0.0);
         }
-    }
-
-    if (maxRpmIdx >= 0) {
-        ws.send(JSON.stringify({
-            datatype: "uavcan.equipment.esc.RPMCommand",
-            payload: {
-                rpm: rpmSetpoints.slice(0, maxRpmIdx + 1)
-            }
-        }));
     }
 
     if (maxRawIdx >= 0) {
@@ -1230,17 +985,9 @@ function setupEventListeners() {
                 Freeze the setpoint command data and add it to the setpoint
                 function array
                 */
-                commandMode = escUi.querySelector("select[name=mode]").value;
                 func = makeEscSetpointFunction((new Date()).valueOf() * 0.001,
                                                escUi);
-
-                if (commandMode == "raw") {
-                    escRpmSetpointFunctions[escIndex] = null;
-                    escRawSetpointFunctions[escIndex] = func;
-                } else if (commandMode == "rpm") {
-                    escRpmSetpointFunctions[escIndex] = func;
-                    escRawSetpointFunctions[escIndex] = null;
-                }
+                escRawSetpointFunctions[escIndex] = func;
 
                 event.target.value = "Stop";
             } else if (event.target.value == "Stop") {
@@ -1249,8 +996,7 @@ function setupEventListeners() {
                 });
 
                 event.target.value = "Start";
-                escRpmSetpointFunctions[escIndex] =
-                    escRawSetpointFunctions[escIndex] = null;
+                escRawSetpointFunctions[escIndex] = null;
             }
 
             event.stopPropagation();
@@ -1307,7 +1053,6 @@ setupEventListeners();
 
 
 for (var i = 0; i < 16; i++) {
-    escRpmSetpointFunctions.push(null);
     escRawSetpointFunctions.push(null);
 }
 setInterval(updateSetpoint, 20);

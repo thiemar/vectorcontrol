@@ -73,15 +73,8 @@ struct motor_params_t {
 
 struct control_params_t {
     float bandwidth_hz;
-    float accel_gain;
-    float accel_time_s;
-
-    float prop_cd_kx, prop_cd_k; /* Cd = kx * phi + k */
-    float prop_cl_kx, prop_cl_k; /* Cl = kx * phi + k */
-    float prop_chord_m;
-    float prop_radius_m;
-    float prop_geometric_pitch_deg;
-    uint32_t prop_num_blades;
+    float gain;
+    float braking_frac;
 };
 
 

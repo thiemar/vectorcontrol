@@ -62,7 +62,7 @@ void StateEstimator::update_state_estimate(
           kalman_gain_temp[STATE_DIM * MEASUREMENT_DIM],
           update[STATE_DIM * STATE_DIM], determinant, sin_theta, cos_theta,
           b_est_sin_theta, b_est_cos_theta, m_a, m_b, m_d, acceleration,
-          i_dq_a[2], last_angle, next_angle, b, vs, is, phi, closed_loop_mul;
+          i_dq_a[2], last_angle, next_angle, b, phi, vs, is, closed_loop_mul;
 
     /* Update the Idq estimate based on the theta estimate for time t */
     sin_cos(sin_theta, cos_theta, state_estimate_.angle_rad);
@@ -235,12 +235,17 @@ void StateEstimator::update_state_estimate(
     While the motor is not being actively controlled (speed_setpoint == 0) try
     to estimate angle and angular velocity.
     */
-    closed_loop_mul = closed_loop_frac < 1.0f ? 0.0f : 1.0f;
+    closed_loop_mul = 1.0f;
+    if (closed_loop_frac < 1.0f) {
+        closed_loop_mul = 0.0f;
+    }
+    if (speed_setpoint == 0.0f) {
+        closed_loop_mul = 1.0f;
+    }
+
+    state_estimate_.angle_rad += update[1] * closed_loop_mul;
     state_estimate_.angle_rad +=
-        update[1] * (speed_setpoint != 0.0f ? closed_loop_mul : 1.0f);
-    state_estimate_.angle_rad +=
-        (state_estimate_.angular_velocity_rad_per_s * t_) *
-        (speed_setpoint != 0.0f ? closed_loop_mul : 1.0f);
+        (state_estimate_.angular_velocity_rad_per_s * t_) * closed_loop_mul;
     state_estimate_.angle_rad +=
         speed_setpoint * t_ * (1.0f - closed_loop_mul);
 
@@ -290,38 +295,43 @@ void StateEstimator::update_state_estimate(
     During open-loop mode (closed_loop_frac < 1.0), we estimate the value of
     phi (the back-EMF constant).
     */
-    if (0.5f < closed_loop_frac && closed_loop_frac < 1.0f) {
-        vs = __VSQRTF(v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
-        is = __VSQRTF(i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
+    vs = __VSQRTF(v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
+    is = __VSQRTF(i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
 
-        phi = (vs - is * rs_r_) / state_estimate_.angular_velocity_rad_per_s;
-        phi_estimate_v_s_per_rad_ += (phi - phi_estimate_v_s_per_rad_) *
-                                     angular_velocity_lpf_coeff_ *
-                                     float(1.0/16.0);
+    phi = phi_estimate_v_s_per_rad_;
+    if (std::abs(state_estimate_.angular_velocity_rad_per_s) > float(2.0 * M_PI) &&
+            speed_setpoint != 0.0f) {
+        phi = (vs - is * rs_r_) /
+              std::abs(state_estimate_.angular_velocity_rad_per_s);
     }
+
+    phi_estimate_v_s_per_rad_ +=
+        (phi - phi_estimate_v_s_per_rad_) * angular_velocity_lpf_coeff_ *
+        (1.0f - closed_loop_mul);
 }
 
 
-#define PE_START_ANGULAR_VELOCITY 5000.0f
+#define PE_START_FREQ_HZ 625.0f
 #define PE_MIN_V_V float(1.0/128.0)
 #define PE_START_V_V float(1.0/8.0)
 #define PE_MAX_V_V float(1.0/2.0)
 #define PE_MIN_I_A float(1.0/4.0)
 #define PE_MAX_I_A float(2.0)
-#define PE_TEST_SAMPLES 2048u
+/*
+Number of samples is selected such that the test period is almost exactly
+8 full cycles of the lowest frequency (PE_START_FREQ / 8).
+*/
+#define PE_TEST_SAMPLES uint32_t(8.0 * (1.0f / hal_control_t_s) / \
+                                       (PE_START_FREQ_HZ / 8.0f))
 
 
 void ParameterEstimator::start_estimation(float t) {
     open_loop_angle_rad_ = 0.0f;
     open_loop_test_samples_ = 0;
-    open_loop_angular_velocity_rad_per_u_ = PE_START_ANGULAR_VELOCITY * t;
+    open_loop_angular_velocity_rad_per_u_ =
+        float(2.0 * M_PI) * PE_START_FREQ_HZ * t;
     v_ = PE_START_V_V;
     test_idx_ = 0;
-
-    sample_voltages_[0] = sample_voltages_[1] = sample_voltages_[2] =
-        sample_voltages_[3] = 0.0f;
-    sample_currents_[0] = sample_currents_[1] = sample_currents_[2] =
-        sample_currents_[3] = 0.0f;
 }
 
 
@@ -343,31 +353,28 @@ void ParameterEstimator::update_parameter_estimate(
     At the end of the process, determine R and L by linear regression of the
     four impedance readings against the test frequencies.
     */
-    if (test_idx_ >= 4 || v_ < PE_MIN_V_V || v_ > PE_MAX_V_V) {
+    if (test_idx_ >= 4) {
         /* Early exit if the test is complete */
         return;
     }
 
     if (open_loop_test_samples_ == PE_TEST_SAMPLES) {
         /*
-        Divide the current accumulator by the number of samples (256) to get
-        the mean square value.
+        Divide the Z accumulator by the number of recorded samples (half
+        of the actual number of samples) to get the mean square value.
         */
-        sample_currents_[test_idx_] *= 4.0f / (float)PE_TEST_SAMPLES;
-        sample_voltages_[test_idx_] *= 4.0f / (float)PE_TEST_SAMPLES;
+        sample_z_sq_[test_idx_] *= (1.0f / float(PE_TEST_SAMPLES / 2));
 
         /*
         At the end of a test run, check the RMS current and increase or
         decrease voltage as necessary
         */
-        if (sample_currents_[test_idx_] >= PE_MAX_I_A * PE_MAX_I_A &&
+        if (v_ * v_ / sample_z_sq_[test_idx_] > PE_MAX_I_A * PE_MAX_I_A &&
                 v_ > PE_MIN_V_V) {
             v_ *= 0.5f;
-            sample_currents_[test_idx_] = sample_voltages_[test_idx_] = 0.0f;
-        } else if (sample_currents_[test_idx_] < PE_MIN_I_A * PE_MIN_I_A &&
+        } else if (v_ * v_ / sample_z_sq_[test_idx_] < PE_MIN_I_A * PE_MIN_I_A &&
                    v_ < PE_MAX_V_V) {
             v_ *= 2.0f;
-            sample_currents_[test_idx_] = sample_voltages_[test_idx_] = 0.0f;
         } else {
             /* Current was OK -- halve test frequency for the next test */
             open_loop_angular_velocity_rad_per_u_ *= 0.5f;
@@ -377,12 +384,13 @@ void ParameterEstimator::update_parameter_estimate(
         }
 
         open_loop_test_samples_ = 0;
-    } else if (open_loop_test_samples_ >= 3 * PE_TEST_SAMPLES / 4) {
+    } else if (open_loop_test_samples_ >= PE_TEST_SAMPLES / 2) {
         /* Accumulate the squared current and voltage readings */
-        sample_currents_[test_idx_] +=
+        sample_z_sq_[test_idx_] +=
+            (v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]) /
             (i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
-        sample_voltages_[test_idx_] +=
-            (v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]);
+    } else {
+        sample_z_sq_[test_idx_] = 0.0f;
     }
 
     open_loop_test_samples_++;
@@ -411,11 +419,11 @@ void ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
 
 void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     size_t idx;
-    float z_sq, w_sq, sum_xy, sum_x, sum_y, sum_x_sq, a, b;
+    float w_sq, sum_xy, sum_x, sum_y, sum_x_sq, a, b;
 
     sum_xy = sum_x = sum_y = sum_x_sq = 0;
-    w_sq = float(PE_START_ANGULAR_VELOCITY) *
-           float(PE_START_ANGULAR_VELOCITY);
+    w_sq = float(2.0 * M_PI) * PE_START_FREQ_HZ;
+    w_sq *= w_sq;
 
     /*
     Run simple linear regression, and calculate a and b such that
@@ -426,12 +434,10 @@ void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     L is then sqrt(b) and R is sqrt(a).
     */
     for (idx = 0; idx < 4u; idx++) {
-        z_sq = sample_voltages_[idx] / sample_currents_[idx];
-
         sum_x += w_sq;
         sum_x_sq += w_sq * w_sq;
-        sum_xy += w_sq * z_sq;
-        sum_y += z_sq;
+        sum_xy += w_sq * sample_z_sq_[idx];
+        sum_y += sample_z_sq_[idx];
 
         w_sq *= 0.25f; /* Halve angular velocity for the next test */
     }
@@ -439,15 +445,13 @@ void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     b = (4.0f * sum_xy - sum_x * sum_y) / (4.0f * sum_x_sq - sum_x * sum_x);
     a = 0.25f * (sum_y - b * sum_x);
 
-    if (std::isnan(a) || a <= 1e-6f) {
-        r_r = 1e-3f;
-    } else {
-        r_r = __VSQRTF(a);
+    if (std::isnan(a) || a < 1e-6f) {
+        a = 1e-6f;
     }
+    r_r = __VSQRTF(a);
 
-    if (std::isnan(b) || b <= 1e-12f) {
-        l_h = 1e-6f;
-    } else {
-        l_h = __VSQRTF(b);
+    if (std::isnan(b) || b < 1e-12f) {
+        b = 1e-12f;
     }
+    l_h = __VSQRTF(b);
 }

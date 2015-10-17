@@ -165,13 +165,12 @@ hal_read_phase_shunts_(
         /* Direct reading of phase A, B and C current */
         phase_shunt_signal_lsb[1] = (int16_t)getreg32(STM32_ADC1_JDR1);
         phase_shunt_signal_lsb[0] = (int16_t)getreg32(STM32_ADC1_JDR2);
-        phase_shunt_signal_lsb[2] = (int16_t)getreg32(STM32_ADC1_JDR3);
     } else {
         /* Direct reading of phase A, B and C current */
         phase_shunt_signal_lsb[0] = (int16_t)getreg32(STM32_ADC1_JDR1);
         phase_shunt_signal_lsb[1] = (int16_t)getreg32(STM32_ADC1_JDR2);
-        phase_shunt_signal_lsb[2] = (int16_t)getreg32(STM32_ADC1_JDR3);
     }
+    phase_shunt_signal_lsb[2] = (int16_t)getreg32(STM32_ADC1_JDR3);
 
     switch (phase_pwm_sector) {
         case 4:
@@ -260,14 +259,12 @@ inline void hal_update_timer_(
     if (phase_reverse_) {
         putreg16(phase_on_ticks[1], STM32_TIM1_CCR1);
         putreg16(phase_on_ticks[0], STM32_TIM1_CCR2);
-        putreg16(phase_on_ticks[2], STM32_TIM1_CCR3);
-        putreg16(sample_ticks, STM32_TIM1_CCR4);
     } else {
         putreg16(phase_on_ticks[0], STM32_TIM1_CCR1);
         putreg16(phase_on_ticks[1], STM32_TIM1_CCR2);
-        putreg16(phase_on_ticks[2], STM32_TIM1_CCR3);
-        putreg16(sample_ticks, STM32_TIM1_CCR4);
     }
+    putreg16(phase_on_ticks[2], STM32_TIM1_CCR3);
+    putreg16(sample_ticks, STM32_TIM1_CCR4);
 }
 
 
@@ -403,8 +400,7 @@ static void hal_init_adc_() {
              STM32_ADC1_CR);
 
     /* Worst-case regulator delay is 10 us */
-    for (volatile uint32_t x = 0;
-         x < 10u * hal_core_frequency_hz / 1000000u; x++);
+    for (volatile uint32_t x = hal_core_frequency_hz / 100000u; x--;);
 
     /* ADC12 common config: independent, sync clock/1, DMA mode 1, one shot */
     putreg32(ADC_CCR_DUAL_IND | ADC_CCR_MDMA_10_12 | ADC_CCR_CKMODE_SYNCH_DIV1,
@@ -424,7 +420,7 @@ static void hal_init_adc_() {
     Delay after calibration done -- see STM32F302x6/x8 Silicon Limitations
     (DM00109012) item 2.2.4.
     */
-    for (volatile uint32_t x = 0; x < 4; x++);
+    for (volatile uint32_t x = 4; x--;);
 
     /* Enable the ADC and temperature sensor */
     putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_ADEN, STM32_ADC1_CR);
@@ -568,44 +564,43 @@ static bool hal_adc_periodic_() {
     float temp;
 
     /* Check if the last VBUS and temperature conversion is done */
-    if (!(getreg32(STM32_ADC1_CR) & ADC_CR_ADSTART)) {
-        /*
-        Low-pass the readings if we've already taken them, otherwise seed
-        the filter with the current value.
-        */
-        if (board_vbus_lsb_ > 0) {
-            board_vbus_lsb_ = (board_vbus_lsb_ * 63 +
-                               (adc_conversion_results_[0] << 7)) >> 6;
-        } else {
-            board_vbus_lsb_ = adc_conversion_results_[0] << 7;
-        }
-        temp = float(board_vbus_lsb_ >> 4) * hal_full_scale_voltage_v *
-               float(1.0 / 32768.0);
-        vbus_v_ = temp;
-        if (temp > 6.0f) {
-            vbus_inv_ = 32768.0f / temp;
-        } else {
-            vbus_inv_ = 0.0f;
-        }
-
-        if (board_temp_lsb_ > 0) {
-            board_temp_lsb_ = (board_temp_lsb_ * 63 +
-                               (adc_conversion_results_[1] << 7)) >> 6;
-        } else {
-            board_temp_lsb_ = adc_conversion_results_[1] << 7;
-        }
-        temp = 30.0f +
-               float(int32_t(board_temp_lsb_ >> 7) - int32_t(ts_cal_1)) *
-               ts_deg_c_per_lsb;
-        temp_degc_ = temp;
-
-        /* Start a new conversion */
-        putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_ADSTART, STM32_ADC1_CR);
-
-        return true;
-    } else {
+    if (getreg32(STM32_ADC1_CR) & ADC_CR_ADSTART) {
         return false;
     }
+
+    /*
+    Low-pass the readings if we've already taken them, otherwise seed
+    the filter with the current value.
+    */
+    if (board_vbus_lsb_ > 0) {
+        board_vbus_lsb_ = (board_vbus_lsb_ * 63 +
+                           (adc_conversion_results_[0] << 7)) >> 6;
+    } else {
+        board_vbus_lsb_ = adc_conversion_results_[0] << 7;
+    }
+    temp = float(board_vbus_lsb_) *
+           float(hal_full_scale_voltage_v / (32768.0 * 16.0));
+    vbus_v_ = temp;
+    vbus_inv_ = 0.0f;
+    if (temp > 6.0f) {
+        vbus_inv_ = 32768.0f / temp;
+    }
+
+    if (board_temp_lsb_ > 0) {
+        board_temp_lsb_ = (board_temp_lsb_ * 63 +
+                           (adc_conversion_results_[1] << 7)) >> 6;
+    } else {
+        board_temp_lsb_ = adc_conversion_results_[1] << 7;
+    }
+    temp = 30.0f +
+           float(int32_t(board_temp_lsb_ >> 7) - int32_t(ts_cal_1)) *
+           ts_deg_c_per_lsb;
+    temp_degc_ = temp;
+
+    /* Start a new conversion */
+    putreg32(getreg32(STM32_ADC1_CR) | ADC_CR_ADSTART, STM32_ADC1_CR);
+
+    return true;
 }
 
 

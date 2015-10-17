@@ -30,7 +30,7 @@ uint16 MIN_BROADCASTING_PERIOD_MS = 2
 #
 # If a node fails to publish this message in this amount of time, it should be considered offline.
 #
-uint16 OFFLINE_TIMEOUT_MS = 2000
+uint16 OFFLINE_TIMEOUT_MS = 3000
 
 #
 # Uptime counter should never overflow.
@@ -160,7 +160,7 @@ struct UAVCAN_EXPORT NodeStatus_
     // Constants
     static const typename ::uavcan::StorageType< typename ConstantTypes::MAX_BROADCASTING_PERIOD_MS >::Type MAX_BROADCASTING_PERIOD_MS; // 1000
     static const typename ::uavcan::StorageType< typename ConstantTypes::MIN_BROADCASTING_PERIOD_MS >::Type MIN_BROADCASTING_PERIOD_MS; // 2
-    static const typename ::uavcan::StorageType< typename ConstantTypes::OFFLINE_TIMEOUT_MS >::Type OFFLINE_TIMEOUT_MS; // 2000
+    static const typename ::uavcan::StorageType< typename ConstantTypes::OFFLINE_TIMEOUT_MS >::Type OFFLINE_TIMEOUT_MS; // 3000
     static const typename ::uavcan::StorageType< typename ConstantTypes::HEALTH_OK >::Type HEALTH_OK; // 0
     static const typename ::uavcan::StorageType< typename ConstantTypes::HEALTH_WARNING >::Type HEALTH_WARNING; // 1
     static const typename ::uavcan::StorageType< typename ConstantTypes::HEALTH_ERROR >::Type HEALTH_ERROR; // 2
@@ -353,7 +353,7 @@ const typename ::uavcan::StorageType< typename NodeStatus_<_tmpl>::ConstantTypes
 
 template <int _tmpl>
 const typename ::uavcan::StorageType< typename NodeStatus_<_tmpl>::ConstantTypes::OFFLINE_TIMEOUT_MS >::Type
-    NodeStatus_<_tmpl>::OFFLINE_TIMEOUT_MS = 2000U; // 2000
+    NodeStatus_<_tmpl>::OFFLINE_TIMEOUT_MS = 3000U; // 3000
 
 template <int _tmpl>
 const typename ::uavcan::StorageType< typename NodeStatus_<_tmpl>::ConstantTypes::HEALTH_OK >::Type

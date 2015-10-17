@@ -52,7 +52,7 @@ flash_app_descriptor = {
 };
 
 
-static struct param_t param_config_[NUM_PARAMS] = {
+const static struct param_t param_config_[NUM_PARAMS] = {
     /*
     Index, type, name,
         default value, min value, max value
@@ -129,21 +129,18 @@ static struct param_t param_config_[NUM_PARAMS] = {
         1000.0f, 100.0f, 8000.0f},
 
     /*
-    Speed controller acceleration gain. A gain of 0.0 results in no torque
-    output proportional to the required acceleration, whiel a gain of 1.0
-    results in a full-scale acceleration torque output for an error of
-    100 rad/s electrical.
+    Control bandwidth in hertz. Sets the input low-pass filter corner
+    frequency and influences inner loop and estimator bandwidth.
     */
-    {PARAM_CONTROL_P_GAIN, PARAM_TYPE_FLOAT, "rpmctl_p",
-        40.0f, 0.0f, 200.0f},
+    {PARAM_CONTROL_BANDWIDTH, PARAM_TYPE_FLOAT, "ctl_bw",
+        75.0f, 10.0f, 250.0f},
 
     /*
-    Rise time of the speed controller's torque output; this determines the
-    target time to accelerate from near zero to full throttle, subject to
-    the overall current limits and load inertia.
+    Dimensionless control gain, used to scale the motor's measured resistance
+    when determining acceleration torque.
     */
-    {PARAM_CONTROL_I_TIME, PARAM_TYPE_FLOAT, "rpmctl_i",
-        0.15f, 0.001f, 5.0f},
+    {PARAM_CONTROL_GAIN, PARAM_TYPE_FLOAT, "ctl_gain",
+        1.0f, 0.01f, 100.0f},
 
     /*
     If non-zero, the motor will rotate at this electrical speed in Hz when any
@@ -166,56 +163,13 @@ static struct param_t param_config_[NUM_PARAMS] = {
         0.0f, 0.0f, 1.0f},
 
     /*
-    Propeller/rotor drag coefficient constant component.
-    Cd = prop_cd_k + prop_cd_kx * inflow_angle
+    Braking limit, expressed as a fraction of maximum motor current to be
+    applied in negative torque. A value of 1.0 will permit symmetric
+    acceleration and deceleration; a value of 0.0 will prevent active
+    deceleration during normal operating modes.
     */
-    {PARAM_PROP_CD_K, PARAM_TYPE_FLOAT, "prop_cd_k",
-        0.1f, 0.0f, 1.0f},
-
-    /*
-    Propeller/rotor lift coefficient constant component.
-    Cl = prop_cl_k + prop_cl_kx * inflow_angle
-    */
-    {PARAM_PROP_CL_K, PARAM_TYPE_FLOAT, "prop_cl_k",
-        0.56f, 0.0f, 1.0f},
-
-    /*
-    Propeller/rotor drag coefficient angle-dependent component.
-    Cd = prop_cd_k + prop_cd_kx * inflow_angle
-    */
-    {PARAM_PROP_CD_KX, PARAM_TYPE_FLOAT, "prop_cd_kx",
-        -0.0028f, -1.0f, 1.0f},
-
-    /*
-    Propeller/rotor lift coefficient angle-dependent component.
-    Cdl= prop_cl_k + prop_cl_kx * inflow_angle
-    */
-    {PARAM_PROP_CL_KX, PARAM_TYPE_FLOAT, "prop_cl_kx",
-        -0.025f, -1.0f, 1.0f},
-
-    /*
-    Propeller/rotor effective chord, in metres.
-    */
-    {PARAM_PROP_CHORD, PARAM_TYPE_FLOAT, "prop_chord",
-        0.02f, 0.005f, 1.0f},
-
-    /*
-    Propeller/rotor effective diameter, in inches.
-    */
-    {PARAM_PROP_DIAMETER, PARAM_TYPE_FLOAT, "prop_diameter",
-        10.0f, 1.0f, 200.0f},
-
-    /*
-    Propeller/rotor pitch distance, in inches
-    */
-    {PARAM_PROP_PITCH, PARAM_TYPE_FLOAT, "prop_pitch",
-        4.5f, 1.0f, 200.0f},
-
-    /*
-    Propeller/rotor blade count.
-    */
-    {PARAM_PROP_NUM_BLADES, PARAM_TYPE_INT, "prop_blades",
-        2.0f, 2.0f, 6.0f}
+    {PARAM_CONTROL_BRAKING, PARAM_TYPE_FLOAT, "ctl_braking",
+        1.0f, 0.0f, 1.0f}
 };
 
 
@@ -236,9 +190,7 @@ Configuration::Configuration(void) {
             }
         }
     } else {
-        for (i = 0; i < NUM_PARAMS; i++) {
-            params_[i] = param_config_[i].default_value;
-        }
+        reset_params();
     }
 }
 
@@ -261,28 +213,15 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
 void Configuration::read_control_params(
     struct control_params_t& params
 ) {
-    params.bandwidth_hz = 75.0f;
-    params.accel_gain = params_[PARAM_CONTROL_P_GAIN];
-    params.accel_time_s = params_[PARAM_CONTROL_I_TIME];
-
-    params.prop_cd_kx = params_[PARAM_PROP_CD_KX]; // -0.0015f;
-    params.prop_cd_k = params_[PARAM_PROP_CD_K]; // 0.095f;
-    params.prop_cl_kx = params_[PARAM_PROP_CL_KX]; // -0.025f;
-    params.prop_cl_k = params_[PARAM_PROP_CL_K]; // 0.56f;
-
-    params.prop_chord_m = params_[PARAM_PROP_CHORD]; // 0.025f;
-    params.prop_radius_m = params_[PARAM_PROP_DIAMETER] * float(0.0254 / 2.0); // 0.12f; //0.15f;
-    params.prop_geometric_pitch_deg =
-        float(180.0 / M_PI) *
-        fast_atan(params_[PARAM_PROP_PITCH] * float(1.0 / (2.0 * M_PI)) /
-                  (params_[PARAM_PROP_DIAMETER] / 2.0f)); //15.0f;
-    params.prop_num_blades = uint32_t(params_[PARAM_PROP_NUM_BLADES]);
+    params.bandwidth_hz = params_[PARAM_CONTROL_BANDWIDTH];
+    params.gain = params_[PARAM_CONTROL_GAIN];
+    params.braking_frac = params_[PARAM_CONTROL_BRAKING];
 }
 
 
 static size_t _find_param_index_by_name(
     const char* name,
-    struct param_t params[]
+    const struct param_t params[]
 ) {
     size_t i, j;
 
@@ -318,7 +257,7 @@ bool Configuration::get_param_by_index(
         return false;
     }
 
-    memcpy(&out_param, &param_config_[index], sizeof(struct param_t));
+    out_param = param_config_[index];
     return true;
 }
 
@@ -342,6 +281,14 @@ bool Configuration::set_param_value_by_index(uint8_t index, float value) {
         return true;
     } else {
         return false;
+    }
+}
+
+
+void Configuration::reset_params(void) {
+    size_t i;
+    for (i = 0; i < NUM_PARAMS; i++) {
+        params_[i] = param_config_[i].default_value;
     }
 }
 

@@ -132,20 +132,19 @@ public:
         */
         rc = 1.0f / (float(2.0 * M_PI) * control_bandwidth_hz);
         i_dq_lpf_coeff_ = t_s / (t_s + 0.1f * rc);
-        angular_velocity_lpf_coeff_ = t_s / (t_s + 0.25f * rc);
+        angular_velocity_lpf_coeff_ = t_s / (t_s + 0.5f * rc);
     }
 };
 
 
 class ParameterEstimator {
-    float sample_voltages_[4];
-    float sample_currents_[4];
+    float sample_z_sq_[4];
 
     float open_loop_angular_velocity_rad_per_u_;
     float open_loop_angle_rad_;
 
     float v_;
-    uint16_t test_idx_;
+    uint8_t test_idx_;
     uint16_t open_loop_test_samples_;
 
 public:
@@ -155,12 +154,7 @@ public:
         v_(0.0f),
         test_idx_(0),
         open_loop_test_samples_(0)
-    {
-        sample_voltages_[0] = sample_voltages_[1] = sample_voltages_[2] =
-            sample_voltages_[3] = 0.0f;
-        sample_currents_[0] = sample_currents_[1] = sample_currents_[2] =
-            sample_currents_[3] = 0.0f;
-    }
+    { }
 
     void start_estimation(float t);
 
