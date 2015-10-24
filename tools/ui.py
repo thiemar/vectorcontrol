@@ -46,11 +46,6 @@ import tornado.httpserver
 from optparse import OptionParser, OptionGroup
 
 
-sys.path.insert(0, "/Users/bendyer/Projects/ARM/workspace/pyuavcan/")
-sys.path.insert(0, "/mnt/hgfs/workspace/pyuavcan/")
-sys.path.insert(0, "/home/dev/workspace/pyuavcan/")
-
-
 import uavcan
 import uavcan.dsdl
 import uavcan.node
@@ -798,7 +793,7 @@ if __name__ == "__main__":
 
     options, args = parser.parse_args()
 
-    uavcan.load_dsdl(options.dsdl_paths + ["../dsdl/thiemar"])
+    uavcan.load_dsdl("../dsdl/thiemar", *(options.dsdl_paths or []))
 
     ioloop = tornado.ioloop.IOLoop.instance()
 
@@ -875,9 +870,9 @@ if __name__ == "__main__":
             # Server implementation
             (uavcan.protocol.NodeStatus, uavcan.monitors.NodeStatusMonitor,
                 {"new_node_callback": enumerate_device}),
-            #(uavcan.protocol.dynamic_node_id.Allocation,
-            #    uavcan.monitors.DynamicNodeIDServer,
-            #    {"dynamic_id_range": (2, 125)}),
+            (uavcan.protocol.dynamic_node_id.Allocation,
+                uavcan.monitors.DynamicNodeIDServer,
+                {"dynamic_id_range": (2, 125)}),
             (uavcan.protocol.file.GetInfo, uavcan.services.FileGetInfoService,
                 {"path": firmware_dir}),
             (uavcan.protocol.file.Read, uavcan.services.FileReadService,
