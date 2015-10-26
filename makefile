@@ -184,7 +184,7 @@ UAVCAN_CXXFLAGS = $(MCU_CC_FLAGS) -c $(OPTIM_FLAGS) $(ARCH_CC_FLAGS) -fno-rtti -
 # Makefile execution
 ###############################################################################
 
-all: firmware/$(BL).bin firmware/$(PROJECT).bin image
+all: firmware/$(BOARD)-$(BL).bin firmware/$(BOARD)-$(PROJECT).bin image
 
 clean:
 	rm -f $(BL_OBJECTS) \
@@ -230,24 +230,24 @@ $(PROJECT_BUILD)%.o: $(PROJECT_SRC)%.cpp
 	@mkdir -p $(@D)
 	$(CPP) $(CXXFLAGS) $(CC_SYMBOLS) -std=c++0x $(INCLUDE_PATHS) $(UAVCAN_INCLUDE_PATHS) -Wa,-ahls=$@.lst -o $@ $<
 
-firmware/$(BL).elf: $(BL_OBJECTS) $(addprefix $(BL_BUILD)arch/, $(SYS_OBJECTS) up_exit.o)
+firmware/$(BOARD)-$(BL).elf: $(BL_OBJECTS) $(addprefix $(BL_BUILD)arch/, $(SYS_OBJECTS) up_exit.o)
 	@mkdir -p $(@D)
 	$(LD) $(BL_LD_FLAGS) -T$(BL_LINKER_SCRIPT) $(BL_LIBRARY_PATHS) -o $@ $^ $(BL_LIBRARIES) $(SYS_LIBRARIES)
 
-firmware/$(BL).bin: firmware/$(BL).elf
+firmware/$(BOARD)-$(BL).bin: firmware/$(BOARD)-$(BL).elf
 	@mkdir -p $(@D)
 	$(SIZE) $<
 	$(OBJCOPY) -O binary $< $@
 
-firmware/$(PROJECT).elf: $(PROJECT_OBJECTS) $(addprefix $(PROJECT_BUILD)arch/, $(SYS_OBJECTS)) $(UAVCAN_OBJECTS)
+firmware/$(BOARD)-$(PROJECT).elf: $(PROJECT_OBJECTS) $(addprefix $(PROJECT_BUILD)arch/, $(SYS_OBJECTS)) $(UAVCAN_OBJECTS)
 	@mkdir -p $(@D)
 	$(LD) $(LD_FLAGS) -T$(LINKER_SCRIPT) $(LIBRARY_PATHS) -o $@ $^ $(PROJECT_LIBRARIES) $(SYS_LIBRARIES)
 
-firmware/$(PROJECT).bin: firmware/$(PROJECT).elf
+firmware/$(BOARD)-$(PROJECT).bin: firmware/$(BOARD)-$(PROJECT).elf
 	@mkdir -p $(@D)
 	$(SIZE) $<
 	$(OBJCOPY) -O binary $< $@
 
-image: firmware/$(PROJECT).bin
-	$(PYTHON) tools/make_can_boot_descriptor.py --verbose -g firmware/$(PROJECT).bin firmware/$(BOARDNAME)-1.0.00000000.uavcan.bin
+image: firmware/$(BOARD)-$(PROJECT).bin
+	$(PYTHON) tools/make_can_boot_descriptor.py --verbose -g firmware/$(BOARD)-$(PROJECT).bin firmware/$(BOARDNAME)-1.0.00000000.bin
 
