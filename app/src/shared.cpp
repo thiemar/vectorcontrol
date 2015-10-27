@@ -72,10 +72,10 @@ bool bootloader_read(bootloader_app_shared_t *shared) {
     shared->signature = getreg32(signature_LOC);
     shared->bus_speed = getreg32(bus_speed_LOC);
     shared->node_id = getreg32(node_id_LOC);
-    shared->crc.ul[CRC_L] = getreg32(crc_LoLOC);
-    shared->crc.ul[CRC_H] = getreg32(crc_HiLOC);
+    shared->crc = uint64_t(getreg32(crc_LoLOC)) |
+                  (uint64_t(getreg32(crc_HiLOC)) << 32u);
 
-    if (shared->crc.ull == bootloader_calculate_signature(shared)) {
+    if (shared->crc == bootloader_calculate_signature(shared)) {
         return true;
     } else {
         return false;
@@ -87,11 +87,11 @@ void bootloader_write(const bootloader_app_shared_t *shared) {
     bootloader_app_shared_t working = *shared;
 
     working.signature = BOOTLOADER_COMMON_APP_SIGNATURE;
-    working.crc.ull = bootloader_calculate_signature(&working);
+    working.crc = bootloader_calculate_signature(&working);
 
     putreg32(working.signature, signature_LOC);
     putreg32(working.bus_speed, bus_speed_LOC);
     putreg32(working.node_id, node_id_LOC);
-    putreg32(working.crc.ul[CRC_L], crc_LoLOC);
-    putreg32(working.crc.ul[CRC_H], crc_HiLOC);
+    putreg32(uint32_t(working.crc), crc_LoLOC);
+    putreg32(uint32_t(working.crc >> 32u), crc_HiLOC);
 }

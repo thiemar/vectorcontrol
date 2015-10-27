@@ -39,7 +39,7 @@ SOFTWARE.
 #define PARAM_NAME_MAX_LEN 92u
 
 
-#include <algorithm>
+#include <limits>
 #include "fixed.h"
 
 

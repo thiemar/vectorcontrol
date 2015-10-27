@@ -20,9 +20,9 @@ int BitStream::write(const uint8_t* bytes, const unsigned bitlen)
     // Tmp space must be large enough to accomodate new bits AND unaligned bits from the last write()
     const unsigned bytelen = bitlenToBytelen(bitlen + (bit_offset_ % 8));
     UAVCAN_ASSERT(MaxBytesPerRW >= bytelen);
-    tmp[0] = tmp[bytelen - 1] = 0;
+    tmp[0] = 0;
+    tmp[bytelen - 1] = 0;
 
-    fill(tmp, tmp + bytelen, uint8_t(0));
     copyBitArrayAlignedToUnaligned(bytes, bitlen, tmp, bit_offset_ % 8);
 
     const unsigned new_bit_offset = bit_offset_ + bitlen;
@@ -69,7 +69,7 @@ int BitStream::read(uint8_t* bytes, const unsigned bitlen)
         return ResultOutOfBuffer;
     }
 
-    fill(bytes, bytes + bitlenToBytelen(bitlen), uint8_t(0));
+    bytes[bitlenToBytelen(bitlen) - 1] = 0;
     copyBitArrayUnalignedToAligned(tmp, bit_offset_ % 8, bitlen, bytes);
     bit_offset_ += bitlen;
     return ResultOk;

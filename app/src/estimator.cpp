@@ -24,6 +24,7 @@ SOFTWARE.
 #include <cstdint>
 #include <cassert>
 #include <cstring>
+#include <limits>
 #include <algorithm>
 #include "hal.h"
 #include "estimator.h"
