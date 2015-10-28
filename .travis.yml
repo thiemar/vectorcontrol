@@ -1,0 +1,15 @@
+language: cpp
+compiler: gcc
+env:
+  matrix:
+    - TARGET=gcc-4.8
+    - TARGET=gcc-4.9
+before_install:
+    - git submodule update --init --recursive
+    - sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+    - sudo add-apt-repository ppa:terry.guo/gcc-arm-embedded -y
+    - sudo apt-get update -qq
+    - if [ "${TARGET}" == "gcc-4.8" ]; then sudo apt-get install gcc-arm-none-eabi=4.8.4.2014q3-0precise10 ; fi
+    - if [ "${TARGET}" == "gcc-4.9" ]; then sudo apt-get install gcc-arm-none-eabi=4.9.3.2015q3-1precise1 ; fi
+script:
+    - make -j8
