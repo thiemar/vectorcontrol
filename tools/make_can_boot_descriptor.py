@@ -367,3 +367,9 @@ reserved            uint8[6]          {2.reserved!r}
 padding added {}
 """.format(out_image.padding))
 
+    out_file_name = out_file.replace(
+        "00000000", "{0:016X}".format(out_image.app_descriptor.image_crc)[0:8]
+    )
+    os.rename(out_file, out_file_name)
+    sys.stderr.write("renamed to {0}\n".format(out_file_name))
+
