@@ -1,0 +1,26 @@
+language: cpp
+env:
+  matrix:
+    - TARGET=gcc-4.8 BOARD=s2740vc_1_0
+    - TARGET=gcc-4.8 BOARD=px4esc_1_6
+    - TARGET=gcc-4.9 BOARD=s2740vc_1_0
+    - TARGET=gcc-4.9 BOARD=px4esc_1_6
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    packages:
+    - build-essential
+    - libc6-i386
+    - libncurses5-dev
+before_install:
+    - git submodule update --init --recursive
+    - sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+    - sudo add-apt-repository ppa:terry.guo/gcc-arm-embedded -y
+    - sudo apt-get update -qq
+before_script:
+    - if [ "${TARGET}" == "gcc-4.8" ]; then pushd . && cd ~ && wget https://launchpadlibrarian.net/186124160/gcc-arm-none-eabi-4_8-2014q3-20140805-linux.tar.bz2 && tar -jxf gcc-arm-none-eabi-4_8-2014q3-20140805-linux.tar.bz2 && export PATH="$HOME/gcc-arm-none-eabi-4_8-2014q3/bin:$PATH" && popd ; fi
+    - if [ "${TARGET}" == "gcc-4.9" ]; then sudo apt-get install gcc-arm-none-eabi=4.9.3.2015q3-1precise1 ; fi
+script:
+    - arm-none-eabi-gcc --version
+    - make -j8
