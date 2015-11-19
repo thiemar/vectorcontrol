@@ -192,7 +192,7 @@ clean:
 		  $(PROJECT_OBJECTS) \
 		  $(addprefix $(PROJECT_BUILD)arch/, $(SYS_OBJECTS)) \
 		  $(UAVCAN_OBJECTS)
-	rm -f "firmware/*.bin" "firmware/*.elf"
+	rm -f firmware/*.bin firmware/*.elf
 
 $(BL_BUILD)arch/%.o: $(ARCH_SRC)%.S
 	@mkdir -p $(@D)
