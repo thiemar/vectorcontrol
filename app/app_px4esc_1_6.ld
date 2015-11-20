@@ -33,18 +33,21 @@
  *
  ****************************************************************************/
 
-/* The STM32F302K8 has 64KiB of FLASH beginning at address 0x0800:0000 and
- * 16KiB of SRAM beginning at address 0x2000:0000.  When booting from FLASH,
- * FLASH memory is aliased to address 0x0000:0000 where the code expects to
- * begin execution by jumping to the entry point in the 0x0800:0000 address
- * range.
- * The bootloader only uses the first 8KiB of flash.
+/* The STM32F446RE has 512KiB of FLASH beginning at address 0x0800:0000 and
+ * 112KiB of SRAM beginning at address 0x2000:0000. With an addtional 16 KiB
+ * located at 0x2001:c000.
+ * When booting from FLASH, FLASH memory is aliased to address 0x0000:0000
+ * where the code expects to begin execution by jumping to the entry point
+ * in the 0x0800:0000 address range.
+ * The bootloader only uses the first 16KiB of flash.
+ * Paramater storage will use the next 2 16KiB Sectors.
  */
 
 MEMORY
 {
-    flash (rx) : ORIGIN = 0x08004000, LENGTH = 32K
-    sram (rwx) : ORIGIN = 0x20000000, LENGTH = 16K
+    flash (rx)  : ORIGIN = 0x0800C000, LENGTH  = 464K
+    sram (rwx)  : ORIGIN = 0x20000000, LENGTH  = 112K
+    sram1 (rwx) : ORIGIN = 0x2001C000, LENGTH = 16K
 }
 
 OUTPUT_ARCH(arm)
