@@ -127,7 +127,7 @@ const uint32_t hal_pwm_control_rate_div =
 
 
 /* Work out the ADC sampling time in nanoseconds */
-const float hal_adc_sample_periods = 15.0f;
+const float hal_adc_sample_periods = 3.0f;
 const float hal_adc_sample_time_ns = 1e9f * (hal_adc_sample_periods + 12.0f) /
                                      hal_adc_frequency_hz;
 const float hal_adc_shunt_settling_time_ns = 1500.0f;
@@ -390,9 +390,9 @@ static void hal_init_adc_() {
     have a sample time of 15 cycles.
     */
     smpr_config = (ADC_SMPR_144 << ADC_SMPR1_SMP10_SHIFT) |
-                  (ADC_SMPR_28 << ADC_SMPR1_SMP11_SHIFT) |
-                  (ADC_SMPR_28 << ADC_SMPR1_SMP12_SHIFT) |
-                  (ADC_SMPR_28 << ADC_SMPR1_SMP13_SHIFT);
+                  (ADC_SMPR_3 << ADC_SMPR1_SMP11_SHIFT) |
+                  (ADC_SMPR_3 << ADC_SMPR1_SMP12_SHIFT) |
+                  (ADC_SMPR_3 << ADC_SMPR1_SMP13_SHIFT);
 
     putreg32(0u, STM32_ADC3_SQR1);
     putreg32(HAL_ADC_TEMP_CHANNEL << ADC_SQR3_SQ1_SHIFT, STM32_ADC3_SQR3);
@@ -518,6 +518,7 @@ void hal_reset(void) {
     up_cxxinitialize();
     board_initialize();
 
+    /* GPIO_GAIN = 1 means 40 V/V gain on the current shunts */
     stm32_gpiowrite(GPIO_GAIN, 1u);
     stm32_gpiowrite(GPIO_DC_CAL, 0u);
 

@@ -86,7 +86,7 @@ CORTEX_R5_HWFP_LIB_PATH = $(CC_LIB)armv7-r/thumb/fpu
 #    OPTIM_LEVEL  = < -O compiler option or nothing >
 ##############################################################################
 PROJECT           = app
-BUILD             = build/
+BUILD             = build/$(BOARD)/
 PROJECT_SRC       = $(PROJECT)/src/
 PROJECT_BUILD     = $(BUILD)$(PROJECT)/
 MCU_CC_FLAGS      = $(CORTEX_M4_HWFP_CC_FLAGS)

@@ -312,12 +312,6 @@ void StateEstimator::update_state_estimate(
 }
 
 
-#define PE_START_FREQ_HZ 625.0f
-#define PE_MIN_V_V float(1.0/128.0)
-#define PE_START_V_V float(1.0/8.0)
-#define PE_MAX_V_V float(1.0/2.0)
-#define PE_MIN_I_A float(1.0/4.0)
-#define PE_MAX_I_A float(2.0)
 /*
 Number of samples is selected such that the test period is almost exactly
 8 full cycles of the lowest frequency (PE_START_FREQ / 8).

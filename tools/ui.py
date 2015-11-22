@@ -449,10 +449,10 @@ class FirmwareImage(object):
         self._descriptor = value
 
 
-def firmware_files_for_device(firmware_dir, device_name):
+def firmware_files_for_device(firmware_dir, device_name, major, minor):
     filename_regex = re.compile(
-        "^{!s}-([0-9]+).([0-9]+).([0-9a-fA-F]+).bin$".format(
-        re.escape(device_name)))
+        "^{!s}-{}.{}-([0-9]+).([0-9]+).([0-9a-fA-F]+).bin$".format(
+        re.escape(device_name), major, minor))
 
     available_files = []
 
@@ -565,7 +565,9 @@ if __name__ == "__main__":
 
         # Search for firmware suitable for this device
         device_name = response.name.decode()
-        available_files = firmware_files_for_device(firmware_dir, device_name)
+        available_files = firmware_files_for_device(
+            firmware_dir, device_name, response.hardware_version.major,
+            response.hardware_version.minor)
 
         log.debug(("enumerate_device(): found {:d} firmware file(s) " +
                    "for device '{!s}'").format(
