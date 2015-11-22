@@ -22,16 +22,6 @@ SOFTWARE.
 
 #pragma once
 
-/*
-64 KiB of flash:
-
-* 8 KiB bootloader region (stubbed out in default image) at 0x08000000
-* 52 KiB main application area starting at 0x08002000
-* 4 KiB parameter area starting at 0x0800F000
-*/
-#define FLASH_PARAM_ADDRESS 0x0800F000
-#define FLASH_PARAM_LENGTH  0x00001000
-
 
 #define FLASH_PARAM_VERSION 4u
 

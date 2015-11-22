@@ -2,7 +2,6 @@
 # GNU GCC ARM Embeded Toolchain base directories and binaries
 ##############################################################################
 # GCC_BASE = /usr/local/opt/gcc-arm-none-eabi/
-
 CC_BIN := $(shell dirname `which arm-none-eabi-gcc`)/
 ifneq (,$(findstring ccache,$(CC_BIN)))
 CC_BIN :=
@@ -18,16 +17,33 @@ SIZE     := $(CC_BIN)arm-none-eabi-size
 
 PYTHON   := python
 
+UAVCANBLID_SW_VERSION_MAJOR=1
+UAVCANBLID_SW_VERSION_MINOR=0
+
 #BOARD :BOARD= px4esc_1_6
 BOARD ?= s2740vc_1_0
 ifeq ($(BOARD), s2740vc_1_0)
-BOARDNAME := com.thiemar.s2740vc-v1
+include uavcan_ident/s2740vc-v1-1.0.mk
 else ifeq ($(BOARD), px4esc_1_6)
-BOARDNAME := org.pixhawk.px4esc-v1
+include uavcan_ident/px4esc-v1-1.6.mk
 else
 $(error BOARD needs to be set to one of s2740vc_1_0 or px4esc_1_6)
 endif
-$(info %%% Building $(BOARD))
+
+# Buid up all teh UAVCAN Idetification
+
+MKUAVCANBL_GIT_DESC := $(shell git rev-list HEAD --max-count=1 --abbrev=8 --abbrev-commit)
+ifneq ($(words $(MKUAVCANBL_GIT_DESC)),1)
+    MKUAVCANBL_GIT_DESC := ffffffff
+endif
+
+UAVCAN_IDENT=$(UAVCANBLID_NAME)-$(UAVCANBLID_HW_VERSION_MAJOR).$(UAVCANBLID_HW_VERSION_MINOR)-$(UAVCANBLID_SW_VERSION_MAJOR).$(UAVCANBLID_SW_VERSION_MINOR).$(MKUAVCANBL_GIT_DESC)
+
+EXTRADEFINES = -DHW_UAVCAN_NAME="\"$(UAVCANBLID_NAME)\""
+EXTRADEFINES += -DHW_VERSION_MAJOR=$(UAVCANBLID_HW_VERSION_MAJOR) -DHW_VERSION_MINOR=$(UAVCANBLID_HW_VERSION_MINOR)
+EXTRADEFINES += -DSW_VERSION_MAJOR=$(UAVCANBLID_SW_VERSION_MAJOR) -DSW_VERSION_MINOR=$(UAVCANBLID_SW_VERSION_MINOR)
+
+$(info %%% Building $(BOARD) EXTRADEFINES=$(EXTRADEFINES))
 
 ##############################################################################
 # Custom options for cortex-m and cortex-r processors
@@ -168,17 +184,17 @@ endif
 INCLUDE_PATHS = $(PROJECT_INC_PATHS) $(SYS_INC_PATHS) $(UAVCAN_INC_PATHS)
 LIBRARY_PATHS = $(PROJECT_LIB_PATHS) $(SYS_LIB_PATHS)
 ARCH_CC_FLAGS = -ffreestanding -fno-common -fmessage-length=0 -Wall -fno-exceptions -ffunction-sections -fdata-sections
-CFLAGS = $(MCU_CC_FLAGS) -c $(OPTIM_FLAGS) $(CC_DEBUG_FLAGS) $(ARCH_CC_FLAGS)
+CFLAGS = $(MCU_CC_FLAGS) -c $(OPTIM_FLAGS) $(CC_DEBUG_FLAGS) $(ARCH_CC_FLAGS) $(EXTRADEFINES)
 CXXFLAGS = $(CFLAGS) -fno-rtti -fno-threadsafe-statics
 LD_FLAGS = $(MCU_CC_FLAGS) $(OPTIM_FLAGS) -Wl,--gc-sections $(SYS_LD_FLAGS) -Wl,-Map=$(PROJECT_BUILD)$(PROJECT).map -ffreestanding -nostartfiles
 LD_SYS_LIBS = $(SYS_LIBRARIES)
 
 BL_INCLUDE_PATHS = $(BL_INC_PATHS) $(SYS_INC_PATHS)
 BL_LIBRARY_PATHS = $(BL_LIB_PATHS) $(SYS_LIB_PATHS)
-BL_CFLAGS = $(MCU_CC_FLAGS) -c $(BL_OPTIM_FLAGS) $(BL_CC_DEBUG_FLAGS) $(ARCH_CC_FLAGS)
+BL_CFLAGS = $(MCU_CC_FLAGS) -c $(BL_OPTIM_FLAGS) $(BL_CC_DEBUG_FLAGS) $(ARCH_CC_FLAGS)  $(EXTRADEFINES)
 BL_LD_FLAGS = $(MCU_CC_FLAGS) $(BL_OPTIM_FLAGS) -Wl,--gc-sections $(SYS_LD_FLAGS) -Wl,-Map=$(BL_BUILD)$(BL).map -nostartfiles -nostdlib -nodefaultlibs
 
-UAVCAN_CXXFLAGS = $(MCU_CC_FLAGS) -c $(OPTIM_FLAGS) $(ARCH_CC_FLAGS) -fno-rtti -fno-threadsafe-statics
+UAVCAN_CXXFLAGS = $(MCU_CC_FLAGS) -c $(OPTIM_FLAGS) $(ARCH_CC_FLAGS) $(EXTRADEFINES) -fno-rtti -fno-threadsafe-statics
 
 ###############################################################################
 # Makefile execution
@@ -249,5 +265,5 @@ firmware/$(BOARD)-$(PROJECT).bin: firmware/$(BOARD)-$(PROJECT).elf
 	$(OBJCOPY) -O binary $< $@
 
 image: firmware/$(BOARD)-$(PROJECT).bin
-	$(PYTHON) tools/make_can_boot_descriptor.py --verbose -g firmware/$(BOARD)-$(PROJECT).bin firmware/$(BOARDNAME)-1.0.00000000.bin
+	$(PYTHON) tools/make_can_boot_descriptor.py --verbose -g firmware/$(BOARD)-$(PROJECT).bin firmware/$(UAVCAN_IDENT).bin
 
