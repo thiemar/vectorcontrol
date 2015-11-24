@@ -102,7 +102,7 @@ PIN   PORT   NUMBER    FUNCTION
 
 /* These two are externally useful */
 extern const uint32_t hal_core_frequency_hz = 180000000u;
-extern const uint32_t hal_pwm_frequency_hz = 18000u;
+extern const uint32_t hal_pwm_frequency_hz = 22500u;
 
 const uint32_t hal_tim1_frequency_hz = hal_core_frequency_hz / 4u;
 const uint32_t hal_adc_frequency_hz = hal_core_frequency_hz / 8.0f;
@@ -112,7 +112,7 @@ const uint32_t hal_pwm_period_ticks = hal_tim1_frequency_hz /
 const uint32_t hal_pwm_half_period_ticks = hal_pwm_period_ticks / 2;
 const uint32_t hal_pwm_quarter_period_ticks = hal_pwm_period_ticks / 4;
 
-const float hal_pwm_dead_time_ns_ = 1000.0f;
+const float hal_pwm_dead_time_ns_ = 800.0f;
 const uint32_t hal_pwm_dead_time_ticks_ =
     (uint32_t)(hal_pwm_dead_time_ns_ * hal_tim1_frequency_hz / 2.0f * 1e-9f);
 
@@ -127,7 +127,7 @@ const uint32_t hal_pwm_control_rate_div =
 
 
 /* Work out the ADC sampling time in nanoseconds */
-const float hal_adc_sample_periods = 3.0f;
+const float hal_adc_sample_periods = 15.0f;
 const float hal_adc_sample_time_ns = 1e9f * (hal_adc_sample_periods + 12.0f) /
                                      hal_adc_frequency_hz;
 const float hal_adc_shunt_settling_time_ns = 1500.0f;
@@ -140,7 +140,7 @@ const uint32_t hal_adc_settling_time_ticks =
 
 /* Board parameters */
 const float hal_nominal_mcu_vdd_v = 3.3f;
-const float hal_current_sense_gain_v_per_v = 40.0f;
+const float hal_current_sense_gain_v_per_v = 10.0f;
 const float hal_current_sense_r = 0.001f;
 const float hal_vbus_gain_v_per_v = 660.0f / (10400.0f + 660.0f);
 const uint32_t hal_adc_full_scale_lsb = 1u << 12u;
@@ -196,7 +196,8 @@ inline void hal_read_phase_shunts_(int16_t phase_shunt_signal_lsb[2]) {
 inline void hal_update_timer_(const uint16_t phase_on_ticks[3]) {
     uint16_t sample_ticks;
 
-    sample_ticks = hal_pwm_half_period_ticks - 2u; //std::max(phase_on_ticks[0], phase_on_ticks[1]) +
+    sample_ticks = hal_pwm_half_period_ticks - 2u;
+                   //std::max(phase_on_ticks[0], phase_on_ticks[1]) +
                    //hal_adc_settling_time_ticks; // -
                    //hal_adc_sample_time_ticks - 2u;
 
@@ -324,7 +325,7 @@ static void hal_init_tim_() {
              ATIM_CCMR1_OC2PE | (ATIM_CCMR_MODE_PWM1 << ATIM_CCMR1_OC2M_SHIFT),
              STM32_TIM1_CCMR1);
     putreg32(ATIM_CCMR2_OC3PE | (ATIM_CCMR_MODE_PWM1 << ATIM_CCMR2_OC3M_SHIFT) |
-             ATIM_CCMR2_OC4PE | (ATIM_CCMR_MODE_PWM2 << ATIM_CCMR2_OC4M_SHIFT),
+             ATIM_CCMR2_OC4PE | (ATIM_CCMR_MODE_PWM1 << ATIM_CCMR2_OC4M_SHIFT),
              STM32_TIM1_CCMR2);
 
     putreg16(hal_pwm_quarter_period_ticks, STM32_TIM1_CCR1);
@@ -390,9 +391,9 @@ static void hal_init_adc_() {
     have a sample time of 15 cycles.
     */
     smpr_config = (ADC_SMPR_144 << ADC_SMPR1_SMP10_SHIFT) |
-                  (ADC_SMPR_3 << ADC_SMPR1_SMP11_SHIFT) |
-                  (ADC_SMPR_3 << ADC_SMPR1_SMP12_SHIFT) |
-                  (ADC_SMPR_3 << ADC_SMPR1_SMP13_SHIFT);
+                  (ADC_SMPR_15 << ADC_SMPR1_SMP11_SHIFT) |
+                  (ADC_SMPR_15 << ADC_SMPR1_SMP12_SHIFT) |
+                  (ADC_SMPR_15 << ADC_SMPR1_SMP13_SHIFT);
 
     putreg32(0u, STM32_ADC3_SQR1);
     putreg32(HAL_ADC_TEMP_CHANNEL << ADC_SQR3_SQ1_SHIFT, STM32_ADC3_SQR3);
@@ -434,7 +435,7 @@ static void hal_run_calibration_() {
          x < 100000u * (hal_core_frequency_hz / 1000000u); x++);
 
     /* Sample the three shunts 1M times each (takes ~6 ms) */
-    for (i = 0; i < 1000000u; i++) {
+    for (i = 0; i < 1048576u; i++) {
         /* Trigger the injected conversion sequence */
         putreg32(getreg32(STM32_ADC1_CR2) | ADC_CR2_JSWSTART, STM32_ADC1_CR2);
 
@@ -457,8 +458,8 @@ static void hal_run_calibration_() {
     value from the readings. This makes the output values signed 12-bit packed
     into the LSBs of a 16-bit register, with sign extension.
     */
-    putreg16(offset[0] / 1000000u, STM32_ADC1_JOFR1);
-    putreg16(offset[1] / 1000000u, STM32_ADC2_JOFR1);
+    putreg16(offset[0] / 1048576u, STM32_ADC1_JOFR1);
+    putreg16(offset[1] / 1048576u, STM32_ADC2_JOFR1);
 
     /* Read temperature */
     putreg32(getreg32(STM32_ADC3_CR2) | ADC_CR2_SWSTART, STM32_ADC3_CR2);
@@ -519,7 +520,8 @@ void hal_reset(void) {
     board_initialize();
 
     /* GPIO_GAIN = 1 means 40 V/V gain on the current shunts */
-    stm32_gpiowrite(GPIO_GAIN, 1u);
+    // stm32_gpiowrite(GPIO_GAIN, 1u);
+    stm32_gpiowrite(GPIO_GAIN, 0u);
     stm32_gpiowrite(GPIO_DC_CAL, 0u);
 
     hal_init_sys_();

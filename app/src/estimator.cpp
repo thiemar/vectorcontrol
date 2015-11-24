@@ -37,7 +37,8 @@ SOFTWARE.
 
 
 const float g_process_noise[2] = { 20.0f, 1e-6f };
-const float g_measurement_noise[2] = { 0.02f, 0.02f };
+//const float g_measurement_noise[2] = { 0.02f, 0.02f };
+const float g_measurement_noise[2] = { 0.05f, 0.05f };
 
 
 void StateEstimator::update_state_estimate(
@@ -316,8 +317,8 @@ void StateEstimator::update_state_estimate(
 Number of samples is selected such that the test period is almost exactly
 8 full cycles of the lowest frequency (PE_START_FREQ / 8).
 */
-#define PE_TEST_SAMPLES uint32_t(8.0 * (1.0f / hal_control_t_s) / \
-                                       (PE_START_FREQ_HZ / 8.0f))
+#define PE_TEST_SAMPLES uint32_t(PE_TEST_CYCLES * (1.0f / hal_control_t_s) / \
+                                                  (PE_START_FREQ_HZ / 8.0f))
 
 
 void ParameterEstimator::start_estimation(float t) {

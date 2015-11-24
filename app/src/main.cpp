@@ -326,7 +326,16 @@ void control_cb(
         internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
 
         temp = g_controller_constants.effective_inv_r *
-               (voltage_setpoint - internal_speed_setpoint * phi);
+               (voltage_setpoint - internal_speed_setpoint * phi) -
+               current_setpoint;
+
+        if (temp > g_controller_constants.accel_current_a) {
+            temp = g_controller_constants.accel_current_a;
+        }
+        if (temp < -g_controller_constants.accel_current_a) {
+            temp = -g_controller_constants.accel_current_a;
+        }
+
         current_setpoint += (temp - current_setpoint) *
                             g_controller_constants.control_lpf_coeff;
 

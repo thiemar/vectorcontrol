@@ -203,11 +203,7 @@ UAVCAN_CXXFLAGS = $(MCU_CC_FLAGS) -c $(OPTIM_FLAGS) $(ARCH_CC_FLAGS) $(EXTRADEFI
 all: firmware/$(BOARD)-$(BL).bin firmware/$(BOARD)-$(PROJECT).bin image
 
 clean:
-	rm -f $(BL_OBJECTS) \
-		  $(addprefix $(BL_BUILD)arch/, $(SYS_OBJECTS) libc.o up_exit.o) \
-		  $(PROJECT_OBJECTS) \
-		  $(addprefix $(PROJECT_BUILD)arch/, $(SYS_OBJECTS)) \
-		  $(UAVCAN_OBJECTS)
+	rm -rf build
 	rm -f firmware/*.bin firmware/*.elf
 
 $(BL_BUILD)arch/%.o: $(ARCH_SRC)%.S

@@ -524,8 +524,9 @@
  * Parameter estimation configuration
  ************************************************************************************/
 
-#define PE_START_FREQ_HZ 625.0f
-#define PE_MIN_V_V float(1.0/128.0)
+#define PE_TEST_CYCLES 64.0f
+#define PE_START_FREQ_HZ 2812.5f
+#define PE_MIN_V_V float(1.0/64.0)
 #define PE_START_V_V float(1.0/4.0)
 #define PE_MAX_V_V float(2.0/1.0)
 #define PE_MIN_I_A float(1.0/1.0)
