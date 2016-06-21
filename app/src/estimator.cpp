@@ -37,7 +37,6 @@ SOFTWARE.
 
 
 const float g_process_noise[2] = { 20.0f, 1e-6f };
-//const float g_measurement_noise[2] = { 0.02f, 0.02f };
 const float g_measurement_noise[2] = { 0.05f, 0.05f };
 
 

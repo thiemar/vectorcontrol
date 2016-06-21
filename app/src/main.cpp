@@ -96,6 +96,7 @@ struct controller_constants_t {
     float spinup_rate_rad_per_s2;
     float accel_current_a;
     float max_current_a;
+    float max_voltage_v;
     float braking_current_a;
     float effective_inv_r;
     float control_lpf_coeff;
@@ -347,6 +348,22 @@ void control_cb(
             so users with screw-on props can avoid unscrewing them in flight.
             */
             current_limit = g_controller_constants.braking_current_a;
+
+            /*
+            While braking, we don't want to exceed the motor voltage limit,
+            which is possible with some sources as regenerative braking can
+            cause significant current flow back to the source.
+
+            If we see the bus voltage exceeding the limit, we reduce the
+            braking current accordingly; the allowable braking current drops
+            to zero at 5% above the maximum voltage.
+            */
+            if (vbus_v > g_controller_constants.max_voltage_v) {
+                temp = (vbus_v - g_controller_constants.max_voltage_v) /
+                       g_controller_constants.max_voltage_v;
+                current_limit *=
+                    std::max(0.0f, std::min(1.0f, 1.0f - 20.0f * temp));
+            }
         }
 
         if (current_setpoint > current_limit) {
@@ -1057,6 +1074,8 @@ int main(void) {
         motor_params.accel_voltage_v / motor_params.rs_r;
     *((volatile float*)&g_controller_constants.max_current_a) =
         motor_params.max_current_a;
+    *((volatile float*)&g_controller_constants.max_voltage_v) =
+        motor_params.max_voltage_v;
     *((volatile float*)&g_controller_constants.braking_current_a) =
         motor_params.max_current_a * control_params.braking_frac;
     *((volatile float*)&g_controller_constants.effective_inv_r) =

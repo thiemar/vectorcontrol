@@ -150,4 +150,6 @@ void hal_restart(void) {
     #include "hal_s2740vc_1_0.cpp"
 #elif defined(PX4ESC_1_6)
     #include "hal_px4esc_1_6.cpp"
+#elif defined(JCESC_1_0)
+    #include "hal_jcesc_1_0.cpp"
 #endif /* S2740VC_1_0 */

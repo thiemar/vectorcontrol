@@ -145,6 +145,15 @@ def send_all(datatype, node_id, payload):
             f.write(message + "\n")
 
 
+def format_bytes(a):
+    return "".join("{:08b}".format(v)[::-1] for v in a)
+
+
+class RadioRXMonitor(uavcan.node.Monitor):
+    def on_message(self, message):
+        log.info("RadioRXMonitor: {!s}".format(format_bytes(message.bits)))
+
+
 class MessageRelayMonitor(uavcan.node.Monitor):
     def on_message(self, message):
         send_all(message.type.get_normalized_definition(),
@@ -531,6 +540,7 @@ if __name__ == "__main__":
     options, args = parser.parse_args()
 
     uavcan.load_dsdl("../dsdl/thiemar", *(options.dsdl_paths or []))
+    #uavcan.load_dsdl(*(options.dsdl_paths or []))
 
     ioloop = tornado.ioloop.IOLoop.instance()
 
@@ -627,6 +637,7 @@ if __name__ == "__main__":
             (uavcan.equipment.air_data.IndicatedAirspeed,
                 MessageRelayMonitor),
             (uavcan.equipment.hardpoint.Status, MessageRelayMonitor),
+            #(uavcan.thirdparty.thiemar.equipment.radio.Bitstream, RadioRXMonitor),
         ], node_id=int(options.node_id))
         node.listen(args[0], baudrate=int(options.bus_speed), io_loop=ioloop)
     else:

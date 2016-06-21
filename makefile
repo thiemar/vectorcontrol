@@ -26,8 +26,10 @@ ifeq ($(BOARD), s2740vc_1_0)
 include uavcan_ident/s2740vc-v1-1.0.mk
 else ifeq ($(BOARD), px4esc_1_6)
 include uavcan_ident/px4esc-v1-1.6.mk
+else ifeq ($(BOARD), jcesc_1_0)
+include uavcan_ident/jcesc-v1-1.0.mk
 else
-$(error BOARD needs to be set to one of s2740vc_1_0 or px4esc_1_6)
+$(error BOARD needs to be set to one of s2740vc_1_0, px4esc_1_6, jcesc_1_0)
 endif
 
 # Buid up all teh UAVCAN Idetification

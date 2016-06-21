@@ -3,8 +3,10 @@ env:
   matrix:
     - TARGET=gcc-4.8 BOARD=s2740vc_1_0
     - TARGET=gcc-4.8 BOARD=px4esc_1_6
+    - TARGET=gcc-4.8 BOARD=jcesc_1_0
     - TARGET=gcc-4.9 BOARD=s2740vc_1_0
     - TARGET=gcc-4.9 BOARD=px4esc_1_6
+    - TARGET=gcc-4.9 BOARD=jcesc_1_0
 addons:
   apt:
     sources:
