@@ -348,9 +348,18 @@ void ParameterEstimator::update_parameter_estimate(
     At the end of the process, determine R and L by linear regression of the
     four impedance readings against the test frequencies.
     */
-    if (test_idx_ >= 4) {
+    if (test_idx_ >= 5) {
         /* Early exit if the test is complete */
         return;
+    } else if (test_idx_ < 4) {
+        /*
+        Increment the phase angle, and the cycle count if the angle has
+        wrapped round to zero.
+        */
+        open_loop_angle_rad_ += open_loop_angular_velocity_rad_per_u_;
+        if (open_loop_angle_rad_ > float(M_PI)) {
+            open_loop_angle_rad_ -= float(2.0 * M_PI);
+        }
     }
 
     if (open_loop_test_samples_ == PE_TEST_SAMPLES) {
@@ -358,16 +367,17 @@ void ParameterEstimator::update_parameter_estimate(
         Divide the Z accumulator by the number of recorded samples (half
         of the actual number of samples) to get the mean square value.
         */
-        sample_z_sq_[test_idx_] *= (1.0f / float(PE_TEST_SAMPLES / 2));
+        sample_v_sq_[test_idx_] *= (1.0f / float(PE_TEST_SAMPLES / 2));
+        sample_i_sq_[test_idx_] *= (1.0f / float(PE_TEST_SAMPLES / 2));
 
         /*
         At the end of a test run, check the RMS current and increase or
-        decrease voltage as necessary
+        decrease voltage as necessary.
         */
-        if (v_ * v_ / sample_z_sq_[test_idx_] > PE_MAX_I_A * PE_MAX_I_A &&
+        if (sample_i_sq_[test_idx_] > PE_MAX_I_A * PE_MAX_I_A &&
                 v_ > PE_MIN_V_V) {
             v_ *= 0.5f;
-        } else if (v_ * v_ / sample_z_sq_[test_idx_] < PE_MIN_I_A * PE_MIN_I_A &&
+        } else if (sample_i_sq_[test_idx_] < PE_MIN_I_A * PE_MIN_I_A &&
                    v_ < PE_MAX_V_V) {
             v_ *= 2.0f;
         } else {
@@ -381,23 +391,14 @@ void ParameterEstimator::update_parameter_estimate(
         open_loop_test_samples_ = 0;
     } else if (open_loop_test_samples_ >= PE_TEST_SAMPLES / 2) {
         /* Accumulate the squared current and voltage readings */
-        sample_z_sq_[test_idx_] +=
-            (v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1]) /
-            (i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1]);
+        sample_v_sq_[test_idx_] += v_ab_v[0] * v_ab_v[0] + v_ab_v[1] * v_ab_v[1];
+        sample_i_sq_[test_idx_] += i_ab_a[0] * i_ab_a[0] + i_ab_a[1] * i_ab_a[1];
     } else {
-        sample_z_sq_[test_idx_] = 0.0f;
+        sample_v_sq_[test_idx_] = 0.0f;
+        sample_i_sq_[test_idx_] = 0.0f;
     }
 
     open_loop_test_samples_++;
-
-    /*
-    Increment the phase angle, and the cycle count if the angle has wrapped
-    round to zero.
-    */
-    open_loop_angle_rad_ += open_loop_angular_velocity_rad_per_u_;
-    if (open_loop_angle_rad_ > float(M_PI)) {
-        open_loop_angle_rad_ -= float(2.0 * M_PI);
-    }
 }
 
 
@@ -414,7 +415,7 @@ void ParameterEstimator::get_v_alpha_beta_v(float v_ab_v[2]) {
 
 void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     size_t idx;
-    float w_sq, sum_xy, sum_x, sum_y, sum_x_sq, a, b;
+    float w_sq, sum_xy, sum_x, sum_y, sum_x_sq, a, b, z_sq;
 
     sum_xy = sum_x = sum_y = sum_x_sq = 0;
     w_sq = float(2.0 * M_PI) * PE_START_FREQ_HZ;
@@ -431,8 +432,10 @@ void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     for (idx = 0; idx < 4u; idx++) {
         sum_x += w_sq;
         sum_x_sq += w_sq * w_sq;
-        sum_xy += w_sq * sample_z_sq_[idx];
-        sum_y += sample_z_sq_[idx];
+
+        z_sq = sample_v_sq_[idx] / sample_i_sq_[idx];
+        sum_xy += w_sq * z_sq;
+        sum_y += z_sq;
 
         w_sq *= 0.25f; /* Halve angular velocity for the next test */
     }
@@ -440,6 +443,7 @@ void ParameterEstimator::calculate_r_l(float& r_r, float& l_h) {
     b = (4.0f * sum_xy - sum_x * sum_y) / (4.0f * sum_x_sq - sum_x * sum_x);
     a = 0.25f * (sum_y - b * sum_x);
 
+    a = sample_v_sq_[4] / sample_i_sq_[4];
     if (std::isnan(a) || a < 1e-6f) {
         a = 1e-6f;
     }

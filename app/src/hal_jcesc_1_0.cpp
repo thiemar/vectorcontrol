@@ -241,10 +241,11 @@ PERF_COUNT_START
     static uint8_t last_pwm_sector = 1u;
     static uint8_t prev_pwm_sector = 1u;
 
-    int16_t phase_current_lsb[3];
+    int16_t phase_current_lsb[3], v_ab_lsb[2];
+    int32_t ab_ticks[2];
     uint16_t phase_oc[3];
     float out_v_ab[2], i_ab[2];
-    float temp;
+    float temp, vbus, vbus_inv;
 
     hal_read_phase_shunts_(phase_current_lsb, prev_pwm_sector);
 
@@ -263,16 +264,23 @@ PERF_COUNT_START
     i_ab[1] = (0.57735026919f * i_ab[0] + 1.15470053838f * temp);
 
     out_v_ab[0] = out_v_ab[1] = 0.0f;
+    vbus_inv = vbus_inv_;
+    vbus = vbus_v_;
 
     if (high_frequency_task_) {
-        high_frequency_task_(out_v_ab, prev_v_ab, i_ab, vbus_v_);
+        high_frequency_task_(out_v_ab, prev_v_ab, i_ab, vbus);
     }
 
     prev_v_ab[0] = last_v_ab[0];
     prev_v_ab[1] = last_v_ab[1];
 
-    last_v_ab[0] = out_v_ab[0];
-    last_v_ab[1] = out_v_ab[1];
+    ab_ticks[0] = int32_t(out_v_ab[0] * vbus_inv *
+                          float(hal_pwm_half_period_ticks / 32768.0));
+    ab_ticks[1] = int32_t(out_v_ab[1] * vbus_inv *
+                          float(hal_pwm_half_period_ticks / 32768.0));
+
+    last_v_ab[0] = ab_ticks[0] * vbus * float(1.0 / hal_pwm_half_period_ticks);
+    last_v_ab[1] = ab_ticks[1] * vbus * float(1.0 / hal_pwm_half_period_ticks);
 
     prev_pwm_sector = last_pwm_sector;
 
@@ -280,12 +288,10 @@ PERF_COUNT_START
     Convert alpha-beta frame voltage fractions to SVM output compare values
     for each phase.
     */
-    temp = vbus_inv_;
+    v_ab_lsb[0] = int16_t(__SSAT(int32_t(vbus_inv * out_v_ab[0]), 16u));
+    v_ab_lsb[1] = int16_t(__SSAT(int32_t(vbus_inv * out_v_ab[1]), 16u));
     last_pwm_sector = svm_duty_cycle_from_v_alpha_beta(
-        phase_oc,
-        int16_t(__SSAT(int32_t(temp * out_v_ab[0]), 16u)),
-        int16_t(__SSAT(int32_t(temp * out_v_ab[1]), 16u)),
-        hal_pwm_period_ticks);
+        phase_oc, v_ab_lsb[0], v_ab_lsb[1], hal_pwm_period_ticks);
 
     /* Update the timer */
     hal_update_timer_(last_pwm_sector, phase_oc);

@@ -138,7 +138,8 @@ public:
 
 
 class ParameterEstimator {
-    float sample_z_sq_[4];
+    float sample_v_sq_[5];
+    float sample_i_sq_[5];
 
     float open_loop_angular_velocity_rad_per_u_;
     float open_loop_angle_rad_;
@@ -166,7 +167,7 @@ public:
     void get_v_alpha_beta_v(float v_ab_v[2]);
 
     bool is_estimation_complete(void) const {
-        return test_idx_ == 4;
+        return test_idx_ == 5;
     }
 
     void calculate_r_l(float& r_r, float& l_h);

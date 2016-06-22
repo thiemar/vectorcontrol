@@ -229,10 +229,6 @@
  *   PB[7]     USART1_RX                            30         USART1_RX
  */
 
-#define GPIO_PWMA_DISABLED (GPIO_INPUT | GPIO_PORTA | GPIO_PIN8)
-#define GPIO_PWMB_DISABLED (GPIO_INPUT | GPIO_PORTA | GPIO_PIN9)
-#define GPIO_PWMC_DISABLED (GPIO_INPUT | GPIO_PORTA | GPIO_PIN10)
-
 #define GPIO_PWMA_LOW (GPIO_OUTPUT | GPIO_PUSHPULL | GPIO_OUTPUT_CLEAR | \
                        GPIO_PORTA | GPIO_PIN8)
 #define GPIO_PWMB_LOW (GPIO_OUTPUT | GPIO_PUSHPULL | GPIO_OUTPUT_CLEAR | \
@@ -327,9 +323,9 @@ inline static void board_initialize(void)
     stm32_configgpio(GPIO_HALL_CS);
     stm32_configgpio(GPIO_DRV_CS);
 
-    stm32_configgpio(GPIO_PWMA_DISABLED);
-    stm32_configgpio(GPIO_PWMB_DISABLED);
-    stm32_configgpio(GPIO_PWMC_DISABLED);
+    stm32_configgpio(GPIO_PWMA_LOW);
+    stm32_configgpio(GPIO_PWMB_LOW);
+    stm32_configgpio(GPIO_PWMC_LOW);
 
     stm32_configgpio(GPIO_ADC1_CH1);
     stm32_configgpio(GPIO_ADC1_CH2);
