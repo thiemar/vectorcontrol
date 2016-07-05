@@ -257,13 +257,13 @@
  * Parameter estimation configuration
  ************************************************************************************/
 
-#define PE_TEST_CYCLES 8.0f
-#define PE_START_FREQ_HZ 625.0f
-#define PE_MIN_V_V float(1.0/128.0)
-#define PE_START_V_V float(1.0/4.0)
-#define PE_MAX_V_V float(1.0/1.0)
-#define PE_MIN_I_A float(1.0/4.0)
-#define PE_MAX_I_A float(2.0)
+#define PE_TEST_CYCLES 64.0f
+#define PE_START_FREQ_HZ 2812.5f
+#define PE_MIN_V_V float(1.0/8.0)
+#define PE_START_V_V 0.25f
+#define PE_MAX_V_V 4.0f
+#define PE_MIN_I_A 0.75f
+#define PE_MAX_I_A 6.0f
 
 /************************************************************************************
  * Public Data
@@ -303,7 +303,7 @@ inline static void board_initialize(void)
              RCC_APB1ENR_SPI3EN | RCC_APB1ENR_TIM2EN,
              STM32_RCC_APB1ENR);
     putreg32(getreg32(STM32_RCC_APB2ENR) | RCC_APB2ENR_TIM1EN |
-             RCC_APB2ENR_SYSCFGEN | RCC_APB2ENR_USART1EN,
+             RCC_APB2ENR_SYSCFGEN,
              STM32_RCC_APB2ENR);
 
     putreg32(getreg32(STM32_RCC_APB1RSTR) | RCC_APB1RSTR_CAN1RST,
@@ -313,9 +313,6 @@ inline static void board_initialize(void)
 
     stm32_configgpio(GPIO_CAN_RX_2);
     stm32_configgpio(GPIO_CAN_TX_2);
-
-    stm32_configgpio(GPIO_USART1_RX_2);
-    stm32_configgpio(GPIO_USART1_TX_2);
 
     stm32_configgpio(GPIO_SPI3_SCK_1);
     stm32_configgpio(GPIO_SPI3_MISO_1);

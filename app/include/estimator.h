@@ -34,9 +34,7 @@ class StateEstimator {
     float phi_estimate_v_s_per_rad_;
 
     /* Intermediate values */
-    float a_; /* 1.0 - R / L * T */
-    float b_; /* 1.0 / L * T; needs to be multiplied by phi */
-    float c_; /* T / L */
+    float ls_h_;
     float t_;
     float t_inv_;
     float rs_r_;
@@ -45,20 +43,14 @@ class StateEstimator {
     float i_dq_lpf_coeff_;
     float angular_velocity_lpf_coeff_;
 
-    /* Column-major */
-    float state_covariance_[4];
-
     /* Intermediate state */
-    float last_i_ab_a_[2];
     float next_sin_theta_;
     float next_cos_theta_;
 
 public:
     StateEstimator():
         phi_estimate_v_s_per_rad_(0.0f),
-        a_(0.0f),
-        b_(0.0f),
-        c_(0.0f),
+        ls_h_(0.0f),
         t_(0.0f),
         t_inv_(0.0f),
         rs_r_(0.0f),
@@ -74,18 +66,15 @@ public:
         state_estimate_.angular_velocity_rad_per_s = 0.0f;
         state_estimate_.angle_rad = 0.0f;
         state_estimate_.i_dq_a[0] = state_estimate_.i_dq_a[1] = 0.0f;
+        state_estimate_.v_dq_v[0] = state_estimate_.v_dq_v[1] = 0.0f;
         next_sin_theta_ = 0;
         next_cos_theta_ = 1.0f;
-        last_i_ab_a_[0] = last_i_ab_a_[1] = 0.0f;
-        state_covariance_[0] = state_covariance_[2] = 10.0f;
-        state_covariance_[1] = state_covariance_[3] = 1.0f;
     }
 
     void update_state_estimate(
         const float i_ab_a[2],
         const float v_ab_v[2],
-        float speed_setpoint,
-        float closed_loop_frac
+        float speed_setpoint
     );
 
     void get_state_estimate(struct motor_state_t& out_estimate) const {
@@ -110,9 +99,7 @@ public:
         float phi_v_s_per_rad,
         float t_s
     ) volatile {
-        a_ = 1.0f - rs_r / ls_h * t_s;
-        b_ = 1.0f / ls_h * t_s;
-        c_ = t_s / ls_h;
+        ls_h_ = ls_h;
         t_ = t_s;
         t_inv_ = 1.0f / t_s;
         rs_r_ = rs_r;
@@ -126,9 +113,9 @@ public:
         float rc;
 
         /*
-        Control parameters -- LPF bandwidth is one octave higher than speed
-        control bandwidth, and angular velocity estimation bandwidth is two
-        octaves higher.
+        Control parameters -- LPF bandwidth is one decade higher than speed
+        control bandwidth, and angular velocity estimation bandwidth is one
+        octave higher.
         */
         rc = 1.0f / (float(2.0 * M_PI) * control_bandwidth_hz);
         i_dq_lpf_coeff_ = t_s / (t_s + 0.1f * rc);
@@ -146,6 +133,7 @@ class ParameterEstimator {
 
     float v_;
     uint8_t test_idx_;
+    uint8_t retry_idx_;
     uint16_t open_loop_test_samples_;
 
 public:
@@ -154,6 +142,7 @@ public:
         open_loop_angle_rad_(0.0f),
         v_(0.0f),
         test_idx_(0),
+        retry_idx_(0),
         open_loop_test_samples_(0)
     { }
 
@@ -167,7 +156,7 @@ public:
     void get_v_alpha_beta_v(float v_ab_v[2]);
 
     bool is_estimation_complete(void) const {
-        return test_idx_ == 5;
+        return test_idx_ >= 5;
     }
 
     void calculate_r_l(float& r_r, float& l_h);

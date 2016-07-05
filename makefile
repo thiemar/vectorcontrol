@@ -94,11 +94,12 @@ PROJECT_BUILD     = $(BUILD)$(PROJECT)/
 MCU_CC_FLAGS      = $(CORTEX_M4_HWFP_CC_FLAGS)
 MCU_LIB_PATH      = $(CORTEX_M4_HWFP_LIB_PATH)
 DEBUG_LEVEL       =
-OPTIM_FLAGS       = -Os -flto -ffast-math
+OPTIM_FLAGS       = -Os -ffast-math #-flto
 LINKER_SCRIPT     = $(PROJECT)/$(PROJECT)_$(BOARD).ld
 PROJECT_OBJECTS   = $(addprefix $(PROJECT_BUILD), \
 					  main.o _cxx.o configuration.o can.o controller.o \
-					  estimator.o perf.o hal.o app_vectors.o shared.o)
+					  estimator.o perf.o hal.o app_vectors.o shared.o \
+					  m4f_float_spec.o)
 PROJECT_INC_PATHS = -I$(PROJECT)/include/
 PROJECT_LIB_PATHS = -L.
 PROJECT_LIBRARIES =
@@ -158,7 +159,8 @@ UAVCAN_OBJECTS = $(addprefix $(UAVCAN_BUILD), \
 UAVCAN_CONFIG = -DUAVCAN_TINY=1 -DUAVCAN_DEBUG=0 \
 				-DUAVCAN_GENERAL_PURPOSE_PLATFORM=0 -DUAVCAN_NOEXCEPT=1 \
 				-DUAVCAN_TOSTRING=0 -DUAVCAN_USE_EXTERNAL_SNPRINTF=1 \
-				-DUAVCAN_NO_ASSERTIONS=1 -DUAVCAN_NO_GLOBAL_DATA_TYPE_REGISTRY=1
+				-DUAVCAN_NO_ASSERTIONS=1 -DUAVCAN_NO_GLOBAL_DATA_TYPE_REGISTRY=1 \
+				-DUAVCAN_USE_EXTERNAL_FLOAT16_CONVERSION=1
 UAVCAN_INC_PATHS = -I$(UAVCAN)/include -I$(UAVCAN)/include/dsdlc_generated -I$(CC_INC)
 UAVCAN_LIB_PATHS = -L$(MCU_LIB_PATH)
 UAVCAN_LIBRARIES =

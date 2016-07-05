@@ -33,7 +33,7 @@ by hal.cpp
 
 /* These two are externally useful */
 extern const uint32_t hal_core_frequency_hz = 72000000u;
-extern const uint32_t hal_pwm_frequency_hz = 62500u;
+extern const uint32_t hal_pwm_frequency_hz = 31250u;
 
 const uint32_t hal_adc_frequency_hz = hal_core_frequency_hz;
 
@@ -57,7 +57,7 @@ const float hal_adc_sample_periods = 7.5f;
 const float hal_adc_sample_time_ns =
     1e9f * (3.0f * hal_adc_sample_periods + 2.0f * 13.5f) /
     hal_adc_frequency_hz;
-const float hal_adc_shunt_settling_time_ns = 200.0f;
+const float hal_adc_shunt_settling_time_ns = 900.0f;
 const uint32_t hal_adc_sample_time_ticks =
     (uint32_t)(hal_adc_sample_time_ns * hal_core_frequency_hz * 1e-9f + 0.5f);
 const uint32_t hal_adc_settling_time_ticks =
@@ -67,7 +67,7 @@ const uint32_t hal_adc_settling_time_ticks =
 
 /* Board parameters */
 const float hal_nominal_mcu_vdd_v = 3.3f;
-const float hal_current_sense_gain_v_per_v = 20.0f;
+const float hal_current_sense_gain_v_per_v = 40.0f;
 const float hal_current_sense_r = 0.001f;
 const float hal_vbus_gain_v_per_v = 1.0f / (20.0f + 1.0f);
 const uint32_t hal_adc_full_scale_lsb = 1u << 12u;
@@ -275,12 +275,28 @@ PERF_COUNT_START
     prev_v_ab[1] = last_v_ab[1];
 
     ab_ticks[0] = int32_t(out_v_ab[0] * vbus_inv *
-                          float(hal_pwm_half_period_ticks / 32768.0));
+                          float(hal_pwm_period_ticks / 32768.0));
     ab_ticks[1] = int32_t(out_v_ab[1] * vbus_inv *
-                          float(hal_pwm_half_period_ticks / 32768.0));
+                          float(hal_pwm_period_ticks / 32768.0));
 
-    last_v_ab[0] = ab_ticks[0] * vbus * float(1.0 / hal_pwm_half_period_ticks);
-    last_v_ab[1] = ab_ticks[1] * vbus * float(1.0 / hal_pwm_half_period_ticks);
+    if (ab_ticks[0] > 30) {
+        ab_ticks[0] -= 30;
+    } else if (ab_ticks[0] < -30) {
+        ab_ticks[0] += 30;
+    } else {
+        ab_ticks[0] = 0;
+    }
+
+    if (ab_ticks[1] > 30) {
+        ab_ticks[1] -= 30;
+    } else if (ab_ticks[1] < -30) {
+        ab_ticks[1] += 30;
+    } else {
+        ab_ticks[1] = 0;
+    }
+
+    last_v_ab[0] = ab_ticks[0] * vbus * float(1.0 / hal_pwm_period_ticks);
+    last_v_ab[1] = ab_ticks[1] * vbus * float(1.0 / hal_pwm_period_ticks);
 
     prev_pwm_sector = last_pwm_sector;
 
@@ -565,8 +581,10 @@ static void hal_init_drv8305_(void) {
 
     uint16_t status;
     status = hal_read_drv8305_(DRV8305_WARN_ADDR);
-    if (status) {
-        up_systemreset();
+    while (status) {
+        /* Try to clear faults */
+        hal_write_drv8305_(DRV8305_IC_OP_ADDR, DRV8305_CLR_FLTS);
+        status = hal_read_drv8305_(DRV8305_WARN_ADDR);
     }
     status = hal_read_drv8305_(DRV8305_OV_VDS_FAULT_ADDR);
     if (status) {
@@ -584,39 +602,39 @@ static void hal_init_drv8305_(void) {
     /* Configure DRV8305 registers*/
 
     /*
-    Drive strength 500 mA for 250 ns max, both high and low side -- can be
+    Drive strength 500 mA for 1000 ns max, both high and low side -- can be
     more aggressive depending on switching transients
     */
     hal_write_drv8305_(DRV8305_HS_DRV_CTL_ADDR,
-                       DRV8305_TDRIVE_250ns | DRV8305_IDRIVEN_500mA |
-                       DRV8305_IDRIVEP_500mA);
+                       DRV8305_TDRIVE_500ns | DRV8305_IDRIVEN_1000mA |
+                       DRV8305_IDRIVEP_1000mA);
     hal_write_drv8305_(DRV8305_LS_DRV_CTL_ADDR,
-                       DRV8305_TDRIVE_250ns | DRV8305_IDRIVEN_500mA |
-                       DRV8305_IDRIVEP_500mA);
+                       DRV8305_TDRIVE_500ns | DRV8305_IDRIVEN_1000mA |
+                       DRV8305_IDRIVEP_1000mA);
     /*
-    3-in PWM mode; dead time is 500 ns (could be more aggressive), and VDS
-    comparator blanking and deglitch both set to 2 us to avoid false
-    triggering -- we shut down on overcurrent so best to be sure
+    3-in PWM mode; dead time is 40 ns, and VDS comparator blanking and
+    deglitch both set to 2 us to avoid false triggering -- we shut down on
+    overcurrent so best to be sure
     */
     hal_write_drv8305_(DRV8305_DRV_CTL_ADDR,
-                       DRV8305_PWM_3IN | DRV8305_DEADTIME_500ns |
+                       DRV8305_PWM_3IN | DRV8305_DEADTIME_40ns |
                        DRV8305_TBLANK_2us | DRV8305_TVDS_2us);
 
     /* Clamp current sense lines to 3V3 */
     hal_write_drv8305_(DRV8305_IC_OP_ADDR, DRV8305_SNS_CLAMP_EN);
 
     /*
-    Blank current shunts for 500 ns around switching; set gains to 20 V/V,
-    for operation up to 80 A peak.
+    Blank current shunts for 500 ns around switching; set gains to 40 V/V,
+    for operation up to 41 A peak.
     */
     hal_write_drv8305_(DRV8305_SHUNT_CTL_ADDR,
-                       DRV8305_CS_BLANK_500ns | DRV8305_GAIN_CS3_20VpV |
-                       DRV8305_GAIN_CS2_20VpV | DRV8305_GAIN_CS1_20VpV);
+                       DRV8305_CS_BLANK_500ns | DRV8305_GAIN_CS3_40VpV |
+                       DRV8305_GAIN_CS2_40VpV | DRV8305_GAIN_CS1_40VpV);
 
     /* Don't need to make any changes to the VREF/VREG settings. */
 
     /*
-    Set VDS threshold to 822 mV, which is about 80 A through 10 milliohms.
+    Set VDS threshold to 511 mV, which is about 50 A through 10 milliohms.
     In the event of a fault, the FET is likely to heat up and cross that
     resistance threshold fairly quickly so this should be enough to catch it,
     while being far enough from the normal operating range to avoid false
@@ -625,7 +643,49 @@ static void hal_init_drv8305_(void) {
     The overcurrent response is immediate, latched shutdown.
     */
     hal_write_drv8305_(DRV8305_IC_OP_ADDR,
-                       DRV8305_VDS_THRES_822mV | DRV8305_VDS_MODE_SHDN);
+                       DRV8305_VDS_THRES_511mV | DRV8305_VDS_MODE_SHDN);
+}
+
+
+static void hal_check_drv8305_(void) {
+    /*
+    SPI device configuration. Refer to section 7.5.1 of:
+    "DRV8305 Three Phase Gate Driver With Current Shunt Amplifiers and Voltage
+    Regulator", doc SLVSCX2A
+
+    Clock is low when idle (CPOL=0); data is latched on the negative-going
+    clock edge (CPHA=1). Frequency must <= 10 MHz for the DRV8305.
+
+    Here, set f = PCLK / 4 (i.e. 9 MHz) and MSTR mode.
+    */
+    putreg16(SPI_CR1_FPCLCKd4 | SPI_CR1_MSTR | SPI_CR1_CPHA, STM32_SPI3_CR1);
+
+    /*
+    Set FRXTH to trigger RXNE when 16 bits have been received, DS to
+    1111 for 16-bit, and SSOE to enable the NSS pin.
+    */
+    putreg16(SPI_CR2_FRXTH | SPI_CR1_DS_16BIT | SPI_CR2_SSOE, STM32_SPI3_CR2);
+
+    /*
+    The command format is:
+    bit 15: R/nW
+    bit 14-11: ADDR
+    bit 10-0: DATA
+    */
+
+    uint16_t status;
+
+    status = hal_read_drv8305_(DRV8305_OV_VDS_FAULT_ADDR);
+    while (status);
+
+    status = hal_read_drv8305_(DRV8305_IC_FAULT_ADDR);
+    while (status);
+
+    status = hal_read_drv8305_(DRV8305_DRV_FAULT_ADDR);
+    while (status);
+
+    status = hal_read_drv8305_(DRV8305_WARN_ADDR);
+    while (status);
 }
 
 
@@ -704,6 +764,7 @@ static void hal_pwm_periodic_() {
 
 
 static bool hal_adc_periodic_() {
+    hal_check_drv8305_();
     hal_pwm_periodic_();
 
     /* TS_CAL_1 is the temperature sensor reading at 30 deg C */

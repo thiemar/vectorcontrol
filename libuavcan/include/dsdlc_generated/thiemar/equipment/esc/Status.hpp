@@ -22,6 +22,7 @@ float16[2] i_dq              # Ampere
 float16 i_setpoint           # Ampere
 
 float16[2] v_dq              # Volt
+float16 angle                # Radian
 
 uint5 esc_index
 ******************************************************************************/
@@ -31,12 +32,14 @@ thiemar.equipment.esc.Status
 saturated float16[2] i_dq
 saturated float16 i_setpoint
 saturated float16[2] v_dq
+saturated float16 angle
 saturated uint5 esc_index
 ******************************************************************************/
 
 #undef i_dq
 #undef i_setpoint
 #undef v_dq
+#undef angle
 #undef esc_index
 
 namespace thiemar
@@ -61,6 +64,7 @@ struct UAVCAN_EXPORT Status_
         typedef ::uavcan::Array< ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate >, ::uavcan::ArrayModeStatic, 2 > i_dq;
         typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > i_setpoint;
         typedef ::uavcan::Array< ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate >, ::uavcan::ArrayModeStatic, 2 > v_dq;
+        typedef ::uavcan::FloatSpec< 16, ::uavcan::CastModeSaturate > angle;
         typedef ::uavcan::IntegerSpec< 5, ::uavcan::SignednessUnsigned, ::uavcan::CastModeSaturate > esc_index;
     };
 
@@ -70,6 +74,7 @@ struct UAVCAN_EXPORT Status_
             = FieldTypes::i_dq::MinBitLen
             + FieldTypes::i_setpoint::MinBitLen
             + FieldTypes::v_dq::MinBitLen
+            + FieldTypes::angle::MinBitLen
             + FieldTypes::esc_index::MinBitLen
     };
 
@@ -79,6 +84,7 @@ struct UAVCAN_EXPORT Status_
             = FieldTypes::i_dq::MaxBitLen
             + FieldTypes::i_setpoint::MaxBitLen
             + FieldTypes::v_dq::MaxBitLen
+            + FieldTypes::angle::MaxBitLen
             + FieldTypes::esc_index::MaxBitLen
     };
 
@@ -88,12 +94,14 @@ struct UAVCAN_EXPORT Status_
     typename ::uavcan::StorageType< typename FieldTypes::i_dq >::Type i_dq;
     typename ::uavcan::StorageType< typename FieldTypes::i_setpoint >::Type i_setpoint;
     typename ::uavcan::StorageType< typename FieldTypes::v_dq >::Type v_dq;
+    typename ::uavcan::StorageType< typename FieldTypes::angle >::Type angle;
     typename ::uavcan::StorageType< typename FieldTypes::esc_index >::Type esc_index;
 
     Status_()
         : i_dq()
         , i_setpoint()
         , v_dq()
+        , angle()
         , esc_index()
     {
         ::uavcan::StaticAssert<_tmpl == 0>::check();  // Usage check
@@ -104,7 +112,7 @@ struct UAVCAN_EXPORT Status_
          * This check shall never be performed in user code because MaxBitLen value
          * actually depends on the nested types, thus it is not invariant.
          */
-        ::uavcan::StaticAssert<85 == MaxBitLen>::check();
+        ::uavcan::StaticAssert<101 == MaxBitLen>::check();
 #endif
     }
 
@@ -154,6 +162,7 @@ bool Status_<_tmpl>::operator==(ParameterType rhs) const
         i_dq == rhs.i_dq &&
         i_setpoint == rhs.i_setpoint &&
         v_dq == rhs.v_dq &&
+        angle == rhs.angle &&
         esc_index == rhs.esc_index;
 }
 
@@ -164,6 +173,7 @@ bool Status_<_tmpl>::isClose(ParameterType rhs) const
         ::uavcan::areClose(i_dq, rhs.i_dq) &&
         ::uavcan::areClose(i_setpoint, rhs.i_setpoint) &&
         ::uavcan::areClose(v_dq, rhs.v_dq) &&
+        ::uavcan::areClose(angle, rhs.angle) &&
         ::uavcan::areClose(esc_index, rhs.esc_index);
 }
 
@@ -186,6 +196,11 @@ int Status_<_tmpl>::encode(ParameterType self, ::uavcan::ScalarCodec& codec,
         return res;
     }
     res = FieldTypes::v_dq::encode(self.v_dq, codec,  ::uavcan::TailArrayOptDisabled);
+    if (res <= 0)
+    {
+        return res;
+    }
+    res = FieldTypes::angle::encode(self.angle, codec,  ::uavcan::TailArrayOptDisabled);
     if (res <= 0)
     {
         return res;
@@ -217,6 +232,11 @@ int Status_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
     {
         return res;
     }
+    res = FieldTypes::angle::decode(self.angle, codec,  ::uavcan::TailArrayOptDisabled);
+    if (res <= 0)
+    {
+        return res;
+    }
     res = FieldTypes::esc_index::decode(self.esc_index, codec,  tao_mode);
     return res;
 }
@@ -227,11 +247,12 @@ int Status_<_tmpl>::decode(ReferenceType self, ::uavcan::ScalarCodec& codec,
 template <int _tmpl>
 ::uavcan::DataTypeSignature Status_<_tmpl>::getDataTypeSignature()
 {
-    ::uavcan::DataTypeSignature signature(0x60F0AA14C19AA634ULL);
+    ::uavcan::DataTypeSignature signature(0xA0BF56BBC1500E19ULL);
 
     FieldTypes::i_dq::extendDataTypeSignature(signature);
     FieldTypes::i_setpoint::extendDataTypeSignature(signature);
     FieldTypes::v_dq::extendDataTypeSignature(signature);
+    FieldTypes::angle::extendDataTypeSignature(signature);
     FieldTypes::esc_index::extendDataTypeSignature(signature);
 
     return signature;
@@ -301,6 +322,13 @@ void YamlStreamer< ::thiemar::equipment::esc::Status >::stream(Stream& s, ::thie
     }
     s << "v_dq: ";
     YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::v_dq >::stream(s, obj.v_dq, level + 1);
+    s << '\n';
+    for (int pos = 0; pos < level; pos++)
+    {
+        s << "  ";
+    }
+    s << "angle: ";
+    YamlStreamer< ::thiemar::equipment::esc::Status::FieldTypes::angle >::stream(s, obj.angle, level + 1);
     s << '\n';
     for (int pos = 0; pos < level; pos++)
     {

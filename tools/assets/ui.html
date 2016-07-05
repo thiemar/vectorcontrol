@@ -147,6 +147,13 @@ SOFTWARE.
             shape-rendering: smoothEdges;
         }
 
+        .hfi-angle-est {
+            fill: none;
+            stroke-width: 0.75px;
+            stroke: green;
+            shape-rendering: smoothEdges;
+        }
+
         .hfi-d {
             fill: none;
             stroke-width: 0.75px;
@@ -606,8 +613,124 @@ SOFTWARE.
 
                 <svg class="speed-chart"></svg>
                 <svg class="current-chart"></svg>
-                <svg class="voltagetemp-chart"></svg>
+                <svg class="hfi-chart"></svg>
                 <svg class="output-voltage-chart"></svg>
+                <svg class="voltagetemp-chart"></svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="device device-template-com_proficnc_jcesc-v1 hidden">
+        <div class="device-header">
+            <div class="device-info">
+                <h3>#<span class="node-id">unknown</span>: <span class="node-name">com.example.unknown</span>
+                (<span class="node-health">ok</span>, <span class="node-mode">initialization</span>, up <span class="node-uptime"></span> seconds)</h3>
+
+                <!--
+                Not critical to implement in first revision.
+
+                <label>
+                    <span>Load configuration:</span>
+                    <input name="load-configuration" class="load-configuration" type="file">
+                </label>
+
+                <label>
+                    <span>Load firmware:</span>
+                    <input name="load-firmware" class="load-firmware" type="file">
+                </label>
+                -->
+            </div>
+        </div>
+
+        <div class="device-detail">
+            <div class="device-configuration">
+                <form class="configuration" action="" method="post">
+                    <h3>Motor parameters</h3>
+                    <label>
+                        <span>Number of poles</span>
+                        <input name="mot_num_poles" class="configuration" type="number" min="2" max="40" step="2">
+                    </label>
+                    <label>
+                        <span>Current limit (A)</span>
+                        <input name="mot_i_max" class="configuration" type="number" min="1" max="40" step="1">
+                    </label>
+                    <label>
+                        <span>Voltage limit (V)</span>
+                        <input name="mot_v_max" class="configuration" type="number" min="0.74" max="25.9" step="0.37">
+                    </label>
+                    <label>
+                        <span>Acceleration limit (V)</span>
+                        <input name="mot_v_accel" class="configuration" type="number" min="0.01" max="1.0" step="0.01">
+                    </label>
+                    <label>
+                        <span>Resistance (Ω)</span>
+                        <input name="mot_rs" class="configuration" type="text" readonly="readonly">
+                    </label>
+                    <label>
+                        <span>Inductance (H)</span>
+                        <input name="mot_ls" class="configuration" type="text" readonly="readonly">
+                    </label>
+                    <label>
+                        <span>Kv (rpm / V)</span>
+                        <input name="mot_kv" class="configuration" type="text" readonly="readonly">
+                    </label>
+
+                    <h3>Control parameters</h3>
+                    <label>
+                        <span>Bandwidth (Hz)</span>
+                        <input name="ctl_bw" class="configuration" type="number" min="10.0" max="250.0" step="5.0">
+                    </label>
+                    <label>
+                        <span>Gain</span>
+                        <input name="ctl_gain" class="configuration" type="number" min="0.01" max="100.0" step="0.01">
+                    </label>
+                    <label>
+                        <span>Braking</span>
+                        <input name="ctl_braking" class="configuration" type="number" min="0.0" max="1.0" step="0.01">
+                    </label>
+                    <label>
+                        <span>Idle speed (e Hz)</span>
+                        <input name="ctl_hz_idle" class="configuration" type="number" min="0.0" max="100.0" step="0.5">
+                    </label>
+                    <label>
+                        <span>Spin-up rate (e Hz/s)</span>
+                        <input name="ctl_start_rate" class="configuration" type="number" min="5.0" max="1000.0" step="5.0">
+                    </label>
+                    <label>
+                        <span>Reverse direction</span>
+                        <input name="ctl_dir" class="configuration" type="number" min="0.0" max="1.0" step="1.0">
+                    </label>
+
+                    <h3>UAVCAN parameters</h3>
+                    <label>
+                        <span>Extended status ID</span>
+                        <input name="id_ext_status" class="configuration" type="number" min="1" max="1023" step="1">
+                    </label>
+                    <label>
+                        <span>Extended status interval (µs)</span>
+                        <input name="int_ext_status" class="configuration" type="number" min="0" max="1000000" step="1000">
+                    </label>
+                    <label>
+                        <span>ESC status interval (µs)</span>
+                        <input name="int_status" class="configuration" type="number" min="0" max="1000000" step="1000">
+                    </label>
+                    <label>
+                        <span>ESC index</span>
+                        <input name="esc_index" class="configuration" type="number" min="0" max="15" step="1">
+                    </label>
+
+                    <input type="button" class="apply-configuration" name="apply" value="Apply configuration">
+                </form>
+            </div>
+
+            <div class="device-measurements">
+                <h3>Measurements</h3>
+
+                <svg class="speed-chart"></svg>
+                <svg class="current-chart"></svg>
+                <svg class="hfi-chart"></svg>
+                <svg class="output-voltage-chart"></svg>
+                <svg class="voltagetemp-chart"></svg>
             </div>
         </div>
     </div>

@@ -28,7 +28,7 @@ var ws, nodeData = {}, deviceCurrentCharts = {}, deviceSpeedCharts = {},
     deviceAccelPowerCharts = {}, deviceVoltageTempCharts = {},
     deviceAnimationCallbacks = {}, deviceOutputVoltageCharts = {},
     deviceAirspeedCharts = {}, deviceLoadCharts = {}, deviceThrustCharts = {},
-    activeESCs = {}, nodeLastStatus = {},
+    activeESCs = {}, nodeLastStatus = {}, deviceHFICharts = {},
     escRawSetpointFunctions = [], lastUpdate = null, highestEscIndex = -1,
     enumerationActive = false, lastEnumeratedNodeId = -1;
 
@@ -243,11 +243,13 @@ function createNodeUi(message) {
     content.appendChild(nodeUi);
 
     if (nodeUi.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
-            nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
+            nodeUi.classList.contains("device-template-org_pixhawk_px4esc-v1") ||
+            nodeUi.classList.contains("device-template-com_proficnc_jcesc-v1")) {
         setupSpeedChart(nodeUi);
         setupCurrentChart(nodeUi);
         setupVoltageTempChart(nodeUi);
         setupOutputVoltageChart(nodeUi);
+        setupHFIChart(nodeUi);
     } else if (nodeUi.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         setupAirspeedChart(nodeUi);
     } else if (nodeUi.classList.contains("device-template-com_thiemar_loadsensor-v1")) {
@@ -573,6 +575,97 @@ function setupOutputVoltageChart(device) {
 }
 
 
+function setupHFIChart(device) {
+    var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
+        svg = device.querySelector("svg.hfi-chart"),
+        container = device.querySelector("div.device-measurements"),
+        width = container.clientWidth - 150,
+        height = 200,
+        margin = {top: 10, right: 50, left: 50, bottom: 10};
+
+    result.x = d3.scale.linear()
+        .range([0, width])
+        .domain([0.0, 30.0]);
+
+    result.y0 = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([-1.0, 1.0]);
+
+    result.y1 = d3.scale.linear()
+        .range([height, 0.0])
+        .domain([0, 360.0]);
+
+    result.xAxis = d3.svg.axis()
+        .scale(result.x)
+        .orient("bottom")
+        .ticks(30)
+        .tickFormat("")
+        .tickSize(-height, 0, 0);
+    result.yAxis0 = d3.svg.axis()
+        .scale(result.y0)
+        .orient("left");
+    result.yAxis1 = d3.svg.axis()
+        .scale(result.y1)
+        .orient("right");
+
+    result.chart = d3.select(svg)
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    result.chart.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0, " + height + ")")
+        .call(result.xAxis);
+
+    result.chart.append("g")
+        .attr("class", "y0 axis")
+        .call(result.yAxis0)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("HFI signal (A)");
+
+    result.chart.append("g")
+        .attr("class", "y1 axis angle")
+        .attr("transform", "translate(" + width + ", 0)")
+        .call(result.yAxis1)
+    .append("text")
+        .attr("x", -height / 2)
+        .attr("y", 40)
+        .style("text-anchor", "middle")
+        .attr("transform", "rotate(-90)")
+        .text("Angle (°)");
+
+    result.chart.append("clipPath")
+        .attr("id", "clip")
+    .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+
+    result.chart.append("path")
+        .attr("class", "hfi-angle")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "hfi-d")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "hfi-q")
+        .attr('clip-path', 'url(#clip)');
+
+    result.chart.append("path")
+        .attr("class", "hfi-angle-est")
+        .attr('clip-path', 'url(#clip)');
+
+    deviceHFICharts[parseInt(device.id.split("-")[1], 10)] = result;
+}
+
+
 function setupAirspeedChart(device) {
     var result = { chart: null, x: null, y: null, xAxis: null, yAxis: null },
         svg = device.querySelector("svg.airspeed-chart"),
@@ -707,11 +800,13 @@ function updateCharts(device, data) {
     deviceAnimationCallbacks[deviceId] = undefined;
 
     if (device.classList.contains("device-template-com_thiemar_s2740vc-v1") ||
-            device.classList.contains("device-template-org_pixhawk_px4esc-v1")) {
+            device.classList.contains("device-template-org_pixhawk_px4esc-v1") ||
+            device.classList.contains("device-template-com_proficnc_jcesc-v1")) {
         updateCurrentChart(deviceId, device, data);
         updateSpeedChart(deviceId, device, data);
         updateVoltageTempChart(deviceId, device, data);
         updateOutputVoltageChart(deviceId, device, data);
+        updateHFIChart(deviceId, device, data);
     } else if (device.classList.contains("device-template-com_thiemar_p7000d-v1")) {
         updateAirspeedChart(deviceId, device, data);
     } else if (device.classList.contains("device-template-com_thiemar_loadsensor-v1")) {
@@ -837,6 +932,61 @@ function updateOutputVoltageChart(deviceId, device, data) {
     chart.chart.select(".voltage-vq")
         .datum(data["thiemar.equipment.esc.Status"])
         .attr("d", voltage);
+}
+
+
+function updateHFIChart(deviceId, device, data) {
+    var seriesData, chart;
+
+    chart = deviceHFICharts[deviceId];
+
+    /* D current line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y0(d.hfi_ab[0]); });
+
+    chart.chart.select(".hfi-d")
+        .datum(data["thiemar.equipment.esc.Status"])
+        .attr("d", seriesData);
+
+    /* Q current line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) { return chart.y0(d.hfi_ab[1]); });
+
+    chart.chart.select(".hfi-q")
+        .datum(data["thiemar.equipment.esc.Status"])
+        .attr("d", seriesData);
+
+    /* Angle line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) {
+            var angle = d.angle * 180.0 / Math.PI;
+            if (angle < 0.0) {
+                angle += 360.0;
+            }
+            return chart.y1(angle);
+        });
+
+    chart.chart.select(".hfi-angle")
+        .datum(data["thiemar.equipment.esc.Status"])
+        .attr("d", seriesData);
+
+    /* Estimated angle line */
+    seriesData = d3.svg.line()
+        .x(function(d, i) { return chart.x(i / 20.0); })
+        .y(function(d) {
+            var angle = d.hfi_angle * 180.0 / Math.PI;
+            if (angle < 0.0) {
+                angle += 360.0;
+            }
+            return chart.y1(angle);
+        });
+
+    chart.chart.select(".hfi-angle-est")
+        .datum(data["thiemar.equipment.esc.Status"])
+        .attr("d", seriesData);
 }
 
 

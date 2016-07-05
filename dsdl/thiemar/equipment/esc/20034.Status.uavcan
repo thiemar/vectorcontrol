@@ -6,5 +6,6 @@ float16[2] i_dq              # Ampere
 float16 i_setpoint           # Ampere
 
 float16[2] v_dq              # Volt
+float16 angle                # Radian
 
 uint5 esc_index

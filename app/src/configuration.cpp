@@ -93,7 +93,7 @@ const static struct param_t param_config_[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "mot_i_max",
-        12.0f, 1.0f, 40.0f},
+        40.0f, 1.0f, 40.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage
@@ -111,11 +111,11 @@ const static struct param_t param_config_[NUM_PARAMS] = {
     resistance, determines the maximum acceleration torque.
     */
     {PARAM_MOTOR_V_ACCEL, PARAM_TYPE_FLOAT, "mot_v_accel",
-        0.5f, 0.01f, 1.0f},
+        1.0f, 0.1f, 2.0f},
 
     /* Motor resistance in ohms. This is estimated on start-up. */
     {PARAM_MOTOR_RS, PARAM_TYPE_FLOAT, "mot_rs",
-        1e-3f, 1e-3f, 4.0f},
+        1e-3f, 1e-3f, 20.0f},
 
     /* Motor inductance in henries. This is estimated on start-up. */
     {PARAM_MOTOR_LS, PARAM_TYPE_FLOAT, "mot_ls",
@@ -126,14 +126,14 @@ const static struct param_t param_config_[NUM_PARAMS] = {
     accuracy will help control performance but a 20% error is fine.
     */
     {PARAM_MOTOR_KV, PARAM_TYPE_FLOAT, "mot_kv",
-        1000.0f, 100.0f, 8000.0f},
+        1000.0f, 20.0f, 8000.0f},
 
     /*
     Control bandwidth in hertz. Sets the input low-pass filter corner
     frequency and influences inner loop and estimator bandwidth.
     */
     {PARAM_CONTROL_BANDWIDTH, PARAM_TYPE_FLOAT, "ctl_bw",
-        75.0f, 10.0f, 250.0f},
+        100.0f, 50.0f, 500.0f},
 
     /*
     Dimensionless control gain, used to scale the motor's measured resistance
@@ -141,20 +141,6 @@ const static struct param_t param_config_[NUM_PARAMS] = {
     */
     {PARAM_CONTROL_GAIN, PARAM_TYPE_FLOAT, "ctl_gain",
         1.0f, 0.01f, 100.0f},
-
-    /*
-    If non-zero, the motor will rotate at this electrical speed in Hz when any
-    command is received with a setpoint below the minimum.
-    */
-    {PARAM_CONTROL_HZ_IDLE, PARAM_TYPE_FLOAT, "ctl_hz_idle",
-        3.5f, 0.0f, 100.0f},
-
-    /*
-    The rate at which the motor accelerates during open-loop mode, in
-    electrical Hz/s.
-    */
-    {PARAM_CONTROL_SPINUP_RATE, PARAM_TYPE_FLOAT, "ctl_start_rate",
-        25.0f, 5.0f, 1000.0f},
 
     /*
     Rotation direction of the motor: 0 is normal, 1 is reverse.
@@ -165,11 +151,11 @@ const static struct param_t param_config_[NUM_PARAMS] = {
     /*
     Braking limit, expressed as a fraction of maximum motor current to be
     applied in negative torque. A value of 1.0 will permit symmetric
-    acceleration and deceleration; a value of 0.0 will prevent active
+    acceleration and deceleration; a value of 0.1 will minimize active
     deceleration during normal operating modes.
     */
     {PARAM_CONTROL_BRAKING, PARAM_TYPE_FLOAT, "ctl_braking",
-        1.0f, 0.0f, 1.0f}
+        1.0f, 0.1f, 1.0f}
 };
 
 
@@ -203,10 +189,6 @@ void Configuration::read_motor_params(struct motor_params_t& params) {
     params.accel_voltage_v = params_[PARAM_MOTOR_V_ACCEL];
     params.max_current_a = params_[PARAM_MOTOR_I_MAX];
     params.max_voltage_v = params_[PARAM_MOTOR_V_MAX];
-    params.idle_speed_rad_per_s = float(2.0 * M_PI) *
-                                  params_[PARAM_CONTROL_HZ_IDLE];
-    params.spinup_rate_rad_per_s2 = float(2.0 * M_PI) *
-                                    params_[PARAM_CONTROL_SPINUP_RATE];
 }
 
 

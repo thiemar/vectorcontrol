@@ -43,13 +43,11 @@ SOFTWARE.
 #endif
 
 
-#define RHO_KG_PER_M3 1.225 /* density of air, kg/m^3 */
-
-
 struct motor_state_t {
     float angular_velocity_rad_per_s;
     float angle_rad; /* 0 .. 2 * pi */
     float i_dq_a[2];
+    float v_dq_v[2];
 };
 
 
@@ -62,10 +60,6 @@ struct motor_params_t {
     float max_current_a; /* RMS current limit in amps */
     float max_voltage_v; /* RMS voltage limit in volts */
     float accel_voltage_v; /* RMS initial open-loop voltage */
-    float idle_speed_rad_per_s; /* Speed to spin at when armed but with zero
-                                   setpoint, in rad/s */
-    float spinup_rate_rad_per_s2; /* Rate at which to increase the motor speed
-                                     when starting up. */
 
     uint32_t num_poles; /* number of poles */
 };
@@ -76,17 +70,6 @@ struct control_params_t {
     float gain;
     float braking_frac;
 };
-
-
-inline float __attribute__((always_inline)) fast_atan(float x) {
-/*
-Derived from:
-“Efficient approximations for the arctangent function”,
-Rajan, S. Sichun Wang Inkol, R. Joyal, A., May 2006
-*/
-    return float(M_PI / 4.0) * x - x * (std::abs(x) - 1.0f) *
-           (0.2447f + 0.0663f * std::abs(x));
-}
 
 
 inline void __attribute__((always_inline))

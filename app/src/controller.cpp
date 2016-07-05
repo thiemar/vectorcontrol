@@ -51,7 +51,7 @@ void DQCurrentController::update(
 
     The code below follows the pseudocode listing in Appendix C of that paper.
     */
-    float ed_a, eq_a, vd_v, vq_v, ccd_v, ccq_v, v_max;
+    float ed_a, eq_a, vd_v, vq_v, ccd_v, ccq_v, vd_max, vq_max;
 
     /* Calculate Idq error */
     ed_a = 0.0f - i_dq_a[0];
@@ -66,8 +66,8 @@ void DQCurrentController::update(
     }
 
     /* Decouple Idq using feed-forward, and add the integral error */
-    ccd_v = integral_vd_v_ - ls_h_ * angular_velocity_rad_per_s * i_dq_a[1];
-    ccq_v = integral_vq_v_ + ls_h_ * angular_velocity_rad_per_s * i_dq_a[0];
+    ccd_v = integral_vd_v_; // - ls_h_ * angular_velocity_rad_per_s * i_dq_a[1];
+    ccq_v = integral_vq_v_; // + ls_h_ * angular_velocity_rad_per_s * i_dq_a[0];
 
     /*
     Combine integral with proportional terms to find the desired output
@@ -81,11 +81,21 @@ void DQCurrentController::update(
     priority over Vq if we are limited by voltage, to ensure Id can be kept
     at zero.
     */
-    v_max = std::min(v_limit_v_, vbus_v * 0.95f);
-    if (vd_v > v_max) {
-        vd_v = v_max;
+    vd_max = std::min(v_limit_v_, vbus_v * 0.95f);
+    if (vd_v > vd_max) {
+        vd_v = vd_max;
     }
-    vq_v = std::min(vq_v, __VSQRTF(v_max * v_max - vd_v * vd_v));
+    if (vd_v < -vd_max) {
+        vd_v = -vd_max;
+    }
+
+    vq_max = __VSQRTF(vd_max * vd_max - vd_v * vd_v);
+    if (vq_v > vq_max) {
+        vq_v = vq_max;
+    }
+    if (vq_v < -vq_max) {
+        vq_v = -vq_max;
+    }
 
     /*
     Anti-windup calculation for the integral term; if desired |Vdq| is greater

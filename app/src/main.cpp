@@ -77,9 +77,6 @@ struct controller_state_t {
     float internal_speed_setpoint;
     float current_setpoint;
 
-    float closed_loop_frac;
-    float spinup_frac;
-
     enum controller_mode_t mode;
     bool fault;
 };
@@ -92,11 +89,10 @@ struct audio_state_t {
 };
 
 struct controller_constants_t {
-    float idle_speed_rad_per_s;
-    float spinup_rate_rad_per_s2;
     float accel_current_a;
     float max_current_a;
     float max_voltage_v;
+    float max_vbus_v;
     float braking_current_a;
     float effective_inv_r;
     float control_lpf_coeff;
@@ -128,7 +124,6 @@ volatile static struct audio_state_t g_audio_state;
 
 /* Bus and output voltage for reporting purposes */
 volatile static float g_vbus_v;
-volatile static float g_v_dq_v[2];
 volatile static float g_phi_v_s_per_rad;
 
 
@@ -217,8 +212,7 @@ void control_cb(
     float vbus_v
 ) {
     float v_dq_v[2], phase, audio_v, voltage_setpoint, current_setpoint,
-          internal_speed_setpoint, closed_loop_frac, new_closed_loop_frac,
-          phi, temp, spinup_frac, current_limit;
+          internal_speed_setpoint, phi, temp, current_limit, accel_limit;
     struct motor_state_t motor_state;
     enum controller_mode_t mode;
 
@@ -226,19 +220,13 @@ void control_cb(
     internal_speed_setpoint = g_controller_state.internal_speed_setpoint;
     current_setpoint = g_controller_state.current_setpoint;
 
-    closed_loop_frac = g_controller_state.closed_loop_frac;
-    spinup_frac = g_controller_state.spinup_frac;
-
     mode = g_controller_state.mode;
 
-    v_dq_v[0] = g_v_dq_v[0];
-    v_dq_v[1] = g_v_dq_v[1];
     audio_v = 0.0f;
 
     /* Update the state estimate with the latest measurements */
     g_estimator.update_state_estimate(i_ab_a, last_v_ab_v,
-                                      internal_speed_setpoint,
-                                      closed_loop_frac);
+                                      internal_speed_setpoint);
     g_estimator.get_state_estimate(motor_state);
 
     /* Get the latest phi estimate */
@@ -275,66 +263,45 @@ void control_cb(
         angular velocity.
         */
         internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
-        current_setpoint = -(1.0f / 16.0f) *
-                            g_controller_constants.accel_current_a;
+        current_setpoint = std::min(
+            -(1.0f / 8.0f) * g_controller_constants.accel_current_a, -0.5f);
         if (internal_speed_setpoint < 0.0f) {
             current_setpoint = -current_setpoint;
         }
 
         /* Stop when back EMF drops below 0.25 V */
-        if (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1] < 0.25f * 0.25f) {
+        if (motor_state.v_dq_v[0] * motor_state.v_dq_v[0] +
+                motor_state.v_dq_v[1] * motor_state.v_dq_v[1] < 0.25f * 0.25f) {
             g_controller_state.mode = mode = CONTROLLER_STOPPED;
         }
     } else if (mode == CONTROLLER_IDLING) {
         /* Rotate at the idle speed */
-        closed_loop_frac = 0.0f;
-        spinup_frac = 0.0f;
-        internal_speed_setpoint = g_controller_constants.idle_speed_rad_per_s;
+        internal_speed_setpoint = 2.0f * M_PI;
         current_setpoint = g_controller_constants.accel_current_a;
         if (voltage_setpoint < 0.0f) {
             current_setpoint = -current_setpoint;
-        }
-    } else if (mode == CONTROLLER_VOLTAGE && closed_loop_frac < 1.0f) {
-        /*
-        In thrust or speed control mode, but not yet spinning fast enough
-        for closed-loop control -- spin up gradually until we reach the
-        minimum closed-loop speed.
-        */
-        temp = spinup_frac * g_controller_constants.spinup_rate_rad_per_s2;
-        if (voltage_setpoint < 0.0f) {
-            temp = -temp;
-        }
-
-        spinup_frac += hal_control_t_s;
-        if (spinup_frac > 1.0f) {
-            spinup_frac = 1.0f;
-        }
-
-        internal_speed_setpoint += temp * hal_control_t_s;
-        current_setpoint = g_controller_constants.accel_current_a;
-        if (voltage_setpoint < 0.0f) {
-            current_setpoint = -current_setpoint;
-        }
-
-        /*
-        TODO: abort if the voltage is too low for the speed -- minimum Kv
-        check or something
-        */
-        if (false) {
-            g_controller_state.mode = CONTROLLER_ABORTING;
         }
     } else if (mode == CONTROLLER_VOLTAGE) {
-        internal_speed_setpoint = motor_state.angular_velocity_rad_per_s;
+        internal_speed_setpoint =
+            std::max(float(2.0 * M_PI), motor_state.angular_velocity_rad_per_s);
 
         temp = g_controller_constants.effective_inv_r *
-               (voltage_setpoint - internal_speed_setpoint * phi) -
-               current_setpoint;
+               (voltage_setpoint - motor_state.v_dq_v[1]);
 
-        if (temp > g_controller_constants.accel_current_a) {
-            temp = g_controller_constants.accel_current_a;
+        /*
+        If estimated back EMF is < 1.0 V (start-up or shutdown), limit
+        total current to the acceleration limit
+        */
+        accel_limit = g_controller_constants.accel_current_a;
+        if (std::abs(internal_speed_setpoint * phi) > 1.0) {
+            accel_limit += current_setpoint;
         }
-        if (temp < -g_controller_constants.accel_current_a) {
-            temp = -g_controller_constants.accel_current_a;
+
+        if (temp > accel_limit) {
+            temp = accel_limit;
+        }
+        if (temp < -accel_limit) {
+            temp = -accel_limit;
         }
 
         current_setpoint += (temp - current_setpoint) *
@@ -350,19 +317,19 @@ void control_cb(
             current_limit = g_controller_constants.braking_current_a;
 
             /*
-            While braking, we don't want to exceed the motor voltage limit,
+            While braking, we don't want to exceed the bus voltage limit,
             which is possible with some sources as regenerative braking can
             cause significant current flow back to the source.
 
             If we see the bus voltage exceeding the limit, we reduce the
             braking current accordingly; the allowable braking current drops
-            to zero at 5% above the maximum voltage.
+            to zero at 10% above the maximum voltage.
             */
-            if (vbus_v > g_controller_constants.max_voltage_v) {
-                temp = (vbus_v - g_controller_constants.max_voltage_v) /
-                       g_controller_constants.max_voltage_v;
+            if (vbus_v > g_controller_constants.max_vbus_v) {
+                temp = (vbus_v - g_controller_constants.max_vbus_v) /
+                       g_controller_constants.max_vbus_v;
                 current_limit *=
-                    std::max(0.0f, std::min(1.0f, 1.0f - 20.0f * temp));
+                    std::max(0.0f, std::min(1.0f, 1.0f - 10.0f * temp));
             }
         }
 
@@ -372,18 +339,7 @@ void control_cb(
         if (current_setpoint < -current_limit) {
             current_setpoint = -current_limit;
         }
-
-        /*
-        Abort if it looks like the motor has stalled -- angular velocity is
-        below what it would reach in the first 0.1 s of operation.
-        */
-        if (std::abs(motor_state.angular_velocity_rad_per_s) <
-                g_controller_constants.spinup_rate_rad_per_s2 * 0.125f) {
-            g_controller_state.mode = mode = CONTROLLER_ABORTING;
-        }
     } else /* Normally: if (mode == CONTROLLER_STOPPED), but catch-all */ {
-        closed_loop_frac = 0.0f;
-        spinup_frac = 0.0f;
         internal_speed_setpoint = 0.0f;
         current_setpoint = 0.0f;
         g_current_controller.reset_state();
@@ -404,29 +360,6 @@ void control_cb(
                                 vbus_v,
                                 audio_v);
 
-    /*
-    Work out the transition value between open-loop and closed-loop operation
-    based on the square of the output voltage. Smooth the transition out quite
-    a bit to avoid false triggering.
-    */
-    new_closed_loop_frac = 5.0f * (v_dq_v[0] * v_dq_v[0] +
-                            (v_dq_v[1] - audio_v) * (v_dq_v[1] - audio_v)) -
-                           7.0f;
-    if (new_closed_loop_frac < 0.0f) {
-        new_closed_loop_frac = 0.0f;
-    }
-    if (new_closed_loop_frac > 1.01f) {
-        new_closed_loop_frac = 1.01f;
-    }
-
-    if (closed_loop_frac < 1.0f) {
-        closed_loop_frac +=
-            (new_closed_loop_frac - closed_loop_frac) * float(1.0 / 8192.0);
-    }
-    if (closed_loop_frac > 1.0f) {
-        closed_loop_frac = 1.0f;
-    }
-
     /* Suppress current controller output when stopped */
     if (mode == CONTROLLER_STOPPED) {
         v_dq_v[0] = 0.0f;
@@ -443,17 +376,15 @@ void control_cb(
     Could look at low-passing these, based on the FOC status output rate
     */
     g_controller_state.internal_speed_setpoint = internal_speed_setpoint;
-    g_controller_state.closed_loop_frac = closed_loop_frac;
     g_controller_state.current_setpoint = current_setpoint;
-    g_controller_state.spinup_frac = spinup_frac;
 
     g_motor_state.angular_velocity_rad_per_s =
         motor_state.angular_velocity_rad_per_s;
     g_motor_state.angle_rad = motor_state.angle_rad;
     g_motor_state.i_dq_a[0] = motor_state.i_dq_a[0];
     g_motor_state.i_dq_a[1] = motor_state.i_dq_a[1];
-    g_v_dq_v[0] = v_dq_v[0];
-    g_v_dq_v[1] = v_dq_v[1];
+    g_motor_state.v_dq_v[0] = motor_state.v_dq_v[0];
+    g_motor_state.v_dq_v[1] = motor_state.v_dq_v[1];
     g_vbus_v = vbus_v;
     g_phi_v_s_per_rad = phi;
 }
@@ -524,7 +455,7 @@ static void __attribute__((noreturn)) node_run(
             esc_status_transfer_id, enumeration_indication_transfer_id,
             esc_index, message[8], broadcast_filter_id, service_filter_id;
     enum controller_mode_t mode;
-    float setpoint, value, power_w, v_dq_v[2], to_rpm;
+    float setpoint, value, power_w, to_rpm;
     bool got_setpoint, param_valid, wants_bootloader_restart;
     struct param_t param;
     struct motor_state_t motor_state;
@@ -607,15 +538,14 @@ static void __attribute__((noreturn)) node_run(
                 mode = CONTROLLER_VOLTAGE;
                 /* Scale 0-8191 to represent 0 to maximum voltage. */
                 value = g_vbus_v;
-                setpoint = /* std::min(motor_params.max_voltage_v, value) */
-                            motor_params.max_voltage_v *
+                setpoint = std::min(motor_params.max_voltage_v, value) *
                            float(raw_cmd.cmd[esc_index]) *
                            float(1.0 / 8192.0);
-                if (setpoint > 0.0f &&
+                if (raw_cmd.cmd[esc_index] > 0 &&
                         setpoint < motor_params.accel_voltage_v) {
                     setpoint = motor_params.accel_voltage_v;
                 }
-                if (setpoint < 0.0f &&
+                if (raw_cmd.cmd[esc_index] < 0 &&
                         setpoint > -motor_params.accel_voltage_v) {
                     setpoint = -motor_params.accel_voltage_v;
                 }
@@ -839,8 +769,6 @@ static void __attribute__((noreturn)) node_run(
         if (broadcast_manager.is_tx_done() && service_manager.is_tx_done() &&
                 !service_manager.is_rx_in_progress(current_time)) {
             motor_state = const_cast<struct motor_state_t&>(g_motor_state);
-            v_dq_v[0] = g_v_dq_v[0];
-            v_dq_v[1] = g_v_dq_v[1];
 
             if (foc_status_interval && current_time - foc_status_time >=
                     foc_status_interval) {
@@ -850,8 +778,10 @@ static void __attribute__((noreturn)) node_run(
                 msg.i_dq[1] = motor_state.i_dq_a[1];
                 msg.i_setpoint = g_controller_state.current_setpoint;
 
-                msg.v_dq[0] = v_dq_v[0];
-                msg.v_dq[1] = v_dq_v[1];
+                msg.v_dq[0] = motor_state.v_dq_v[0];
+                msg.v_dq[1] = motor_state.v_dq_v[1];
+
+                msg.angle = motor_state.angle_rad;
 
                 msg.esc_index = esc_index;
 
@@ -865,7 +795,8 @@ static void __attribute__((noreturn)) node_run(
                 power_w = __VSQRTF(
                     (motor_state.i_dq_a[0] * motor_state.i_dq_a[0] +
                      motor_state.i_dq_a[1] * motor_state.i_dq_a[1]) *
-                    (v_dq_v[0] * v_dq_v[0] + v_dq_v[1] * v_dq_v[1])
+                    (motor_state.v_dq_v[0] * motor_state.v_dq_v[0] +
+                     motor_state.v_dq_v[1] * motor_state.v_dq_v[1])
                 );
 
                 msg.voltage = g_vbus_v;
@@ -874,7 +805,7 @@ static void __attribute__((noreturn)) node_run(
                 If Q current has opposite sign to Q voltage, the flow is
                 reversed due to regenerative braking.
                 */
-                if (motor_state.i_dq_a[1] * v_dq_v[1] < 0.0f) {
+                if (motor_state.i_dq_a[1] * motor_state.v_dq_v[1] < 0.0f) {
                     msg.current = -msg.current;
                 }
 
@@ -949,9 +880,7 @@ static void __attribute__((noreturn)) node_run(
                 g_controller_state.voltage_setpoint = setpoint;
                 g_controller_state.mode = CONTROLLER_VOLTAGE;
                 last_setpoint_update = current_time;
-            } else if ((g_controller_state.mode == CONTROLLER_STOPPED &&
-                        motor_params.idle_speed_rad_per_s > 0.0f) ||
-                        g_controller_state.mode == CONTROLLER_IDLING) {
+            } else if (g_controller_state.mode == CONTROLLER_IDLING) {
                 /*
                 Setpoint was non-zero, but was not high enough to start
                 spinning and we're not already running -- so start idling, or
@@ -1047,9 +976,9 @@ int main(void) {
         configuration.set_param_value_by_index(PARAM_MOTOR_LS,
                                                motor_params.ls_h);
 
-        /* R/L * t must be < 1.0; R must be < 1.0 */
-        if (motor_params.rs_r / motor_params.ls_h * hal_control_t_s >= 1.0f ||
-                motor_params.rs_r > 1.0f) {
+        /* R/L * t must be < 5.0; R must be < 10.0 */
+        if (motor_params.rs_r / motor_params.ls_h * hal_control_t_s >= 5.0f ||
+                motor_params.rs_r > 20.0f) {
             g_controller_state.fault = true;
         }
     }
@@ -1066,10 +995,6 @@ int main(void) {
         motor_params, control_params, hal_control_t_s);
 
     /* Set up the control parameters */
-    *((volatile float*)&g_controller_constants.idle_speed_rad_per_s) =
-        motor_params.idle_speed_rad_per_s;
-    *((volatile float*)&g_controller_constants.spinup_rate_rad_per_s2) =
-        motor_params.spinup_rate_rad_per_s2;
     *((volatile float*)&g_controller_constants.accel_current_a) =
         motor_params.accel_voltage_v / motor_params.rs_r;
     *((volatile float*)&g_controller_constants.max_current_a) =
@@ -1080,6 +1005,8 @@ int main(void) {
         motor_params.max_current_a * control_params.braking_frac;
     *((volatile float*)&g_controller_constants.effective_inv_r) =
         control_params.gain / motor_params.rs_r;
+    *((volatile float*)&g_controller_constants.max_vbus_v) =
+        g_vbus_v;
 
     temp = 1.0f / (float(2.0 * M_PI) * control_params.bandwidth_hz);
     *((volatile float*)&g_controller_constants.control_lpf_coeff) =
