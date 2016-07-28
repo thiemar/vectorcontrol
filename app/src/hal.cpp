@@ -57,6 +57,10 @@ static volatile float temp_degc_;
 static volatile bool phase_reverse_;
 
 
+/* If fault is true, there's been a hardware issue */
+static volatile uint32_t fault_;
+
+
 static void hal_init_sys_();
 static void hal_init_tim_();
 static void hal_init_adc_();
@@ -121,6 +125,16 @@ float hal_get_temperature_degc(void) {
 }
 
 
+bool hal_get_fault(void) {
+    return bool(fault_);
+}
+
+
+uint32_t hal_get_fault_detail(void) {
+    return fault_;
+}
+
+
 void hal_set_low_frequency_callback(hal_callback_t callback) {
     esc_assert(!callback || !low_frequency_task_);
     low_frequency_task_ = callback;
@@ -152,4 +166,6 @@ void hal_restart(void) {
     #include "hal_px4esc_1_6.cpp"
 #elif defined(JCESC_1_0)
     #include "hal_jcesc_1_0.cpp"
+#elif defined(MINIQUAD_1_0)
+    #include "hal_miniquad_1_0.cpp"
 #endif /* S2740VC_1_0 */

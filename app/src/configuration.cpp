@@ -93,7 +93,7 @@ const static struct param_t param_config_[NUM_PARAMS] = {
     slew rate.
     */
     {PARAM_MOTOR_I_MAX, PARAM_TYPE_FLOAT, "mot_i_max",
-        40.0f, 1.0f, 40.0f},
+        40.0f, 1.0f, 60.0f},
 
     /*
     Motor voltage limit in volts. The current controller's commanded voltage

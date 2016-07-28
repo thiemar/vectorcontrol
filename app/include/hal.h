@@ -81,6 +81,8 @@ bool hal_is_can_ready(uint8_t mailbox);
 void hal_disable_can_transmit(void);
 void hal_enable_can_transmit(void);
 float hal_get_temperature_degc(void);
+bool hal_get_fault(void);
+uint32_t hal_get_fault_detail(void);
 void hal_set_low_frequency_callback(hal_callback_t callback);
 void hal_set_high_frequency_callback(hal_control_callback_t callback);
 void hal_set_rc_pwm_callback(hal_pwm_callback_t callback);

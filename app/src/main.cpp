@@ -232,7 +232,7 @@ void control_cb(
     /* Get the latest phi estimate */
     phi = g_estimator.get_phi_estimate();
 
-    if (g_controller_state.fault) {
+    if (g_controller_state.fault || hal_get_fault()) {
         g_estimator.reset_state();
         g_controller_state.fault = true;
         g_controller_state.mode = CONTROLLER_STOPPED;
@@ -824,14 +824,22 @@ static void __attribute__((noreturn)) node_run(
                         node_status_interval) {
                 uavcan::protocol::NodeStatus msg;
 
+                uint32_t fault_detail = hal_get_fault_detail();
+
                 msg.uptime_sec = current_time / 1000u;
                 msg.health = g_controller_state.fault ?
                     msg.HEALTH_CRITICAL :
                     msg.HEALTH_OK;
                 msg.mode = msg.MODE_OPERATIONAL;
                 msg.sub_mode = 0u;
-                msg.vendor_specific_status_code =
-                    (uint16_t)g_controller_state.mode;
+
+                if (g_controller_state.fault) {
+                    msg.vendor_specific_status_code = (uint16_t)fault_detail;
+                } else {
+                    msg.vendor_specific_status_code =
+                        (uint16_t)g_controller_state.mode;
+                }
+
                 broadcast_manager.encode_message(
                     node_status_transfer_id++, msg);
                 node_status_time = current_time;
